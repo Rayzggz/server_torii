@@ -1,0 +1,4 @@
+port: "2550"
+rule_path: "/www/dev/server_torii/config/rules"
+connecting_ip_headers:
+  - "X-Real-IP"
