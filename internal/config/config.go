@@ -14,6 +14,8 @@ import (
 type MainConfig struct {
 	Port                 string   `yaml:"port"`
 	RulePath             string   `yaml:"rule_path"`
+	ErrorPage            string   `yaml:"error_page"`
+	NodeName             string   `yaml:"node_name"`
 	ConnectingIPHeaders  []string `yaml:"connecting_ip_headers"`
 	ConnectingURIHeaders []string `yaml:"connecting_uri_headers"`
 }

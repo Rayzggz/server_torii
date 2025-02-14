@@ -1,6 +1,7 @@
 package server
 
 import (
+	"html/template"
 	"log"
 	"net"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
+	"time"
 )
 
 type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision)
@@ -36,10 +38,30 @@ func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
 
 		if decision.HTTPCode == "200" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("Allowed"))
+			w.Write([]byte("OK"))
 		} else if decision.HTTPCode == "403" {
+			tpl, err := template.ParseFiles(cfg.ErrorPage + "/" + decision.HTTPCode + ".html")
+			if err != nil {
+				http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+
+			data := struct {
+				EdgeTag   string
+				ConnectIP string
+				Date      string
+			}{
+				EdgeTag:   cfg.NodeName,
+				ConnectIP: userRequestData.RemoteIP,
+				Date:      time.Now().Format("2006-01-02 15:04:05"),
+			}
 			w.WriteHeader(http.StatusForbidden)
-			w.Write([]byte("Blocked"))
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			if err = tpl.Execute(w, data); err != nil {
+				http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+
 		} else {
 			// should not reach here
 			w.WriteHeader(http.StatusInternalServerError)

@@ -1,5 +1,7 @@
 port: "25555"
 rule_path: "/www/dev/server_torii/config/rules"
+error_page: "/www/dev/server_torii/config/error_page"
+node_name: "Server Torii"
 connecting_ip_headers:
   - "X-Real-IP"
 connecting_uri_headers:
