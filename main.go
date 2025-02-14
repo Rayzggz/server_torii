@@ -35,7 +35,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg.Port, ruleSet, cfg.ConnectingIPHeaders)
+		serverErr <- server.StartServer(cfg, ruleSet)
 	}()
 
 	select {

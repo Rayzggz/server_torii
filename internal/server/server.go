@@ -10,45 +10,30 @@ import (
 	"strings"
 )
 
-// StartServer starts the HTTP server
-func StartServer(port string, ruleSet *config.RuleSet, ipHeaders []string) error {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		var clientIP string
-		for _, headerName := range ipHeaders {
-			if ipVal := r.Header.Get(headerName); ipVal != "" {
-				if strings.Contains(clientIP, ",") {
-					parts := strings.Split(ipVal, ",")
-					clientIP = strings.TrimSpace(parts[0])
-				}
-				clientIP = ipVal
-				break
-			}
-		}
+type userRequest struct {
+	remoteIP string
+	uri      string
+}
 
-		if clientIP == "" {
-			remoteAddr := r.RemoteAddr
-			ipStr, _, err := net.SplitHostPort(remoteAddr)
-			if err != nil {
-				//TODO: log error
-				clientIP = remoteAddr
-			} else {
-				clientIP = ipStr
-			}
-		}
+// StartServer starts the HTTP server
+func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+
+		userRequestData := processRequestData(cfg, r)
 
 		decision := action.NewDecision()
 
 		// run main check logic
-		checkIPAllow(clientIP, ruleSet.IPAllowTrie, decision)
-		checkIPBlock(clientIP, ruleSet.IPBlockTrie, decision)
-		checkURLAllow(r.RequestURI, ruleSet.URLAllowList, decision)
-		checkURLBlock(r.RequestURI, ruleSet.URLBlockList, decision)
+		checkIPAllow(userRequestData.remoteIP, ruleSet.IPAllowTrie, decision)
+		checkIPBlock(userRequestData.remoteIP, ruleSet.IPBlockTrie, decision)
+		checkURLAllow(userRequestData.uri, ruleSet.URLAllowList, decision)
+		checkURLBlock(userRequestData.uri, ruleSet.URLBlockList, decision)
 
 		// if still undecided, allow
 		if decision.Get() == action.Undecided {
 			decision.Set(action.Allow)
 		}
-
+		log.Printf("clientIP: %s, decision: %s, Headers: %v", userRequestData.remoteIP, decision.Get(), r.Header)
 		// return response
 		if decision.Get() == action.Allow {
 			w.WriteHeader(http.StatusOK)
@@ -62,8 +47,51 @@ func StartServer(port string, ruleSet *config.RuleSet, ipHeaders []string) error
 		}
 	})
 
-	log.Printf("HTTP Server listening on :%s ...", port)
-	return http.ListenAndServe(":"+port, nil)
+	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
+	return http.ListenAndServe(":"+cfg.Port, nil)
+}
+
+func processRequestData(cfg *config.MainConfig, r *http.Request) userRequest {
+
+	var clientIP string
+	for _, headerName := range cfg.ConnectingIPHeaders {
+		if ipVal := r.Header.Get(headerName); ipVal != "" {
+			if strings.Contains(clientIP, ",") {
+				parts := strings.Split(ipVal, ",")
+				clientIP = strings.TrimSpace(parts[0])
+			}
+			clientIP = ipVal
+			break
+		}
+	}
+
+	if clientIP == "" {
+		remoteAddr := r.RemoteAddr
+		ipStr, _, err := net.SplitHostPort(remoteAddr)
+		if err != nil {
+			//TODO: log error
+			clientIP = remoteAddr
+		} else {
+			clientIP = ipStr
+		}
+	}
+
+	var clientURI string
+	for _, headerName := range cfg.ConnectingURIHeaders {
+		if uriVal := r.Header.Get(headerName); uriVal != "" {
+			clientURI = uriVal
+			break
+		}
+	}
+	if clientURI == "" {
+		clientURI = r.RequestURI
+	}
+
+	userRequest := userRequest{
+		remoteIP: clientIP,
+		uri:      clientURI,
+	}
+	return userRequest
 }
 
 func checkIPAllow(remoteIP string, trie *dataType.TrieNode, decision *action.Decision) {

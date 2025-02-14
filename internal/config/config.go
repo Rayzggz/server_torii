@@ -12,9 +12,10 @@ import (
 )
 
 type MainConfig struct {
-	Port                string   `yaml:"port"`
-	RulePath            string   `yaml:"rule_path"`
-	ConnectingIPHeaders []string `yaml:"connecting_ip_headers"`
+	Port                 string   `yaml:"port"`
+	RulePath             string   `yaml:"rule_path"`
+	ConnectingIPHeaders  []string `yaml:"connecting_ip_headers"`
+	ConnectingURIHeaders []string `yaml:"connecting_uri_headers"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object

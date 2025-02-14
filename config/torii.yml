@@ -2,3 +2,5 @@ port: "25555"
 rule_path: "/www/dev/server_torii/config/rules"
 connecting_ip_headers:
   - "X-Real-IP"
+connecting_uri_headers:
+  - "X-Original-URI"
