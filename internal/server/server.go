@@ -5,15 +5,13 @@ import (
 	"net"
 	"net/http"
 	"server_torii/internal/action"
+	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
 )
 
-type userRequest struct {
-	remoteIP string
-	uri      string
-}
+type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision)
 
 // StartServer starts the HTTP server
 func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
@@ -23,22 +21,23 @@ func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
 
 		decision := action.NewDecision()
 
-		// run main check logic
-		checkIPAllow(userRequestData.remoteIP, ruleSet.IPAllowTrie, decision)
-		checkIPBlock(userRequestData.remoteIP, ruleSet.IPBlockTrie, decision)
-		checkURLAllow(userRequestData.uri, ruleSet.URLAllowList, decision)
-		checkURLBlock(userRequestData.uri, ruleSet.URLBlockList, decision)
+		checkFuncs := make([]CheckFunc, 0)
+		checkFuncs = append(checkFuncs, check.IPAllowList)
+		checkFuncs = append(checkFuncs, check.IPBlockList)
+		checkFuncs = append(checkFuncs, check.URLAllowList)
+		checkFuncs = append(checkFuncs, check.URLBlockList)
 
-		// if still undecided, allow
-		if decision.Get() == action.Undecided {
-			decision.Set(action.Allow)
+		for _, checkFunc := range checkFuncs {
+			checkFunc(userRequestData, ruleSet, decision)
+			if decision.State == action.Done {
+				break
+			}
 		}
-		log.Printf("clientIP: %s, decision: %s, Headers: %v", userRequestData.remoteIP, decision.Get(), r.Header)
-		// return response
-		if decision.Get() == action.Allow {
+
+		if decision.HTTPCode == "200" {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte("Allowed"))
-		} else if decision.Get() == action.Block {
+		} else if decision.HTTPCode == "403" {
 			w.WriteHeader(http.StatusForbidden)
 			w.Write([]byte("Blocked"))
 		} else {
@@ -51,7 +50,7 @@ func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
 	return http.ListenAndServe(":"+cfg.Port, nil)
 }
 
-func processRequestData(cfg *config.MainConfig, r *http.Request) userRequest {
+func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
 
 	var clientIP string
 	for _, headerName := range cfg.ConnectingIPHeaders {
@@ -87,53 +86,9 @@ func processRequestData(cfg *config.MainConfig, r *http.Request) userRequest {
 		clientURI = r.RequestURI
 	}
 
-	userRequest := userRequest{
-		remoteIP: clientIP,
-		uri:      clientURI,
+	userRequest := dataType.UserRequest{
+		RemoteIP: clientIP,
+		Uri:      clientURI,
 	}
 	return userRequest
-}
-
-func checkIPAllow(remoteIP string, trie *dataType.TrieNode, decision *action.Decision) {
-	if decision.Get() != action.Undecided {
-		return
-	}
-	ip := net.ParseIP(remoteIP)
-	if ip == nil {
-		return
-	}
-	if trie.Search(ip) {
-		decision.Set(action.Allow)
-	}
-}
-
-func checkIPBlock(remoteIP string, trie *dataType.TrieNode, decision *action.Decision) {
-	if decision.Get() != action.Undecided {
-		return
-	}
-	ip := net.ParseIP(remoteIP)
-	if ip == nil {
-		return
-	}
-	if trie.Search(ip) {
-		decision.Set(action.Block)
-	}
-}
-
-func checkURLAllow(url string, list *dataType.URLRuleList, decision *action.Decision) {
-	if decision.Get() != action.Undecided {
-		return
-	}
-	if list.Match(url) {
-		decision.Set(action.Allow)
-	}
-}
-
-func checkURLBlock(url string, list *dataType.URLRuleList, decision *action.Decision) {
-	if decision.Get() != action.Undecided {
-		return
-	}
-	if list.Match(url) {
-		decision.Set(action.Block)
-	}
 }
