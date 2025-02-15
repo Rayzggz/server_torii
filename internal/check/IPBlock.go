@@ -15,7 +15,7 @@ func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		return
 	}
 	if trie.Search(ip) {
-		decision.SetCode(action.Done, "403")
+		decision.SetCode(action.Done, []byte("403"))
 	} else {
 		decision.Set(action.Continue)
 	}

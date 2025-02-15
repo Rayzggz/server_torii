@@ -1,19 +1,13 @@
 package server
 
 import (
-	"html/template"
 	"log"
 	"net"
 	"net/http"
-	"server_torii/internal/action"
-	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
-	"time"
 )
-
-type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision)
 
 // StartServer starts the HTTP server
 func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
@@ -21,51 +15,12 @@ func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
 
 		userRequestData := processRequestData(cfg, r)
 
-		decision := action.NewDecision()
-
-		checkFuncs := make([]CheckFunc, 0)
-		checkFuncs = append(checkFuncs, check.IPAllowList)
-		checkFuncs = append(checkFuncs, check.IPBlockList)
-		checkFuncs = append(checkFuncs, check.URLAllowList)
-		checkFuncs = append(checkFuncs, check.URLBlockList)
-
-		for _, checkFunc := range checkFuncs {
-			checkFunc(userRequestData, ruleSet, decision)
-			if decision.State == action.Done {
-				break
-			}
-		}
-
-		if decision.HTTPCode == "200" {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("OK"))
-		} else if decision.HTTPCode == "403" {
-			tpl, err := template.ParseFiles(cfg.ErrorPage + "/" + decision.HTTPCode + ".html")
-			if err != nil {
-				http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-
-			data := struct {
-				EdgeTag   string
-				ConnectIP string
-				Date      string
-			}{
-				EdgeTag:   cfg.NodeName,
-				ConnectIP: userRequestData.RemoteIP,
-				Date:      time.Now().Format("2006-01-02 15:04:05"),
-			}
-			w.WriteHeader(http.StatusForbidden)
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			if err = tpl.Execute(w, data); err != nil {
-				http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-				return
-			}
-
+		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
+			CheckTorii(w, r, userRequestData, ruleSet, cfg)
 		} else {
-			// should not reach here
-			w.WriteHeader(http.StatusInternalServerError)
+			CheckMain(w, userRequestData, ruleSet, cfg)
 		}
+
 	})
 
 	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
@@ -74,6 +29,55 @@ func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
 
 func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
 
+	userRequest := dataType.UserRequest{
+		RemoteIP:       getClientIP(cfg, r),
+		Uri:            getReqURI(cfg, r),
+		Captcha:        getCaptchaStatus(cfg, r),
+		ToriiClearance: getHeader(r, "__torii_clearance"),
+		ToriiSessionID: getHeader(r, "__torii_session_id"),
+		UserAgent:      r.UserAgent(),
+		Host:           getReqHost(cfg, r),
+	}
+	return userRequest
+}
+
+func getHeader(r *http.Request, headerName string) string {
+	cookie, err := r.Cookie(headerName)
+	if err != nil {
+		return ""
+	}
+	return cookie.Value
+}
+
+func getCaptchaStatus(cfg *config.MainConfig, r *http.Request) bool {
+	captchaStatus := false
+	for _, headerName := range cfg.ConnectingCaptchaStatusHeaders {
+		if captchaVal := r.Header.Get(headerName); captchaVal != "" {
+			if captchaVal == "on" {
+				captchaStatus = true
+			}
+			break
+		}
+	}
+	return captchaStatus
+
+}
+
+func getReqURI(cfg *config.MainConfig, r *http.Request) string {
+	var clientURI string
+	for _, headerName := range cfg.ConnectingURIHeaders {
+		if uriVal := r.Header.Get(headerName); uriVal != "" {
+			clientURI = uriVal
+			break
+		}
+	}
+	if clientURI == "" {
+		clientURI = r.RequestURI
+	}
+	return clientURI
+}
+
+func getClientIP(cfg *config.MainConfig, r *http.Request) string {
 	var clientIP string
 	for _, headerName := range cfg.ConnectingIPHeaders {
 		if ipVal := r.Header.Get(headerName); ipVal != "" {
@@ -96,21 +100,16 @@ func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRe
 			clientIP = ipStr
 		}
 	}
+	return clientIP
+}
 
-	var clientURI string
-	for _, headerName := range cfg.ConnectingURIHeaders {
-		if uriVal := r.Header.Get(headerName); uriVal != "" {
-			clientURI = uriVal
+func getReqHost(cfg *config.MainConfig, r *http.Request) string {
+	var clientHost = ""
+	for _, headerName := range cfg.ConnectingHostHeaders {
+		if hostVal := r.Header.Get(headerName); hostVal != "" {
+			clientHost = hostVal
 			break
 		}
 	}
-	if clientURI == "" {
-		clientURI = r.RequestURI
-	}
-
-	userRequest := dataType.UserRequest{
-		RemoteIP: clientIP,
-		Uri:      clientURI,
-	}
-	return userRequest
+	return clientHost
 }

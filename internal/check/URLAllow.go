@@ -10,7 +10,7 @@ func URLAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decisio
 	url := reqData.Uri
 	list := ruleSet.URLAllowList
 	if list.Match(url) {
-		decision.SetCode(action.Done, "200")
+		decision.SetCode(action.Done, []byte("200"))
 	} else {
 		decision.Set(action.Continue)
 	}

@@ -12,12 +12,15 @@ import (
 )
 
 type MainConfig struct {
-	Port                 string   `yaml:"port"`
-	RulePath             string   `yaml:"rule_path"`
-	ErrorPage            string   `yaml:"error_page"`
-	NodeName             string   `yaml:"node_name"`
-	ConnectingIPHeaders  []string `yaml:"connecting_ip_headers"`
-	ConnectingURIHeaders []string `yaml:"connecting_uri_headers"`
+	Port                           string   `yaml:"port"`
+	WebPath                        string   `yaml:"web_path"`
+	RulePath                       string   `yaml:"rule_path"`
+	ErrorPage                      string   `yaml:"error_page"`
+	NodeName                       string   `yaml:"node_name"`
+	ConnectingHostHeaders          []string `yaml:"connecting_host_headers"`
+	ConnectingIPHeaders            []string `yaml:"connecting_ip_headers"`
+	ConnectingURIHeaders           []string `yaml:"connecting_uri_headers"`
+	ConnectingCaptchaStatusHeaders []string `yaml:"connecting_captcha_status_headers"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
@@ -50,6 +53,7 @@ type RuleSet struct {
 	IPBlockTrie  *dataType.TrieNode
 	URLAllowList *dataType.URLRuleList
 	URLBlockList *dataType.URLRuleList
+	CAPTCHARule  *dataType.CaptchaRule
 }
 
 // LoadRules Load all rules from the specified path
@@ -59,6 +63,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		IPBlockTrie:  &dataType.TrieNode{},
 		URLAllowList: &dataType.URLRuleList{},
 		URLBlockList: &dataType.URLRuleList{},
+		CAPTCHARule:  &dataType.CaptchaRule{},
 	}
 
 	// Load IP Allow List
@@ -85,7 +90,27 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
+	// Load CAPTCHA Rule
+	captchaFile := rulePath + "/CAPTCHA.yml"
+	if err := loadCAPTCHARule(captchaFile, rs.CAPTCHARule); err != nil {
+		return nil, err
+	}
+
 	return &rs, nil
+}
+
+func loadCAPTCHARule(file string, rule *dataType.CaptchaRule) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+
+	if err := yaml.Unmarshal(data, &rule); err != nil {
+		return err
+	}
+
+	return nil
+
 }
 
 // loadIPRules read the IP rule file and insert the rules into the trie
