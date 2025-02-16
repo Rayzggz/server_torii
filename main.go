@@ -29,6 +29,19 @@ func main() {
 
 	log.Printf("Ready to start server on port %s", cfg.Port)
 
+	//set log file
+	logFile, err := os.OpenFile(cfg.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	if err != nil {
+		log.Fatalf("Failed to open log file: %v", err)
+	}
+	defer func(logFile *os.File) {
+		err := logFile.Close()
+		if err != nil {
+			log.Fatalf("Failed to close log file: %v", err)
+		}
+	}(logFile)
+	log.SetOutput(logFile)
+
 	// Start server
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

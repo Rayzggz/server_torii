@@ -94,7 +94,6 @@ func getClientIP(cfg *config.MainConfig, r *http.Request) string {
 		remoteAddr := r.RemoteAddr
 		ipStr, _, err := net.SplitHostPort(remoteAddr)
 		if err != nil {
-			//TODO: log error
 			clientIP = remoteAddr
 		} else {
 			clientIP = ipStr

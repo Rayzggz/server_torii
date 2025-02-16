@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"html/template"
+	"log"
 	"net/http"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
@@ -32,10 +33,15 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
+		_, err := w.Write([]byte("OK"))
+		if err != nil {
+			log.Printf("Error write response: %v", err)
+			return
+		}
 	} else if bytes.Compare(decision.HTTPCode, []byte("403")) == 0 {
 		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
 		if err != nil {
+			log.Printf("Error template: %v", err)
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -52,6 +58,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		w.WriteHeader(http.StatusForbidden)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err = tpl.Execute(w, data); err != nil {
+			log.Printf("Error template: %v", err)
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -59,18 +66,21 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	} else if bytes.Compare(decision.HTTPCode, []byte("CAPTCHA")) == 0 {
 		tpl, err := template.ParseFiles(cfg.ErrorPage + "/CAPTCHA.html")
 		if err != nil {
+			log.Printf("Error template: %v", err)
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusServiceUnavailable)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		if err = tpl.Execute(w, nil); err != nil {
+			log.Printf("Error template: %v", err)
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
 	} else {
 		//should never happen
+		log.Printf("Error access in wrong state: %v", decision)
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"html/template"
+	"log"
 	"net/http"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
@@ -21,16 +22,28 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		if bytes.Compare(decision.ResponseData, []byte("bad")) == 0 {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("bad"))
+			_, err := w.Write([]byte("bad"))
+			if err != nil {
+				log.Printf("Error writing response: %v", err)
+				return
+			}
 			return
 		} else if bytes.Compare(decision.ResponseData, []byte("good")) == 0 {
 			w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenClearance(reqData, *ruleSet))+"; Path=/; HttpOnly")
 			w.WriteHeader(http.StatusOK)
-			w.Write(decision.ResponseData)
+			_, err := w.Write(decision.ResponseData)
+			if err != nil {
+				log.Printf("Error writing response: %v", err)
+				return
+			}
 		} else {
 			//should not be here
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte("500 - Internal Server Error"))
+			_, err := w.Write([]byte("500 - Internal Server Error"))
+			if err != nil {
+				log.Printf("Error writing response: %v", err)
+				return
+			}
 		}
 	} else {
 		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")

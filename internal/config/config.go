@@ -16,6 +16,7 @@ type MainConfig struct {
 	WebPath                        string   `yaml:"web_path"`
 	RulePath                       string   `yaml:"rule_path"`
 	ErrorPage                      string   `yaml:"error_page"`
+	LogPath                        string   `yaml:"log_path"`
 	NodeName                       string   `yaml:"node_name"`
 	ConnectingHostHeaders          []string `yaml:"connecting_host_headers"`
 	ConnectingIPHeaders            []string `yaml:"connecting_ip_headers"`
