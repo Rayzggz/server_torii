@@ -15,6 +15,10 @@ func main() {
 	flag.StringVar(&basePath, "prefix", "", "Config file base path")
 	flag.Parse()
 
+	if basePath == "" {
+		basePath, _ = os.Getwd()
+	}
+
 	// Load MainConfig
 	cfg, err := config.LoadMainConfig(basePath)
 	if err != nil {
