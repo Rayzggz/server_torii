@@ -65,6 +65,10 @@
               alert("Bad CAPTCHA, please refresh the page and try again.\n"
                       + "您未能通过人机验证，请刷新页面后重试。");
               break;
+            case "timeout":
+              alert("Verification timeout, please refresh the page and try again.\n"
+                      + "验证超时，请刷新页面后重试。");
+              break;
             default:
               alert("Unexpected error occurred, please refresh the page and try again.\n"
                       + "发生了意料之外的错误，请刷新页面后重试。");
@@ -72,12 +76,24 @@
         }
       }
     }
+
+    function checkCaptchaRender() {
+      const captchaDiv = document.querySelector(".h-captcha");
+
+      if (captchaDiv && captchaDiv.children.length > 0) {
+      } else {
+        document.getElementById("verifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
+                + "加载人机验证失败，请检查尝试更换网络环境后重试。";
+      }
+    }
+    setTimeout(checkCaptchaRender, 5000); // 5秒后检查
   </script>
 </head>
 <body>
 <div class="container">
   <div class="message">Checking that you are not a robot</div>
-  <div class="verifyBox"><div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div></div>
+  <div class="message">请完成人机验证</div>
+  <div class="verifyBox" id="verifyBox"><div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div></div>
   <div class="footer">
     DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
   </div>

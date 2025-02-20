@@ -1,8 +1,8 @@
 port: "25555"
 web_path: "/torii"
-rule_path: "/www/dev/server_torii/config/rules"
-error_page: "/www/dev/server_torii/config/error_page"
-log_path: "/www/dev/server_torii/log/access.log"
+rule_path: "/www/server_torii/config/rules"
+error_page: "/www/server_torii/config/error_page"
+log_path: "/www/server_torii/log/access.log"
 node_name: "Server Torii"
 connecting_host_headers:
   - "Torii-Real-Host"

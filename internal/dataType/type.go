@@ -11,7 +11,8 @@ type UserRequest struct {
 }
 
 type CaptchaRule struct {
-	SecretKey           string `yaml:"secret_key"`
-	CaptchaValidateTime int64  `yaml:"captcha_validate_time"`
-	HCaptchaSecret      string `yaml:"hcaptcha_secret"`
+	SecretKey               string `yaml:"secret_key"`
+	CaptchaValidateTime     int64  `yaml:"captcha_validate_time"`
+	CaptchaChallengeTimeout int64  `yaml:"captcha_challenge_timeout"`
+	HCaptchaSecret          string `yaml:"hcaptcha_secret"`
 }
