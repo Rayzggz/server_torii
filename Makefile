@@ -34,3 +34,6 @@ uninstall:
 	sudo systemctl disable server_torii
 	sudo rm -f /etc/systemd/system/server_torii.service
 	sudo systemctl daemon-reload
+
+reinstall: uninstall install
+
