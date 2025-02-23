@@ -32,7 +32,7 @@
       margin-top: 10px;
       color: #666;
     }
-    .verifyBox {
+    .toriiVerifyBox {
       margin-top: 10px;
       color: #666;
     }
@@ -85,7 +85,7 @@
 
       if (captchaDiv && captchaDiv.children.length > 0) {
       } else {
-        document.getElementById("verifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
+        document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
                 + "加载人机验证失败，请检查尝试更换网络环境后重试。";
       }
     }
@@ -96,7 +96,7 @@
 <div class="container">
   <div class="message">Checking that you are not a robot</div>
   <div class="message">请完成人机验证</div>
-  <div class="verifyBox" id="verifyBox"><div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div></div>
+  <div class="toriiVerifyBox" id="toriiVerifyBox"><div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div></div>
   <div class="footer">
     DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
   </div>
