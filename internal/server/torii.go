@@ -36,14 +36,6 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 				log.Printf("Error writing response: %v", err)
 				return
 			}
-		} else if bytes.Compare(decision.ResponseData, []byte("timeout")) == 0 {
-			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte("timeout"))
-			if err != nil {
-				log.Printf("Error writing response: %v", err)
-				return
-			}
-			return
 		} else {
 			//should not be here
 			w.WriteHeader(http.StatusInternalServerError)

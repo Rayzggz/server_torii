@@ -1,4 +1,3 @@
 secret_key: "0378b0f84c4310279918d71a5647ba5d"
 captcha_validate_time: 600
-captcha_challenge_timeout: 120
 hcaptcha_secret: ""

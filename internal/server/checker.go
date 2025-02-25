@@ -70,7 +70,6 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Set-Cookie", "__torii_session_id="+string(decision.ResponseData)+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusServiceUnavailable)
 		if err = tpl.Execute(w, nil); err != nil {
