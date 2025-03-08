@@ -5,6 +5,7 @@ all: build
 
 
 build:
+	go mod tidy
 	go build -o server_torii .
 
 clean:
@@ -25,15 +26,15 @@ install: build
 	@echo "[Install]" >> $(SERVICE_FILE)
 	@echo "WantedBy=multi-user.target" >> $(SERVICE_FILE)
 
-	sudo systemctl daemon-reload
-	sudo systemctl enable server_torii
-	sudo systemctl start server_torii
+	systemctl daemon-reload
+	systemctl enable server_torii
+	systemctl start server_torii
 
 uninstall:
-	sudo systemctl stop server_torii
-	sudo systemctl disable server_torii
-	sudo rm -f /etc/systemd/system/server_torii.service
-	sudo systemctl daemon-reload
+	systemctl stop server_torii
+	systemctl disable server_torii
+	rm -f /etc/systemd/system/server_torii.service
+	systemctl daemon-reload
 
 reinstall: uninstall install
 
