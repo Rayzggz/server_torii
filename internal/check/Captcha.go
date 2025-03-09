@@ -32,7 +32,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	}
 
 	if !verifyClearanceCookie(reqData, *ruleSet) {
-		decision.SetCode(action.Done, []byte("CAPTCHA"))
+		decision.SetResponse(action.Done, []byte("CAPTCHA"), genSessionID(reqData, *ruleSet))
 		return
 	}
 
@@ -49,6 +49,11 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	hCaptchaResponse := r.FormValue("h-captcha-response")
 	if hCaptchaResponse == "" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	if !verifySessionIDCookie(reqData, *ruleSet) {
+		decision.SetResponse(action.Done, []byte("200"), []byte("badSession"))
 		return
 	}
 
@@ -125,6 +130,43 @@ func verifyClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
+
+	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
+
+}
+
+func genSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+	timeNow := time.Now().Unix()
+	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", time.Now().Unix()), fmt.Sprintf("%x", mac.Sum(nil))))
+}
+
+func verifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+	if reqData.ToriiSessionID == "" {
+		return false
+	}
+	parts := strings.Split(reqData.ToriiSessionID, ":")
+	if len(parts) != 2 {
+		return false
+	}
+	timestamp := parts[0]
+	expectedHash := parts[1]
+
+	timeNow := time.Now().Unix()
+	parsedTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil {
+		log.Printf("Error parsing timestamp: %v", err)
+		return false
+	}
+
+	if timeNow-parsedTimestamp > ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout {
+		return false
+	}
+
+	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))

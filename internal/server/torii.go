@@ -28,6 +28,14 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 				return
 			}
 			return
+		} else if bytes.Compare(decision.ResponseData, []byte("badSession")) == 0 {
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte("badSession"))
+			if err != nil {
+				log.Printf("Error writing response: %v", err)
+				return
+			}
+			return
 		} else if bytes.Compare(decision.ResponseData, []byte("good")) == 0 {
 			w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenClearance(reqData, *ruleSet))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
 			w.WriteHeader(http.StatusOK)
