@@ -16,3 +16,12 @@ type CaptchaRule struct {
 	CaptchaChallengeSessionTimeout int64  `yaml:"captcha_challenge_session_timeout"`
 	HCaptchaSecret                 string `yaml:"hcaptcha_secret"`
 }
+
+type VerifyBotRule struct {
+	VerifyGoogleBot bool `yaml:"verify_google_bot"`
+	VerifyBingBot   bool `yaml:"verify_bing_bot"`
+	VerifyBaiduBot  bool `yaml:"verify_baidu_bot"`
+	VerifyYandexBot bool `yaml:"verify_yandex_bot"`
+	VerifySogouBot  bool `yaml:"verify_sogou_bot"`
+	VerifyAppleBot  bool `yaml:"verify_apple_bot"`
+}

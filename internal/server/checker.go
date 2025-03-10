@@ -22,6 +22,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.IPBlockList)
 	checkFuncs = append(checkFuncs, check.URLAllowList)
 	checkFuncs = append(checkFuncs, check.URLBlockList)
+	checkFuncs = append(checkFuncs, check.VerifyBot)
 	checkFuncs = append(checkFuncs, check.Captcha)
 
 	for _, checkFunc := range checkFuncs {

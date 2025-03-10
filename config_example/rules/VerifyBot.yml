@@ -1,0 +1,6 @@
+verify_google_bot: true
+verify_bing_bot: true
+verify_baidu_bot: true
+verify_yandex_bot: true
+verify_sogou_bot: true
+verify_apple_bot: true

@@ -50,21 +50,23 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 // RuleSet stores all rules
 type RuleSet struct {
-	IPAllowTrie  *dataType.TrieNode
-	IPBlockTrie  *dataType.TrieNode
-	URLAllowList *dataType.URLRuleList
-	URLBlockList *dataType.URLRuleList
-	CAPTCHARule  *dataType.CaptchaRule
+	IPAllowTrie   *dataType.TrieNode
+	IPBlockTrie   *dataType.TrieNode
+	URLAllowList  *dataType.URLRuleList
+	URLBlockList  *dataType.URLRuleList
+	CAPTCHARule   *dataType.CaptchaRule
+	VerifyBotRule *dataType.VerifyBotRule
 }
 
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPAllowTrie:  &dataType.TrieNode{},
-		IPBlockTrie:  &dataType.TrieNode{},
-		URLAllowList: &dataType.URLRuleList{},
-		URLBlockList: &dataType.URLRuleList{},
-		CAPTCHARule:  &dataType.CaptchaRule{},
+		IPAllowTrie:   &dataType.TrieNode{},
+		IPBlockTrie:   &dataType.TrieNode{},
+		URLAllowList:  &dataType.URLRuleList{},
+		URLBlockList:  &dataType.URLRuleList{},
+		CAPTCHARule:   &dataType.CaptchaRule{},
+		VerifyBotRule: &dataType.VerifyBotRule{},
 	}
 
 	// Load IP Allow List
@@ -97,6 +99,12 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
+	// Load Verify Bot Rule
+	verifyBotFile := rulePath + "/VerifyBot.yml"
+	if err := loadVerifyBotRule(verifyBotFile, rs.VerifyBotRule); err != nil {
+		return nil, err
+	}
+
 	return &rs, nil
 }
 
@@ -112,6 +120,17 @@ func loadCAPTCHARule(file string, rule *dataType.CaptchaRule) error {
 
 	return nil
 
+}
+
+func loadVerifyBotRule(file string, rule *dataType.VerifyBotRule) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	if err := yaml.Unmarshal(data, &rule); err != nil {
+		return err
+	}
+	return nil
 }
 
 // loadIPRules read the IP rule file and insert the rules into the trie
