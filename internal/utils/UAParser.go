@@ -3,10 +3,14 @@ package utils
 import (
 	"fmt"
 	"github.com/mssola/useragent"
+	"regexp"
 )
 
 func GetClearanceUserAgent(inputUA string) string {
 	if len(inputUA) < 8 || inputUA[:8] != "Mozilla/" {
+		if inputUA == "" || regexp.MustCompile(`^\s*$`).MatchString(inputUA) {
+			return "undefined"
+		}
 		return inputUA
 	}
 
