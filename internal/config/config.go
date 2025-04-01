@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 	"strings"
 )
 
@@ -56,6 +57,7 @@ type RuleSet struct {
 	URLBlockList  *dataType.URLRuleList
 	CAPTCHARule   *dataType.CaptchaRule
 	VerifyBotRule *dataType.VerifyBotRule
+	HTTPFloodRule *dataType.HTTPFloodRule
 }
 
 // LoadRules Load all rules from the specified path
@@ -67,6 +69,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		URLBlockList:  &dataType.URLRuleList{},
 		CAPTCHARule:   &dataType.CaptchaRule{},
 		VerifyBotRule: &dataType.VerifyBotRule{},
+		HTTPFloodRule: &dataType.HTTPFloodRule{},
 	}
 
 	// Load IP Allow List
@@ -102,6 +105,12 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	// Load Verify Bot Rule
 	verifyBotFile := rulePath + "/VerifyBot.yml"
 	if err := loadVerifyBotRule(verifyBotFile, rs.VerifyBotRule); err != nil {
+		return nil, err
+	}
+
+	// Load HTTP Flood Rule
+	httpFloodFile := rulePath + "/HTTPFlood.yml"
+	if err := loadHTTPFloodRule(httpFloodFile, rs.HTTPFloodRule); err != nil {
 		return nil, err
 	}
 
@@ -207,4 +216,44 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 	}
 
 	return scanner.Err()
+}
+
+func loadHTTPFloodRule(file string, rule *dataType.HTTPFloodRule) error {
+	data, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+
+	type httpFloodRuleYAML struct {
+		HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit"`
+		HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit"`
+	}
+
+	var ymlRule httpFloodRuleYAML
+	err = yaml.Unmarshal(data, &ymlRule)
+	if err != nil {
+		return err
+	}
+
+	rule.HTTPFloodSpeedLimit = make(map[int]int)
+	rule.HTTPFloodSameURILimit = make(map[int]int)
+
+	for _, s := range ymlRule.HTTPFloodSpeedLimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return err
+		}
+		rule.HTTPFloodSpeedLimit[seconds] = limit
+	}
+
+	for _, s := range ymlRule.HTTPFloodSameURILimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return err
+		}
+		rule.HTTPFloodSameURILimit[seconds] = limit
+	}
+
+	return nil
+
 }

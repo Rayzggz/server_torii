@@ -46,6 +46,8 @@ func main() {
 	}(logFile)
 	log.SetOutput(logFile)
 
+	//allocate shared memory
+
 	// Start server
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)

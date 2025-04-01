@@ -25,3 +25,11 @@ type VerifyBotRule struct {
 	VerifySogouBot  bool `yaml:"verify_sogou_bot"`
 	VerifyAppleBot  bool `yaml:"verify_apple_bot"`
 }
+
+type HTTPFloodRule struct {
+	HTTPFloodSpeedLimit   map[int]int
+	HTTPFloodSameURILimit map[int]int
+}
+
+type SharedMemory struct {
+}
