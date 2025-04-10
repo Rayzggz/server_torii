@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func ParseRate(s string) (int, int, error) {
+func ParseRate(s string) (int64, int64, error) {
 	parts := strings.Split(s, "/")
 	if len(parts) != 2 {
 		return 0, 0, fmt.Errorf("unexpected rate format: %s", s)
@@ -37,5 +37,5 @@ func ParseRate(s string) (int, int, error) {
 	default:
 		return 0, 0, fmt.Errorf("unexpected time unit: %s", string(unit))
 	}
-	return limit, seconds, nil
+	return int64(limit), int64(seconds), nil
 }

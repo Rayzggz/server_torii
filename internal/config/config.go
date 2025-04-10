@@ -235,8 +235,8 @@ func loadHTTPFloodRule(file string, rule *dataType.HTTPFloodRule) error {
 		return err
 	}
 
-	rule.HTTPFloodSpeedLimit = make(map[int]int)
-	rule.HTTPFloodSameURILimit = make(map[int]int)
+	rule.HTTPFloodSpeedLimit = make(map[int64]int64)
+	rule.HTTPFloodSameURILimit = make(map[int64]int64)
 
 	for _, s := range ymlRule.HTTPFloodSpeedLimit {
 		limit, seconds, err := utils.ParseRate(s)

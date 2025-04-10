@@ -27,9 +27,11 @@ type VerifyBotRule struct {
 }
 
 type HTTPFloodRule struct {
-	HTTPFloodSpeedLimit   map[int]int
-	HTTPFloodSameURILimit map[int]int
+	HTTPFloodSpeedLimit   map[int64]int64
+	HTTPFloodSameURILimit map[int64]int64
 }
 
 type SharedMemory struct {
+	HTTPFloodSpeedLimitCounter   *Counter
+	HTTPFloodSameURILimitCounter *Counter
 }

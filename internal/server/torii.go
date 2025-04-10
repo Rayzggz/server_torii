@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
 	decision := action.NewDecision()
 
 	decision.SetCode(action.Continue, []byte("403"))

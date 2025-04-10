@@ -7,7 +7,7 @@ import (
 	"server_torii/internal/dataType"
 )
 
-func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	remoteIP := reqData.RemoteIP
 	trie := ruleSet.IPBlockTrie
 	ip := net.ParseIP(remoteIP)

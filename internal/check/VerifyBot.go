@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	ua := strings.ToLower(reqData.UserAgent)
 
 	var exptractRDNS []string

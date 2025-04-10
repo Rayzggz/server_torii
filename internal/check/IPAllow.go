@@ -7,7 +7,7 @@ import (
 	"server_torii/internal/dataType"
 )
 
-func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	remoteIP := reqData.RemoteIP
 	trie := ruleSet.IPAllowTrie
 

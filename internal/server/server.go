@@ -10,15 +10,15 @@ import (
 )
 
 // StartServer starts the HTTP server
-func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet) error {
+func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		userRequestData := processRequestData(cfg, r)
 
 		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
-			CheckTorii(w, r, userRequestData, ruleSet, cfg)
+			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
 		} else {
-			CheckMain(w, userRequestData, ruleSet, cfg)
+			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
 		}
 
 	})

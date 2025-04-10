@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"server_torii/internal/config"
+	"server_torii/internal/dataType"
 	"server_torii/internal/server"
 	"syscall"
 )
@@ -47,6 +48,10 @@ func main() {
 	log.SetOutput(logFile)
 
 	//allocate shared memory
+	sharedMem := &dataType.SharedMemory{
+		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(64, 60),
+		HTTPFloodSameURILimitCounter: dataType.NewCounter(64, 60),
+	}
 
 	// Start server
 	stop := make(chan os.Signal, 1)
@@ -54,7 +59,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg, ruleSet)
+		serverErr <- server.StartServer(cfg, ruleSet, sharedMem)
 	}()
 
 	select {

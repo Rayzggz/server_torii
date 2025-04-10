@@ -6,7 +6,7 @@ import (
 	"server_torii/internal/dataType"
 )
 
-func URLBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func URLBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	url := reqData.Uri
 	list := ruleSet.URLBlockList
 	if list.Match(url) {

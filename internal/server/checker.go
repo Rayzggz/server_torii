@@ -12,9 +12,9 @@ import (
 	"time"
 )
 
-type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision)
+type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
 
-func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
 	decision := action.NewDecision()
 
 	checkFuncs := make([]CheckFunc, 0)
@@ -23,10 +23,11 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.URLAllowList)
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.VerifyBot)
+	checkFuncs = append(checkFuncs, check.HTTPFlood)
 	checkFuncs = append(checkFuncs, check.Captcha)
 
 	for _, checkFunc := range checkFuncs {
-		checkFunc(userRequestData, ruleSet, decision)
+		checkFunc(userRequestData, ruleSet, decision, sharedMem)
 		if decision.State == action.Done {
 			break
 		}

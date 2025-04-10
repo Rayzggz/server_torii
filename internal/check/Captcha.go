@@ -25,7 +25,7 @@ type HCaptchaResponse struct {
 	ErrorCodes  []string `json:"error-codes"`
 }
 
-func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	if !reqData.Captcha {
 		decision.Set(action.Continue)
 		return
