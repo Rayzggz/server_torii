@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>403 Forbidden</title>
+    <title>429 Too Many Requests</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -59,9 +59,9 @@
 </head>
 <body>
 <div class="container">
-    <div class="error-code">403</div>
-    <div class="message">Access Denied</div>
-    <div class="description">You do not have permission to access this resource.</div>
+    <div class="error-code">429</div>
+    <div class="message">Too Many Requests</div>
+    <div class="description">You have made too many requests in a short period of time.</div>
     <div class="debug-info">Node: {{.EdgeTag}}<br>
         Your IP: {{.ConnectIP}}<br>
         Date: {{.Date}}<br>
