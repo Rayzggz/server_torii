@@ -165,3 +165,16 @@ func (tc *Counter) GC() {
 		bucket.mu.Unlock()
 	}
 }
+
+func StartCounterGC(counter *Counter, interval time.Duration, stopCh <-chan struct{}) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			counter.GC()
+		case <-stopCh:
+			return
+		}
+	}
+}

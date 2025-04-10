@@ -5,10 +5,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/server"
+	"server_torii/internal/utils"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -49,9 +52,14 @@ func main() {
 
 	//allocate shared memory
 	sharedMem := &dataType.SharedMemory{
-		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(64, 60),
-		HTTPFloodSameURILimitCounter: dataType.NewCounter(64, 60),
+		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit)),
+		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSameURILimit)),
 	}
+
+	//GC
+	gcStopCh := make(chan struct{})
+	go dataType.StartCounterGC(sharedMem.HTTPFloodSpeedLimitCounter, time.Minute, gcStopCh)
+	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
 
 	// Start server
 	stop := make(chan os.Signal, 1)
@@ -65,6 +73,7 @@ func main() {
 	select {
 	case <-stop:
 		log.Println("Stopping server...")
+		close(gcStopCh)
 	case err := <-serverErr:
 		if err != nil {
 			log.Fatalf("Failed to start server: %v", err)

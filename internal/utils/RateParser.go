@@ -39,3 +39,13 @@ func ParseRate(s string) (int64, int64, error) {
 	}
 	return int64(limit), int64(seconds), nil
 }
+
+func FindMaxRateTime(rateList map[int64]int64) int64 {
+	maxTimeWindow := int64(0)
+	for window := range rateList {
+		if window > maxTimeWindow {
+			maxTimeWindow = window
+		}
+	}
+	return maxTimeWindow
+}
