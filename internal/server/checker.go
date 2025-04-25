@@ -81,6 +81,30 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
+	} else if bytes.Compare(decision.HTTPCode, []byte("429")) == 0 {
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/429.html")
+		if err != nil {
+			log.Printf("Error template: %v", err)
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		data := struct {
+			EdgeTag   string
+			ConnectIP string
+			Date      string
+		}{
+			EdgeTag:   cfg.NodeName,
+			ConnectIP: userRequestData.RemoteIP,
+			Date:      time.Now().Format("2006-01-02 15:04:05"),
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err = tpl.Execute(w, data); err != nil {
+			log.Printf("Error template: %v", err)
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
 	} else {
 		//should never happen
 		log.Printf("Error access in wrong state: %v", decision)
