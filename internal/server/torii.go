@@ -18,8 +18,19 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	decision.SetCode(action.Continue, []byte("403"))
 	if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
+	} else if reqData.Uri == cfg.WebPath+"/health_check" {
+		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
+		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
+			w.WriteHeader(http.StatusOK)
+			_, err := w.Write([]byte("ok"))
+			if err != nil {
+				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
+				return
+			}
+			return
+		}
 		if bytes.Compare(decision.ResponseData, []byte("bad")) == 0 {
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write([]byte("bad"))
