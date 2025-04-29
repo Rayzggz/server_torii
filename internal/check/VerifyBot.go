@@ -1,11 +1,13 @@
 package check
 
 import (
-	"log"
+	"errors"
+	"fmt"
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 	"strings"
 )
 
@@ -33,9 +35,13 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	actualRDNS, err := net.LookupAddr(reqData.RemoteIP)
 	if err != nil {
-		log.Printf("VerifyBot: LookupAddr failed for %s: %v", reqData.RemoteIP, err)
-		decision.SetCode(action.Done, []byte("403"))
-		return
+		var dnsErr *net.DNSError
+		//ignore the error if it is a not found error
+		if !(errors.As(err, &dnsErr) && dnsErr.IsNotFound) {
+			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: lookupAddr failed: %v", err))
+			decision.SetCode(action.Done, []byte("403"))
+			return
+		}
 	}
 
 	for _, rdns := range exptractRDNS {
@@ -43,7 +49,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 			if strings.Contains(actual, rdns) {
 				ips, err := net.LookupIP(actual)
 				if err != nil {
-					log.Printf("VerifyBot: LookupIP failed for %s: %v", actual, err)
+					utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: LookupIP failed: %v", err))
 					decision.SetCode(action.Done, []byte("403"))
 					return
 				}
@@ -56,7 +62,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 			}
 		}
 	}
-	log.Printf("VerifyBot: IP lookup failed for %s: %v", reqData.RemoteIP, err)
+	utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: LookupAddr failed: %v", err))
 	decision.SetCode(action.Done, []byte("403"))
 	return
 

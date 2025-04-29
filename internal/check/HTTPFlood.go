@@ -1,10 +1,11 @@
 package check
 
 import (
-	"log"
+	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 )
 
 func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
@@ -16,7 +17,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit {
 		if sharedMem.HTTPFloodSpeedLimitCounter.Query(ipKey, window) > limit {
-			log.Printf("HTTPFlood rate limit exceeded: IP %s, window %d, limit %d", ipKey, window, limit)
+			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 			decision.SetCode(action.Done, []byte("429"))
 			return
 		}
@@ -24,7 +25,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSameURILimit {
 		if sharedMem.HTTPFloodSameURILimitCounter.Query(uriKey, window) > limit {
-			log.Printf("HTTPFlood URI rate limit exceeded: IP %s, URI %s, window %d, limit %d", ipKey, reqData.Uri, window, limit)
+			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
 			decision.SetCode(action.Done, []byte("429"))
 			return
 		}

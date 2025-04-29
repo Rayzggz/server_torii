@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"server_torii/internal/action"
@@ -64,19 +63,19 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 
 	resp, err := http.PostForm("https://api.hcaptcha.com/siteverify", data)
 	if err != nil {
-		log.Printf("Error sending request to hCaptcha: %v", err)
+		utils.LogError(reqData, "", fmt.Sprintf("Error sending request to hCaptcha: %v", err))
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			log.Printf("Error closing response body: %v", err)
+			utils.LogError(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
 		}
 	}(resp.Body)
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("Error reading response from hCaptcha: %v", err)
+		utils.LogError(reqData, "", fmt.Sprintf("Error reading response from hCaptcha: %v", err))
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
@@ -84,7 +83,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	var hCaptchaResp HCaptchaResponse
 	err = json.Unmarshal(body, &hCaptchaResp)
 	if err != nil {
-		log.Printf("Error parsing response from hCaptcha: %v", err)
+		utils.LogError(reqData, "", fmt.Sprintf("Error parsing response from hCaptcha: %v", err))
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
@@ -120,7 +119,7 @@ func verifyClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 	timeNow := time.Now().Unix()
 	parsedTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		log.Printf("Error parsing timestamp: %v", err)
+		utils.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
 		return false
 	}
 
@@ -157,7 +156,7 @@ func verifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 	timeNow := time.Now().Unix()
 	parsedTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		log.Printf("Error parsing timestamp: %v", err)
+		utils.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
 		return false
 	}
 

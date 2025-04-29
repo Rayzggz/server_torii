@@ -3,12 +3,12 @@ package server
 import (
 	"bytes"
 	"html/template"
-	"log"
 	"net/http"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 	"time"
 )
 
@@ -24,7 +24,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write([]byte("bad"))
 			if err != nil {
-				log.Printf("Error writing response: %v", err)
+				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
 				return
 			}
 			return
@@ -32,7 +32,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write([]byte("badSession"))
 			if err != nil {
-				log.Printf("Error writing response: %v", err)
+				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
 				return
 			}
 			return
@@ -41,7 +41,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(decision.ResponseData)
 			if err != nil {
-				log.Printf("Error writing response: %v", err)
+				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
 				return
 			}
 		} else {
@@ -49,7 +49,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			w.WriteHeader(http.StatusInternalServerError)
 			_, err := w.Write([]byte("500 - Internal Server Error"))
 			if err != nil {
-				log.Printf("Error writing response: %v", err)
+				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
 				return
 			}
 		}
