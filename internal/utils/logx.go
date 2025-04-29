@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"server_torii/internal/dataType"
 	"sync"
 	"time"
 
@@ -71,43 +72,43 @@ func (m *LogxManager) openLogFile(path string) *os.File {
 	return f
 }
 
-func (m *LogxManager) LogInfo(ip, host, uri, ua, msg, msg2 string) {
-	lg := m.getLogger(host)
+func (m *LogxManager) LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
+	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
-		ip,
+		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		msg,
-		host,
-		uri,
-		ua,
+		reqData.Host,
+		reqData.Uri,
+		reqData.UserAgent,
 		msg2,
 	)
 	lg.Info(line)
 }
 
-func (m *LogxManager) LogError(ip, host, uri, ua, msg, msg2 string) {
-	lg := m.getLogger(host)
+func (m *LogxManager) LogError(reqData dataType.UserRequest, msg, msg2 string) {
+	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
-		ip,
+		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		msg,
-		host,
-		uri,
-		ua,
+		reqData.Host,
+		reqData.Uri,
+		reqData.UserAgent,
 		msg2,
 	)
 	lg.Error(line)
 }
 
-func (m *LogxManager) LogDebug(ip, host, uri, ua, msg, msg2 string) {
-	lg := m.getLogger(host)
+func (m *LogxManager) LogDebug(reqData dataType.UserRequest, msg, msg2 string) {
+	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
-		ip,
+		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
 		msg,
-		host,
-		uri,
-		ua,
+		reqData.Host,
+		reqData.Uri,
+		reqData.UserAgent,
 		msg2,
 	)
 	lg.Debug(line)
