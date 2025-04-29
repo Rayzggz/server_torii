@@ -1,5 +1,7 @@
 package dataType
 
+import "server_torii/internal/utils"
+
 type UserRequest struct {
 	RemoteIP       string
 	Uri            string
@@ -34,4 +36,5 @@ type HTTPFloodRule struct {
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
+	Logger                       *utils.LogxManager
 }

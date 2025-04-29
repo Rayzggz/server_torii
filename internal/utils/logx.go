@@ -14,9 +14,8 @@ import (
 
 type LogxManager struct {
 	basePath string
-	access   *os.File
 	loggers  map[string]*zap.Logger
-	mu       sync.Mutex
+	mu       sync.RWMutex
 }
 
 func NewManager(base string) *LogxManager {
@@ -25,24 +24,18 @@ func NewManager(base string) *LogxManager {
 	if err := os.MkdirAll(m.basePath, 0744); err != nil {
 		log.Printf("failed to create base log dir %s: %v", m.basePath, err)
 	}
-
-	accessPath := filepath.Join(m.basePath, "access.log")
-	f, err := os.OpenFile(accessPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		panic(fmt.Sprintf("failed to open access.log: %v", err))
-	}
-	m.access = f
-	log.SetOutput(f)
 	return m
 }
 
 func (m *LogxManager) getLogger(host string) *zap.Logger {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.mu.RLock()
 	if lg, ok := m.loggers[host]; ok {
+		m.mu.RUnlock()
 		return lg
 	}
-
+	m.mu.RUnlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	dir := filepath.Join(m.basePath, host)
 	if err := os.MkdirAll(dir, 0744); err != nil {
 		log.Printf("failed to create log dir %s: %v", dir, err)

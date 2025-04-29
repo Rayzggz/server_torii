@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
@@ -38,7 +39,8 @@ func main() {
 	log.Printf("Ready to start server on port %s", cfg.Port)
 
 	//set log file
-	logFile, err := os.OpenFile(cfg.LogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	defaultLogPath := filepath.Join(cfg.LogPath + "server_torii.log")
+	logFile, err := os.OpenFile(defaultLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
 	}
@@ -54,6 +56,7 @@ func main() {
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit)),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSameURILimit)),
+		Logger:                       utils.NewManager(cfg.LogPath),
 	}
 
 	//GC
