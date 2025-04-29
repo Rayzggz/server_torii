@@ -19,7 +19,13 @@ type LogxManager struct {
 	mu       sync.RWMutex
 }
 
-func NewManager(base string) *LogxManager {
+var logger *LogxManager
+
+func InitLogx(base string) {
+	logger = newManager(base)
+}
+
+func newManager(base string) *LogxManager {
 	m := &LogxManager{basePath: base, loggers: make(map[string]*zap.Logger)}
 
 	if err := os.MkdirAll(m.basePath, 0744); err != nil {
@@ -72,7 +78,12 @@ func (m *LogxManager) openLogFile(path string) *os.File {
 	return f
 }
 
-func (m *LogxManager) LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
+func LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
+	m := logger
+	if m == nil {
+		log.Printf("LogxManager is not initialized")
+		return
+	}
 	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,
@@ -86,7 +97,12 @@ func (m *LogxManager) LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
 	lg.Info(line)
 }
 
-func (m *LogxManager) LogError(reqData dataType.UserRequest, msg, msg2 string) {
+func LogError(reqData dataType.UserRequest, msg, msg2 string) {
+	m := logger
+	if m == nil {
+		log.Printf("LogxManager is not initialized")
+		return
+	}
 	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,
@@ -100,7 +116,12 @@ func (m *LogxManager) LogError(reqData dataType.UserRequest, msg, msg2 string) {
 	lg.Error(line)
 }
 
-func (m *LogxManager) LogDebug(reqData dataType.UserRequest, msg, msg2 string) {
+func LogDebug(reqData dataType.UserRequest, msg, msg2 string) {
+	m := logger
+	if m == nil {
+		log.Printf("LogxManager is not initialized")
+		return
+	}
 	lg := m.getLogger(reqData.Host)
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,

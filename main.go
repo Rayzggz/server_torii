@@ -52,6 +52,8 @@ func main() {
 	}(logFile)
 	log.SetOutput(logFile)
 
+	utils.InitLogx(cfg.LogPath)
+
 	//allocate shared memory
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit)),
