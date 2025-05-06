@@ -1,0 +1,32 @@
+ARG ALPINE_VERSION=3.21
+ARG GO_VERSION=1.23.5
+ARG AUTHOR=Rayzggz
+ARG SERVER_NAME=server_torii
+
+FROM golang:${GO_VERSION}-alpine${ALPINE_VERSION} AS builder
+
+ARG ALPINE_VERSION
+ARG GO_VERSION
+ARG SERVER_NAME
+ARG TARGETOS
+ARG TARGETARCH
+
+WORKDIR /app
+
+COPY . .
+
+RUN set -eux; \
+    TARGETOS=${TARGETOS:-linux}; \
+    TARGETARCH=${TARGETARCH:-amd64}; \
+    echo "Building for TARGETOS=${TARGETOS} TARGETARCH=${TARGETARCH}"; \
+    go mod tidy; \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -ldflags="-s -w" -o /app/${SERVER_NAME}
+
+FROM alpine:${ALPINE_VERSION} AS final
+
+ARG SERVER_NAME
+
+COPY --from=builder /app/${SERVER_NAME} /app/${SERVER_NAME}
+
+EXPOSE 8888
+ENTRYPOINT ["/app/server_torii"]
