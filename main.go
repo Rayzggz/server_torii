@@ -1,6 +1,7 @@
 package main
 
 import (
+	_ "embed"
 	"flag"
 	"log"
 	"os"
@@ -15,6 +16,9 @@ import (
 	"time"
 )
 
+//go:embed config/default.yaml
+var defaultConfigContent []byte
+
 func main() {
 	var basePath string
 	flag.StringVar(&basePath, "prefix", "", "Config file base path")
@@ -25,21 +29,18 @@ func main() {
 	}
 
 	// Load MainConfig
-	cfg, err := config.LoadMainConfig(basePath)
-	if err != nil {
-		log.Fatalf("Load config failed: %v", err)
-	}
+	config.InitConfig(defaultConfigContent)
 
 	// Load rules
-	ruleSet, err := config.LoadRules(cfg.RulePath)
+	ruleSet, err := config.LoadRules(config.Cfg.Server.RulePath)
 	if err != nil {
 		log.Fatalf("Load rules failed: %v", err)
 	}
 
-	log.Printf("Ready to start server on port %s", cfg.Port)
+	log.Printf("Ready to start server on port %s", config.Cfg.Server.Port)
 
 	//set log file
-	defaultLogPath := filepath.Join(cfg.LogPath + "server_torii.log")
+	defaultLogPath := filepath.Join(config.Cfg.Server.LogPath + "server_torii.log")
 	logFile, err := os.OpenFile(defaultLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)
@@ -52,7 +53,7 @@ func main() {
 	}(logFile)
 	log.SetOutput(logFile)
 
-	utils.InitLogx(cfg.LogPath)
+	utils.InitLogx(config.Cfg.Server.LogPath)
 
 	//allocate shared memory
 	sharedMem := &dataType.SharedMemory{
@@ -71,7 +72,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg, ruleSet, sharedMem)
+		serverErr <- server.StartServer(ruleSet, sharedMem)
 	}()
 
 	select {

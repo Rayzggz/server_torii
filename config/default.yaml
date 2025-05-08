@@ -1,0 +1,15 @@
+server:
+  port: "25555"
+  web_path: "/torii"
+  rule_path: "/www/server_torii/config/rules"
+  error_page: "/www/server_torii/config/error_page"
+  log_path: "/www/server_torii/log/"
+  node_name: "Server Torii"
+  connecting_host_headers:
+    - "Torii-Real-Host"
+  connecting_ip_headers:
+    - "Torii-Real-IP"
+  connecting_uri_headers:
+    - "Torii-Original-URI"
+  connecting_captcha_status_headers:
+    - "Torii-Captcha-Status"

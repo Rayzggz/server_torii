@@ -2,51 +2,73 @@ package config
 
 import (
 	"bufio"
+	"bytes"
+	"fmt"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 	"net"
 	"os"
-	"path/filepath"
 	"regexp"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
 	"strings"
 )
 
-type MainConfig struct {
-	Port                           string   `yaml:"port"`
-	WebPath                        string   `yaml:"web_path"`
-	RulePath                       string   `yaml:"rule_path"`
-	ErrorPage                      string   `yaml:"error_page"`
-	LogPath                        string   `yaml:"log_path"`
-	NodeName                       string   `yaml:"node_name"`
-	ConnectingHostHeaders          []string `yaml:"connecting_host_headers"`
-	ConnectingIPHeaders            []string `yaml:"connecting_ip_headers"`
-	ConnectingURIHeaders           []string `yaml:"connecting_uri_headers"`
-	ConnectingCaptchaStatusHeaders []string `yaml:"connecting_captcha_status_headers"`
+type ServerConfig struct {
+	Port                           string   `mapstructure:"port"`
+	WebPath                        string   `mapstructure:"web_path"`
+	RulePath                       string   `mapstructure:"rule_path"`
+	ErrorPage                      string   `mapstructure:"error_page"`
+	LogPath                        string   `mapstructure:"log_path"`
+	NodeName                       string   `mapstructure:"node_name"`
+	ConnectingHostHeaders          []string `mapstructure:"connecting_host_headers"`
+	ConnectingIPHeaders            []string `mapstructure:"connecting_ip_headers"`
+	ConnectingURIHeaders           []string `mapstructure:"connecting_uri_headers"`
+	ConnectingCaptchaStatusHeaders []string `mapstructure:"connecting_captcha_status_headers"`
 }
 
-// LoadMainConfig Read the configuration file and return the configuration object
-func LoadMainConfig(basePath string) (*MainConfig, error) {
-	exePath, err := os.Executable()
-	if err != nil {
-		return nil, err
-	}
-	if basePath == "" {
-		basePath = filepath.Dir(exePath)
-	}
-	configPath := filepath.Join(basePath, "config", "torii.yml")
+type AppConfig struct {
+	Server ServerConfig `mapstructure:"server"`
+}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, err
+var Cfg AppConfig
+
+func InitConfig(defaultConfigContent []byte) {
+	// 1. 处理命令行参数
+	var configFile string
+	pflag.StringVar(&configFile, "config", "", "Path to custom config file")
+	pflag.Parse()
+
+	v := viper.New()
+
+	// 2. 加载嵌入的默认配置文件
+	if len(defaultConfigContent) > 0 {
+		v.SetConfigType("yml")
+		if err := v.ReadConfig(bytes.NewBuffer(defaultConfigContent)); err != nil {
+			fmt.Printf("加载默认配置失败: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
-	var cfg MainConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+	// 3. 加载外部配置文件（如果存在）
+	if configFile != "" {
+		if _, err := os.Stat(configFile); err == nil {
+			v.SetConfigFile(configFile)
+			if err := v.MergeInConfig(); err != nil {
+				fmt.Printf("加载外部配置失败: %v (路径: %s)\n", err, configFile)
+				os.Exit(1)
+			}
+		} else {
+			fmt.Printf("警告: 外部配置文件不存在，使用默认配置 (路径: %s)\n", configFile)
+		}
 	}
 
-	return &cfg, nil
+	// 4. 映射到结构体
+	if err := v.Unmarshal(&Cfg); err != nil {
+		fmt.Println("解析配置失败:", err)
+		os.Exit(1)
+	}
 }
 
 // RuleSet stores all rules
