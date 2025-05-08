@@ -28,5 +28,5 @@ ARG SERVER_NAME
 
 COPY --from=builder /app/${SERVER_NAME} /app/${SERVER_NAME}
 
-EXPOSE 8888
+EXPOSE 25555
 ENTRYPOINT ["/app/server_torii"]
