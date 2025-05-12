@@ -15,7 +15,7 @@ import (
 
 type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
 
-func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
+func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
 	decision := action.NewDecision()
 
 	checkFuncs := make([]CheckFunc, 0)
@@ -42,7 +42,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 	} else if bytes.Compare(decision.HTTPCode, []byte("403")) == 0 {
-		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
+		tpl, err := template.ParseFiles(config.Cfg.Server.ErrorPage + "/403.html")
 		if err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -54,7 +54,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   config.Cfg.Server.NodeName,
 			ConnectIP: userRequestData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
@@ -67,7 +67,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 
 	} else if bytes.Compare(decision.HTTPCode, []byte("CAPTCHA")) == 0 {
-		tpl, err := template.ParseFiles(cfg.ErrorPage + "/CAPTCHA.html")
+		tpl, err := template.ParseFiles(config.Cfg.Server.ErrorPage + "/CAPTCHA.html")
 		if err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -83,7 +83,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 
 	} else if bytes.Compare(decision.HTTPCode, []byte("429")) == 0 {
-		tpl, err := template.ParseFiles(cfg.ErrorPage + "/429.html")
+		tpl, err := template.ParseFiles(config.Cfg.Server.ErrorPage + "/429.html")
 		if err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -94,7 +94,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   config.Cfg.Server.NodeName,
 			ConnectIP: userRequestData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}

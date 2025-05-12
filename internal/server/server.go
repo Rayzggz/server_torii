@@ -10,33 +10,33 @@ import (
 )
 
 // StartServer starts the HTTP server
-func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) error {
+func StartServer(ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
-		userRequestData := processRequestData(cfg, r)
+		userRequestData := processRequestData(r)
 
-		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
-			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
+		if strings.HasPrefix(userRequestData.Uri, config.Cfg.Server.WebPath) {
+			CheckTorii(w, r, userRequestData, ruleSet, sharedMem)
 		} else {
-			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
+			CheckMain(w, userRequestData, ruleSet, sharedMem)
 		}
 
 	})
 
-	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
-	return http.ListenAndServe(":"+cfg.Port, nil)
+	log.Printf("HTTP Server listening on :%s ...", config.Cfg.Server.Port)
+	return http.ListenAndServe(":"+config.Cfg.Server.Port, nil)
 }
 
-func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
+func processRequestData(r *http.Request) dataType.UserRequest {
 
 	userRequest := dataType.UserRequest{
-		RemoteIP:       getClientIP(cfg, r),
-		Uri:            getReqURI(cfg, r),
-		Captcha:        getCaptchaStatus(cfg, r),
+		RemoteIP:       getClientIP(r),
+		Uri:            getReqURI(r),
+		Captcha:        getCaptchaStatus(r),
 		ToriiClearance: getHeader(r, "__torii_clearance"),
 		ToriiSessionID: getHeader(r, "__torii_session_id"),
 		UserAgent:      r.UserAgent(),
-		Host:           getReqHost(cfg, r),
+		Host:           getReqHost(r),
 	}
 	return userRequest
 }
@@ -49,9 +49,9 @@ func getHeader(r *http.Request, headerName string) string {
 	return cookie.Value
 }
 
-func getCaptchaStatus(cfg *config.MainConfig, r *http.Request) bool {
+func getCaptchaStatus(r *http.Request) bool {
 	captchaStatus := false
-	for _, headerName := range cfg.ConnectingCaptchaStatusHeaders {
+	for _, headerName := range config.Cfg.Server.ConnectingCaptchaStatusHeaders {
 		if captchaVal := r.Header.Get(headerName); captchaVal != "" {
 			if captchaVal == "on" {
 				captchaStatus = true
@@ -63,9 +63,9 @@ func getCaptchaStatus(cfg *config.MainConfig, r *http.Request) bool {
 
 }
 
-func getReqURI(cfg *config.MainConfig, r *http.Request) string {
+func getReqURI(r *http.Request) string {
 	var clientURI string
-	for _, headerName := range cfg.ConnectingURIHeaders {
+	for _, headerName := range config.Cfg.Server.ConnectingURIHeaders {
 		if uriVal := r.Header.Get(headerName); uriVal != "" {
 			clientURI = uriVal
 			break
@@ -77,9 +77,9 @@ func getReqURI(cfg *config.MainConfig, r *http.Request) string {
 	return clientURI
 }
 
-func getClientIP(cfg *config.MainConfig, r *http.Request) string {
+func getClientIP(r *http.Request) string {
 	var clientIP string
-	for _, headerName := range cfg.ConnectingIPHeaders {
+	for _, headerName := range config.Cfg.Server.ConnectingIPHeaders {
 		if ipVal := r.Header.Get(headerName); ipVal != "" {
 			if strings.Contains(clientIP, ",") {
 				parts := strings.Split(ipVal, ",")
@@ -102,9 +102,9 @@ func getClientIP(cfg *config.MainConfig, r *http.Request) string {
 	return clientIP
 }
 
-func getReqHost(cfg *config.MainConfig, r *http.Request) string {
+func getReqHost(r *http.Request) string {
 	var clientHost = ""
-	for _, headerName := range cfg.ConnectingHostHeaders {
+	for _, headerName := range config.Cfg.Server.ConnectingHostHeaders {
 		if hostVal := r.Header.Get(headerName); hostVal != "" {
 			clientHost = hostVal
 			break
