@@ -12,13 +12,13 @@ import (
 	"time"
 )
 
-func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
+func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
 	decision := action.NewDecision()
 
 	decision.SetCode(action.Continue, []byte("403"))
-	if reqData.Uri == config.Cfg.Server.WebPath+"/captcha" {
+	if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
-	} else if reqData.Uri == config.Cfg.Server.WebPath+"/health_check" {
+	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
@@ -65,7 +65,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			}
 		}
 	} else {
-		tpl, err := template.ParseFiles(config.Cfg.Server.ErrorPage + "/403.html")
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
 		if err != nil {
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
@@ -76,7 +76,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   config.Cfg.Server.NodeName,
+			EdgeTag:   cfg.NodeName,
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
