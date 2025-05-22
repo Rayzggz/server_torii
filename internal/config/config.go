@@ -27,6 +27,20 @@ type MainConfig struct {
 
 // LoadMainConfig Read the configuration file and return the configuration object
 func LoadMainConfig(basePath string) (*MainConfig, error) {
+
+	defaultCfg := MainConfig{
+		Port:                           "25555",
+		WebPath:                        "/torii",
+		RulePath:                       "/www/server_torii/config/rules",
+		ErrorPage:                      "/www/server_torii/config/error_page",
+		LogPath:                        "/www/server_torii/log/",
+		NodeName:                       "Server Torii",
+		ConnectingHostHeaders:          []string{"Torii-Real-Host"},
+		ConnectingIPHeaders:            []string{"Torii-Real-IP"},
+		ConnectingURIHeaders:           []string{"Torii-Original-URI"},
+		ConnectingCaptchaStatusHeaders: []string{"Torii-Captcha-Status"},
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -38,12 +52,12 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		return &defaultCfg, err
 	}
 
 	var cfg MainConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return &defaultCfg, err
 	}
 
 	return &cfg, nil

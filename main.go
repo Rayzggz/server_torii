@@ -27,7 +27,7 @@ func main() {
 	// Load MainConfig
 	cfg, err := config.LoadMainConfig(basePath)
 	if err != nil {
-		log.Fatalf("Load config failed: %v", err)
+		log.Printf("[ERROR] Load config failed: %v. Using default config.", err)
 	}
 
 	// Load rules
