@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"fmt"
 	"gopkg.in/yaml.v3"
 	"net"
 	"os"
@@ -27,6 +28,20 @@ type MainConfig struct {
 
 // LoadMainConfig Read the configuration file and return the configuration object
 func LoadMainConfig(basePath string) (*MainConfig, error) {
+
+	defaultCfg := MainConfig{
+		Port:                           "25555",
+		WebPath:                        "/torii",
+		RulePath:                       "/www/server_torii/config/rules",
+		ErrorPage:                      "/www/server_torii/config/error_page",
+		LogPath:                        "/www/server_torii/log/",
+		NodeName:                       "Server Torii",
+		ConnectingHostHeaders:          []string{"Torii-Real-Host"},
+		ConnectingIPHeaders:            []string{"Torii-Real-IP"},
+		ConnectingURIHeaders:           []string{"Torii-Original-URI"},
+		ConnectingCaptchaStatusHeaders: []string{"Torii-Captcha-Status"},
+	}
+
 	exePath, err := os.Executable()
 	if err != nil {
 		return nil, err
@@ -38,12 +53,12 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		return &defaultCfg, err
 	}
 
 	var cfg MainConfig
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, err
+		return &defaultCfg, err
 	}
 
 	return &cfg, nil
@@ -58,6 +73,18 @@ type RuleSet struct {
 	CAPTCHARule   *dataType.CaptchaRule
 	VerifyBotRule *dataType.VerifyBotRule
 	HTTPFloodRule *dataType.HTTPFloodRule
+}
+
+// ruleSetWrapper
+type ruleSetWrapper struct {
+	CAPTCHARule   *dataType.CaptchaRule   `yaml:"CAPTCHA"`
+	VerifyBotRule *dataType.VerifyBotRule `yaml:"VerifyBot"`
+	HTTPFloodRule httpFloodRuleWrapper    `yaml:"HTTPFlood"`
+}
+
+type httpFloodRuleWrapper struct {
+	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit"`
+	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit"`
 }
 
 // LoadRules Load all rules from the specified path
@@ -96,50 +123,52 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
-	// Load CAPTCHA Rule
-	captchaFile := rulePath + "/CAPTCHA.yml"
-	if err := loadCAPTCHARule(captchaFile, rs.CAPTCHARule); err != nil {
-		return nil, err
-	}
-
-	// Load Verify Bot Rule
-	verifyBotFile := rulePath + "/VerifyBot.yml"
-	if err := loadVerifyBotRule(verifyBotFile, rs.VerifyBotRule); err != nil {
-		return nil, err
-	}
-
-	// Load HTTP Flood Rule
-	httpFloodFile := rulePath + "/HTTPFlood.yml"
-	if err := loadHTTPFloodRule(httpFloodFile, rs.HTTPFloodRule); err != nil {
-		return nil, err
+	YAMLFile := filepath.Join(rulePath, "Server.yml")
+	set, err := loadServerRules(YAMLFile, rs)
+	if err != nil {
+		return set, err
 	}
 
 	return &rs, nil
 }
 
-func loadCAPTCHARule(file string, rule *dataType.CaptchaRule) error {
-	data, err := os.ReadFile(file)
+func loadServerRules(YAMLFile string, rs RuleSet) (*RuleSet, error) {
+	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("[ERROR] rules file %s does not exist: %w", YAMLFile, err)
+		} else {
+			return nil, fmt.Errorf("[ERROR] failed to read rules file %s: %w", YAMLFile, err)
+		}
 	}
 
-	if err := yaml.Unmarshal(data, &rule); err != nil {
-		return err
+	var wrapper ruleSetWrapper
+	if err := yaml.Unmarshal(yamlData, &wrapper); err != nil {
+		return nil, fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
-	return nil
+	*rs.CAPTCHARule = *wrapper.CAPTCHARule
+	*rs.VerifyBotRule = *wrapper.VerifyBotRule
 
-}
+	rs.HTTPFloodRule.HTTPFloodSpeedLimit = make(map[int64]int64)
+	rs.HTTPFloodRule.HTTPFloodSameURILimit = make(map[int64]int64)
 
-func loadVerifyBotRule(file string, rule *dataType.VerifyBotRule) error {
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return err
+	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSpeedLimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return nil, err
+		}
+		rs.HTTPFloodRule.HTTPFloodSpeedLimit[seconds] = limit
 	}
-	if err := yaml.Unmarshal(data, &rule); err != nil {
-		return err
+
+	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSameURILimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return nil, err
+		}
+		rs.HTTPFloodRule.HTTPFloodSameURILimit[seconds] = limit
 	}
-	return nil
+	return nil, nil
 }
 
 // loadIPRules read the IP rule file and insert the rules into the trie
@@ -216,44 +245,4 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 	}
 
 	return scanner.Err()
-}
-
-func loadHTTPFloodRule(file string, rule *dataType.HTTPFloodRule) error {
-	data, err := os.ReadFile(file)
-	if err != nil {
-		return err
-	}
-
-	type httpFloodRuleYAML struct {
-		HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit"`
-		HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit"`
-	}
-
-	var ymlRule httpFloodRuleYAML
-	err = yaml.Unmarshal(data, &ymlRule)
-	if err != nil {
-		return err
-	}
-
-	rule.HTTPFloodSpeedLimit = make(map[int64]int64)
-	rule.HTTPFloodSameURILimit = make(map[int64]int64)
-
-	for _, s := range ymlRule.HTTPFloodSpeedLimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		rule.HTTPFloodSpeedLimit[seconds] = limit
-	}
-
-	for _, s := range ymlRule.HTTPFloodSameURILimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		rule.HTTPFloodSameURILimit[seconds] = limit
-	}
-
-	return nil
-
 }
