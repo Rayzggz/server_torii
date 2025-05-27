@@ -123,7 +123,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
-	YAMLFile := filepath.Join(rulePath, "rules.yml")
+	YAMLFile := filepath.Join(rulePath, "server.yml")
 	set, err := loadServerRules(YAMLFile, rs)
 	if err != nil {
 		return set, err
