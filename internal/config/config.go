@@ -100,25 +100,25 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	}
 
 	// Load IP Allow List
-	ipAllowFile := rulePath + "/IP_AllowList.conf"
+	ipAllowFile := filepath.Join(rulePath, "/IP_AllowList.conf")
 	if err := loadIPRules(ipAllowFile, rs.IPAllowTrie); err != nil {
 		return nil, err
 	}
 
 	// Load IP Block List
-	ipBlockFile := rulePath + "/IP_BlockList.conf"
+	ipBlockFile := filepath.Join(rulePath, "/IP_BlockList.conf")
 	if err := loadIPRules(ipBlockFile, rs.IPBlockTrie); err != nil {
 		return nil, err
 	}
 
 	// Load URL Allow List
-	urlAllowFile := rulePath + "/URL_AllowList.conf"
+	urlAllowFile := filepath.Join(rulePath, "/URL_AllowList.conf")
 	if err := loadURLRules(urlAllowFile, rs.URLAllowList); err != nil {
 		return nil, err
 	}
 
 	// Load URL Block List
-	urlBlockFile := rulePath + "/URL_BlockList.conf"
+	urlBlockFile := filepath.Join(rulePath, "/URL_BlockList.conf")
 	if err := loadURLRules(urlBlockFile, rs.URLBlockList); err != nil {
 		return nil, err
 	}
