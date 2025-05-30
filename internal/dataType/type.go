@@ -31,7 +31,14 @@ type HTTPFloodRule struct {
 	HTTPFloodSameURILimit map[int64]int64
 }
 
+type WaitingRoomRule struct {
+	Enabled           bool  `yaml:"enabled"`
+	MaxConcurrentUser int64 `yaml:"max_concurrent_user"`
+	SessionTimeout    int64 `yaml:"session_timeout"`
+}
+
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
+	WaitingRoom                  *WaitingRoom
 }

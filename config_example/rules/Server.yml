@@ -15,3 +15,7 @@ VerifyBot:
   verify_yandex_bot: true
   verify_sogou_bot: true
   verify_apple_bot: true
+WaitingRoom:
+  enabled: false
+  max_concurrent_user: 1000
+  session_timeout: 1800

@@ -58,6 +58,7 @@ func main() {
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit)),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSameURILimit)),
+		WaitingRoom:                  dataType.NewWaitingRoom(ruleSet.WaitingRoomRule.MaxConcurrentUser, ruleSet.WaitingRoomRule.SessionTimeout),
 	}
 
 	//GC
