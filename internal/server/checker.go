@@ -10,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strings"
 	"time"
 )
 
@@ -115,8 +116,16 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
-		sessionID := string(decision.ResponseData)
-		position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(sessionID, userRequestData, ruleSet.CAPTCHARule.SecretKey)
+		responseData := string(decision.ResponseData)
+		parts := strings.Split(responseData, "|")
+		if len(parts) < 2 {
+			utils.LogError(userRequestData, fmt.Sprintf("Invalid responseData format: %s", responseData), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		sessionID := parts[0]
+		userKey := parts[1]
+		position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
 
 		data := struct {
 			EdgeTag       string

@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"server_torii/internal/action"
@@ -20,6 +21,12 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
+	} else if reqData.Uri == cfg.WebPath+"/waiting_room/status" {
+		handleWaitingRoomStatus(w, r, reqData, ruleSet, sharedMem)
+		return
+	} else if reqData.Uri == cfg.WebPath+"/waiting_room/join" {
+		handleWaitingRoomJoin(w, r, reqData, ruleSet, sharedMem)
+		return
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
@@ -87,4 +94,148 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			return
 		}
 	}
+}
+
+func handleWaitingRoomStatus(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.WaitingRoomRule.Enabled {
+		w.WriteHeader(http.StatusNotFound)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Waiting room not enabled",
+		})
+		if err != nil {
+			return
+		}
+		return
+	}
+
+	sessionID := reqData.ToriiSessionID
+	userKey := check.GenerateUserKey(reqData)
+
+	var position, totalQueue int
+	var canEnter bool
+
+	if sessionID != "" {
+		validSessionID := check.VerifyWaitingRoomSessionID(sessionID, reqData, ruleSet.CAPTCHARule.SecretKey, ruleSet.WaitingRoomRule.SessionTimeout)
+		if validSessionID {
+			canEnter, _ = sharedMem.WaitingRoom.CanEnterSite(sessionID, userKey)
+			position, totalQueue = sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"position":   position,
+		"totalQueue": totalQueue,
+		"canEnter":   canEnter,
+		"sessionID":  sessionID,
+		"inQueue":    sessionID != "" && position > 0,
+	})
+	if err != nil {
+		return
+	}
+}
+
+func handleWaitingRoomJoin(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.WaitingRoomRule.Enabled {
+		w.WriteHeader(http.StatusNotFound)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Waiting room not enabled",
+		})
+		if err != nil {
+			return
+		}
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Method not allowed",
+		})
+		if err != nil {
+			return
+		}
+		return
+	}
+
+	userKey := check.GenerateUserKey(reqData)
+	sessionID := reqData.ToriiSessionID
+
+	if sessionID != "" {
+		validSessionID := check.VerifyWaitingRoomSessionID(sessionID, reqData, ruleSet.CAPTCHARule.SecretKey, ruleSet.WaitingRoomRule.SessionTimeout)
+		if validSessionID {
+			canEnter, _ := sharedMem.WaitingRoom.CanEnterSite(sessionID, userKey)
+			if canEnter {
+				sharedMem.WaitingRoom.AddToActiveSession(sessionID, userKey)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				err := json.NewEncoder(w).Encode(map[string]interface{}{
+					"success":  true,
+					"canEnter": true,
+					"message":  "可以进入网站",
+				})
+				if err != nil {
+					return
+				}
+				return
+			}
+			position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			err := json.NewEncoder(w).Encode(map[string]interface{}{
+				"success":    true,
+				"canEnter":   false,
+				"position":   position,
+				"totalQueue": totalQueue,
+				"message":    "已在队列中，请等待",
+			})
+			if err != nil {
+				return
+			}
+			return
+		}
+	}
+
+	newSessionID := genWaitingRoomSessionID(reqData, ruleSet.CAPTCHARule.SecretKey)
+
+	canEnter, _ := sharedMem.WaitingRoom.CanEnterSite("", userKey)
+	if canEnter {
+		sharedMem.WaitingRoom.AddToActiveSession(newSessionID, userKey)
+		w.Header().Set("Set-Cookie", "__torii_session_id="+newSessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":   true,
+			"canEnter":  true,
+			"sessionID": newSessionID,
+			"message":   "成功加入，可以进入网站",
+		})
+		if err != nil {
+			return
+		}
+		return
+	}
+
+	sharedMem.WaitingRoom.AddToQueue(newSessionID, userKey)
+	position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(newSessionID, userKey)
+
+	w.Header().Set("Set-Cookie", "__torii_session_id="+newSessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"success":    true,
+		"canEnter":   false,
+		"sessionID":  newSessionID,
+		"position":   position,
+		"totalQueue": totalQueue,
+		"message":    "已加入排队",
+	})
+	if err != nil {
+		return
+	}
+}
+
+func genWaitingRoomSessionID(reqData dataType.UserRequest, secretKey string) string {
+	return check.GenWaitingRoomSessionID(reqData, secretKey)
 }
