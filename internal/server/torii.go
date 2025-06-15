@@ -109,27 +109,20 @@ func handleWaitingRoomStatus(w http.ResponseWriter, r *http.Request, reqData dat
 	}
 
 	sessionID := reqData.ToriiSessionID
+	clearance := reqData.ToriiClearance
 	userKey := check.GenerateUserKey(reqData)
+	secretKey := ruleSet.CAPTCHARule.SecretKey
 
-	var position, totalQueue int
-	var canEnter bool
-
-	if sessionID != "" {
-		validSessionID := check.VerifyWaitingRoomSessionID(sessionID, reqData, ruleSet.CAPTCHARule.SecretKey, ruleSet.WaitingRoomRule.SessionTimeout)
-		if validSessionID {
-			canEnter, _ = sharedMem.WaitingRoom.CanEnterSite(sessionID, userKey)
-			position, totalQueue = sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
-		}
-	}
+	// Check queue status using new core logic
+	inQueue, position, totalQueue, canEnter := sharedMem.WaitingRoom.GetQueueStatus(sessionID, clearance, userKey, secretKey)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	err := json.NewEncoder(w).Encode(map[string]interface{}{
+		"inQueue":    inQueue,
 		"position":   position,
 		"totalQueue": totalQueue,
 		"canEnter":   canEnter,
-		"sessionID":  sessionID,
-		"inQueue":    sessionID != "" && position > 0,
 	})
 	if err != nil {
 		return
@@ -159,57 +152,19 @@ func handleWaitingRoomJoin(w http.ResponseWriter, r *http.Request, reqData dataT
 		return
 	}
 
-	userKey := check.GenerateUserKey(reqData)
 	sessionID := reqData.ToriiSessionID
+	userKey := check.GenerateUserKey(reqData)
+	secretKey := ruleSet.CAPTCHARule.SecretKey
 
-	if sessionID != "" {
-		validSessionID := check.VerifyWaitingRoomSessionID(sessionID, reqData, ruleSet.CAPTCHARule.SecretKey, ruleSet.WaitingRoomRule.SessionTimeout)
-		if validSessionID {
-			canEnter, _ := sharedMem.WaitingRoom.CanEnterSite(sessionID, userKey)
-			if canEnter {
-				sharedMem.WaitingRoom.AddToActiveSession(sessionID, userKey)
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusOK)
-				err := json.NewEncoder(w).Encode(map[string]interface{}{
-					"success":  true,
-					"canEnter": true,
-					"message":  "可以进入网站",
-				})
-				if err != nil {
-					return
-				}
-				return
-			}
-			position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusOK)
-			err := json.NewEncoder(w).Encode(map[string]interface{}{
-				"success":    true,
-				"canEnter":   false,
-				"position":   position,
-				"totalQueue": totalQueue,
-				"message":    "已在队列中，请等待",
-			})
-			if err != nil {
-				return
-			}
-			return
-		}
-	}
+	// Join queue using new core logic
+	success, positiveID, clearance, canEnter := sharedMem.WaitingRoom.JoinQueue(sessionID, userKey, secretKey)
 
-	newSessionID := genWaitingRoomSessionID(reqData, ruleSet.CAPTCHARule.SecretKey)
-
-	canEnter, _ := sharedMem.WaitingRoom.CanEnterSite("", userKey)
-	if canEnter {
-		sharedMem.WaitingRoom.AddToActiveSession(newSessionID, userKey)
-		w.Header().Set("Set-Cookie", "__torii_session_id="+newSessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+	if !success {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusBadRequest)
 		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"success":   true,
-			"canEnter":  true,
-			"sessionID": newSessionID,
-			"message":   "成功加入，可以进入网站",
+			"success": false,
+			"message": "Invalid session or unable to join queue",
 		})
 		if err != nil {
 			return
@@ -217,25 +172,37 @@ func handleWaitingRoomJoin(w http.ResponseWriter, r *http.Request, reqData dataT
 		return
 	}
 
-	sharedMem.WaitingRoom.AddToQueue(newSessionID, userKey)
-	position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(newSessionID, userKey)
+	if canEnter {
+		// User can enter directly
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		err := json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":  true,
+			"canEnter": true,
+			"message":  "可以进入网站",
+		})
+		if err != nil {
+			return
+		}
+		return
+	}
 
-	w.Header().Set("Set-Cookie", "__torii_session_id="+newSessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+	// User is in queue, set clearance cookie and return position info
+	inQueue, position, totalQueue, _ := sharedMem.WaitingRoom.GetQueueStatus(sessionID, clearance, userKey, secretKey)
+
+	w.Header().Set("Set-Cookie", "__torii_clearance="+clearance+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	err := json.NewEncoder(w).Encode(map[string]interface{}{
 		"success":    true,
 		"canEnter":   false,
-		"sessionID":  newSessionID,
+		"inQueue":    inQueue,
 		"position":   position,
 		"totalQueue": totalQueue,
+		"positiveID": positiveID,
 		"message":    "已加入排队",
 	})
 	if err != nil {
 		return
 	}
-}
-
-func genWaitingRoomSessionID(reqData dataType.UserRequest, secretKey string) string {
-	return check.GenWaitingRoomSessionID(reqData, secretKey)
 }

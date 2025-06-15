@@ -10,7 +10,6 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
-	"strings"
 	"time"
 )
 
@@ -116,29 +115,16 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
-		responseData := string(decision.ResponseData)
-		parts := strings.Split(responseData, "|")
-		if len(parts) < 2 {
-			utils.LogError(userRequestData, fmt.Sprintf("Invalid responseData format: %s", responseData), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		sessionID := parts[0]
-		userKey := parts[1]
-		position, totalQueue := sharedMem.WaitingRoom.GetQueueInfo(sessionID, userKey)
+		sessionID := string(decision.ResponseData)
 
 		data := struct {
-			EdgeTag       string
-			ConnectIP     string
-			Date          string
-			QueuePosition int
-			TotalQueue    int
+			EdgeTag   string
+			ConnectIP string
+			Date      string
 		}{
-			EdgeTag:       cfg.NodeName,
-			ConnectIP:     userRequestData.RemoteIP,
-			Date:          time.Now().Format("2006-01-02 15:04:05"),
-			QueuePosition: position,
-			TotalQueue:    totalQueue,
+			EdgeTag:   cfg.NodeName,
+			ConnectIP: userRequestData.RemoteIP,
+			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
 
 		w.Header().Set("Set-Cookie", "__torii_session_id="+sessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
