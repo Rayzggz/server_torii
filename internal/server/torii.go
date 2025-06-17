@@ -2,7 +2,6 @@ package server
 
 import (
 	"bytes"
-	"encoding/json"
 	"html/template"
 	"net/http"
 	"server_torii/internal/action"
@@ -21,12 +20,6 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
-	} else if reqData.Uri == cfg.WebPath+"/waiting_room/status" {
-		handleWaitingRoomStatus(w, r, reqData, ruleSet, sharedMem)
-		return
-	} else if reqData.Uri == cfg.WebPath+"/waiting_room/join" {
-		handleWaitingRoomJoin(w, r, reqData, ruleSet, sharedMem)
-		return
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
@@ -93,116 +86,5 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-	}
-}
-
-func handleWaitingRoomStatus(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.WaitingRoomRule.Enabled {
-		w.WriteHeader(http.StatusNotFound)
-		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": "Waiting room not enabled",
-		})
-		if err != nil {
-			return
-		}
-		return
-	}
-
-	sessionID := reqData.ToriiSessionID
-	clearance := reqData.ToriiClearance
-	userKey := check.GenerateUserKey(reqData)
-	secretKey := ruleSet.CAPTCHARule.SecretKey
-
-	// Check queue status using new core logic
-	inQueue, position, totalQueue, canEnter := sharedMem.WaitingRoom.GetQueueStatus(sessionID, clearance, userKey, secretKey)
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	err := json.NewEncoder(w).Encode(map[string]interface{}{
-		"inQueue":    inQueue,
-		"position":   position,
-		"totalQueue": totalQueue,
-		"canEnter":   canEnter,
-	})
-	if err != nil {
-		return
-	}
-}
-
-func handleWaitingRoomJoin(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.WaitingRoomRule.Enabled {
-		w.WriteHeader(http.StatusNotFound)
-		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": "Waiting room not enabled",
-		})
-		if err != nil {
-			return
-		}
-		return
-	}
-
-	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"error": "Method not allowed",
-		})
-		if err != nil {
-			return
-		}
-		return
-	}
-
-	sessionID := reqData.ToriiSessionID
-	userKey := check.GenerateUserKey(reqData)
-	secretKey := ruleSet.CAPTCHARule.SecretKey
-
-	// Join queue using new core logic
-	success, positiveID, clearance, canEnter := sharedMem.WaitingRoom.JoinQueue(sessionID, userKey, secretKey)
-
-	if !success {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusBadRequest)
-		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"success": false,
-			"message": "Invalid session or unable to join queue",
-		})
-		if err != nil {
-			return
-		}
-		return
-	}
-
-	if canEnter {
-		// User can enter directly
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		err := json.NewEncoder(w).Encode(map[string]interface{}{
-			"success":  true,
-			"canEnter": true,
-			"message":  "可以进入网站",
-		})
-		if err != nil {
-			return
-		}
-		return
-	}
-
-	// User is in queue, set clearance cookie and return position info
-	inQueue, position, totalQueue, _ := sharedMem.WaitingRoom.GetQueueStatus(sessionID, clearance, userKey, secretKey)
-
-	w.Header().Set("Set-Cookie", "__torii_clearance="+clearance+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	err := json.NewEncoder(w).Encode(map[string]interface{}{
-		"success":    true,
-		"canEnter":   false,
-		"inQueue":    inQueue,
-		"position":   position,
-		"totalQueue": totalQueue,
-		"positiveID": positiveID,
-		"message":    "已加入排队",
-	})
-	if err != nil {
-		return
 	}
 }

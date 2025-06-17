@@ -15,7 +15,8 @@ VerifyBot:
   verify_yandex_bot: true
   verify_sogou_bot: true
   verify_apple_bot: true
-WaitingRoom:
+ExternalMigration:
   enabled: false
-  max_concurrent_user: 1000
+  redirect_url: "https://example.com/migration"
+  secret_key: "0378b0f84c4310279918d71a5647ba5d"
   session_timeout: 1800

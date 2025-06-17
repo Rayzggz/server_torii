@@ -25,7 +25,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.VerifyBot)
 	checkFuncs = append(checkFuncs, check.HTTPFlood)
-	checkFuncs = append(checkFuncs, check.WaitingRoom)
+	checkFuncs = append(checkFuncs, check.ExternalMigration)
 	checkFuncs = append(checkFuncs, check.Captcha)
 
 	for _, checkFunc := range checkFuncs {
@@ -101,35 +101,6 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 		w.WriteHeader(http.StatusTooManyRequests)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err = tpl.Execute(w, data); err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-	} else if bytes.Compare(decision.HTTPCode, []byte("WAITING_ROOM")) == 0 {
-		tpl, err := template.ParseFiles(cfg.ErrorPage + "/waiting_room.html")
-		if err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		sessionID := string(decision.ResponseData)
-
-		data := struct {
-			EdgeTag   string
-			ConnectIP string
-			Date      string
-		}{
-			EdgeTag:   cfg.NodeName,
-			ConnectIP: userRequestData.RemoteIP,
-			Date:      time.Now().Format("2006-01-02 15:04:05"),
-		}
-
-		w.Header().Set("Set-Cookie", "__torii_session_id="+sessionID+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusServiceUnavailable)
 		if err = tpl.Execute(w, data); err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)

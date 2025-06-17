@@ -66,22 +66,22 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 // RuleSet stores all rules
 type RuleSet struct {
-	IPAllowTrie     *dataType.TrieNode
-	IPBlockTrie     *dataType.TrieNode
-	URLAllowList    *dataType.URLRuleList
-	URLBlockList    *dataType.URLRuleList
-	CAPTCHARule     *dataType.CaptchaRule
-	VerifyBotRule   *dataType.VerifyBotRule
-	HTTPFloodRule   *dataType.HTTPFloodRule
-	WaitingRoomRule *dataType.WaitingRoomRule
+	IPAllowTrie           *dataType.TrieNode
+	IPBlockTrie           *dataType.TrieNode
+	URLAllowList          *dataType.URLRuleList
+	URLBlockList          *dataType.URLRuleList
+	CAPTCHARule           *dataType.CaptchaRule
+	VerifyBotRule         *dataType.VerifyBotRule
+	HTTPFloodRule         *dataType.HTTPFloodRule
+	ExternalMigrationRule *dataType.ExternalMigrationRule
 }
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
-	CAPTCHARule     *dataType.CaptchaRule     `yaml:"CAPTCHA"`
-	VerifyBotRule   *dataType.VerifyBotRule   `yaml:"VerifyBot"`
-	HTTPFloodRule   httpFloodRuleWrapper      `yaml:"HTTPFlood"`
-	WaitingRoomRule *dataType.WaitingRoomRule `yaml:"WaitingRoom"`
+	CAPTCHARule           *dataType.CaptchaRule           `yaml:"CAPTCHA"`
+	VerifyBotRule         *dataType.VerifyBotRule         `yaml:"VerifyBot"`
+	HTTPFloodRule         httpFloodRuleWrapper            `yaml:"HTTPFlood"`
+	ExternalMigrationRule *dataType.ExternalMigrationRule `yaml:"ExternalMigration"`
 }
 
 type httpFloodRuleWrapper struct {
@@ -92,14 +92,14 @@ type httpFloodRuleWrapper struct {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPAllowTrie:     &dataType.TrieNode{},
-		IPBlockTrie:     &dataType.TrieNode{},
-		URLAllowList:    &dataType.URLRuleList{},
-		URLBlockList:    &dataType.URLRuleList{},
-		CAPTCHARule:     &dataType.CaptchaRule{},
-		VerifyBotRule:   &dataType.VerifyBotRule{},
-		HTTPFloodRule:   &dataType.HTTPFloodRule{},
-		WaitingRoomRule: &dataType.WaitingRoomRule{},
+		IPAllowTrie:           &dataType.TrieNode{},
+		IPBlockTrie:           &dataType.TrieNode{},
+		URLAllowList:          &dataType.URLRuleList{},
+		URLBlockList:          &dataType.URLRuleList{},
+		CAPTCHARule:           &dataType.CaptchaRule{},
+		VerifyBotRule:         &dataType.VerifyBotRule{},
+		HTTPFloodRule:         &dataType.HTTPFloodRule{},
+		ExternalMigrationRule: &dataType.ExternalMigrationRule{},
 	}
 
 	// Load IP Allow List
@@ -152,8 +152,8 @@ func loadServerRules(YAMLFile string, rs RuleSet) (*RuleSet, error) {
 
 	*rs.CAPTCHARule = *wrapper.CAPTCHARule
 	*rs.VerifyBotRule = *wrapper.VerifyBotRule
-	if wrapper.WaitingRoomRule != nil {
-		*rs.WaitingRoomRule = *wrapper.WaitingRoomRule
+	if wrapper.ExternalMigrationRule != nil {
+		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
 	}
 
 	rs.HTTPFloodRule.HTTPFloodSpeedLimit = make(map[int64]int64)
