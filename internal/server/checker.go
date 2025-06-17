@@ -107,6 +107,11 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
+	} else if bytes.Compare(decision.HTTPCode, []byte("EXTERNAL")) == 0 {
+		w.Header().Set("Set-Cookie", "__torii_sessionid="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+string(decision.ResponseData)+"&original_url="+userRequestData.Uri)
+		w.WriteHeader(http.StatusFound)
+		return
 	} else {
 		//should never happen
 		utils.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
