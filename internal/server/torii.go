@@ -2,6 +2,7 @@ package server
 
 import (
 	"bytes"
+	"crypto/hmac"
 	"html/template"
 	"net/http"
 	"server_torii/internal/action"
@@ -9,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strconv"
 	"time"
 )
 
@@ -20,6 +22,8 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
+	} else if reqData.Uri == cfg.WebPath+"/external_migration" {
+		handleExternalMigration(w, r, reqData, ruleSet, decision)
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
@@ -87,4 +91,45 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			return
 		}
 	}
+}
+
+func handleExternalMigration(w http.ResponseWriter, r *http.Request, data dataType.UserRequest, set *config.RuleSet, decision *action.Decision) {
+	if !set.ExternalMigrationRule.Enabled {
+		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	originalURI := r.URL.Query().Get("original_uri")
+	timestampStr := r.URL.Query().Get("timestamp")
+	hmacParam := r.URL.Query().Get("hmac")
+
+	if timestampStr == "" || hmacParam == "" {
+		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
+	if err != nil {
+		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	currentTime := time.Now().Unix()
+	if currentTime-timestamp > set.ExternalMigrationRule.SessionTimeout {
+		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	if !check.VerifyExternalMigrationSessionIDCookie(data, *set) {
+		decision.SetResponse(action.Done, []byte("200"), []byte("badSession"))
+		return
+	}
+
+	expectedHMAC := check.CalculateExternalMigrationHMAC(data.ToriiSessionID, timestampStr, set.ExternalMigrationRule.SecretKey)
+	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
+		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		return
+	}
+
+	decision.SetResponse(action.Continue, []byte("302"), []byte(originalURI))
 }

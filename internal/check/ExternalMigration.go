@@ -71,7 +71,7 @@ func genExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", time.Now().Unix()), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func verifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
 	if reqData.ToriiSessionID == "" {
 		return false
 	}
@@ -94,4 +94,10 @@ func verifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSe
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
 
+}
+
+func CalculateExternalMigrationHMAC(sessionID, timestampStr, secretKey string) string {
+	mac := hmac.New(sha512.New, []byte(secretKey))
+	mac.Write([]byte(fmt.Sprintf("%s%s", sessionID, timestampStr)))
+	return fmt.Sprintf("%x", mac.Sum(nil))
 }
