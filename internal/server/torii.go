@@ -94,9 +94,9 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	}
 }
 
-func handleExternalMigration(w http.ResponseWriter, r *http.Request, data dataType.UserRequest, set *config.RuleSet, cfg *config.MainConfig) {
-	if !set.ExternalMigrationRule.Enabled {
-		showExternalMigrationError(w, data, cfg, "External migration is disabled")
+func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+	if !ruleSet.ExternalMigrationRule.Enabled {
+		showExternalMigrationError(w, reqData, cfg, "External migration is disabled")
 		return
 	}
 
@@ -105,34 +105,34 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, data dataTy
 	hmacParam := r.URL.Query().Get("hmac")
 
 	if timestampStr == "" || hmacParam == "" {
-		showExternalMigrationError(w, data, cfg, "Missing required parameters")
+		showExternalMigrationError(w, reqData, cfg, "Missing required parameters")
 		return
 	}
 
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
-		showExternalMigrationError(w, data, cfg, "Invalid timestamp format")
+		showExternalMigrationError(w, reqData, cfg, "Invalid timestamp format")
 		return
 	}
 
 	currentTime := time.Now().Unix()
-	if currentTime-timestamp > set.ExternalMigrationRule.SessionTimeout {
-		showExternalMigrationError(w, data, cfg, "Migration link has expired")
+	if currentTime-timestamp > ruleSet.ExternalMigrationRule.SessionTimeout {
+		showExternalMigrationError(w, reqData, cfg, "Migration link has expired")
 		return
 	}
 
-	if !check.VerifyExternalMigrationSessionIDCookie(data, *set) {
-		showExternalMigrationError(w, data, cfg, "Invalid session")
+	if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
+		showExternalMigrationError(w, reqData, cfg, "Invalid session")
 		return
 	}
 
-	expectedHMAC := check.CalculateExternalMigrationHMAC(data.ToriiSessionID, timestampStr, set.ExternalMigrationRule.SecretKey)
+	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, ruleSet.ExternalMigrationRule.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
-		showExternalMigrationError(w, data, cfg, "Invalid migration signature")
+		showExternalMigrationError(w, reqData, cfg, "Invalid migration signature")
 		return
 	}
 
-	w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenClearance(data, *set))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+	w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenExternalMigrationClearance(reqData, *ruleSet))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
 	http.Redirect(w, r, originalURI, http.StatusFound)
 }
 
