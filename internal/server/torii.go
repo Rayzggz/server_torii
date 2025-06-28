@@ -11,6 +11,7 @@ import (
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -22,7 +23,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
-	} else if reqData.Uri == cfg.WebPath+"/external_migration" {
+	} else if strings.HasPrefix(reqData.Uri, cfg.WebPath+"/external_migration") {
 		handleExternalMigration(w, r, reqData, ruleSet, cfg)
 		return
 	}
