@@ -108,7 +108,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 
 	} else if bytes.Compare(decision.HTTPCode, []byte("EXTERNAL")) == 0 {
-		w.Header().Set("Set-Cookie", "__torii_sessionid="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
 		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+string(decision.ResponseData)+"&original_uri="+userRequestData.Uri)
 		w.WriteHeader(http.StatusFound)
 		_, err := w.Write([]byte("OK"))
