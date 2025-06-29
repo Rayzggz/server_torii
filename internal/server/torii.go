@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/hmac"
+	"fmt"
 	"html/template"
 	"net/http"
 	"server_torii/internal/action"
@@ -106,29 +107,34 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 	hmacParam := r.URL.Query().Get("hmac")
 
 	if timestampStr == "" || hmacParam == "" {
+		utils.LogInfo(reqData, "Missing required parameters for external migration", "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Missing required parameters")
 		return
 	}
 
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
+		utils.LogInfo(reqData, "Invalid timestamp format", fmt.Sprintf("handleExternalMigration: %v", err))
 		showExternalMigrationError(w, reqData, cfg, "Invalid timestamp format")
 		return
 	}
 
 	currentTime := time.Now().Unix()
 	if currentTime-timestamp > ruleSet.ExternalMigrationRule.SessionTimeout {
+		utils.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: %ds", currentTime-timestamp, ruleSet.ExternalMigrationRule.SessionTimeout), "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Migration link has expired")
 		return
 	}
 
 	if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
+		utils.LogInfo(reqData, "Session verification failed for external migration", "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Invalid session")
 		return
 	}
 
 	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, ruleSet.ExternalMigrationRule.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
+		utils.LogInfo(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Invalid migration signature")
 		return
 	}
