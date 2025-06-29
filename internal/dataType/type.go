@@ -31,6 +31,13 @@ type HTTPFloodRule struct {
 	HTTPFloodSameURILimit map[int64]int64
 }
 
+type ExternalMigrationRule struct {
+	Enabled        bool   `yaml:"enabled"`
+	RedirectUrl    string `yaml:"redirect_url"`
+	SecretKey      string `yaml:"secret_key"`
+	SessionTimeout int64  `yaml:"session_timeout"`
+}
+
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter

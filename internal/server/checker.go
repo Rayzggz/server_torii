@@ -25,6 +25,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.VerifyBot)
 	checkFuncs = append(checkFuncs, check.HTTPFlood)
+	checkFuncs = append(checkFuncs, check.ExternalMigration)
 	checkFuncs = append(checkFuncs, check.Captcha)
 
 	for _, checkFunc := range checkFuncs {
@@ -106,6 +107,16 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
+	} else if bytes.Compare(decision.HTTPCode, []byte("EXTERNAL")) == 0 {
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+string(decision.ResponseData)+"&original_uri="+userRequestData.Uri)
+		w.WriteHeader(http.StatusFound)
+		_, err := w.Write([]byte("OK"))
+		if err != nil {
+			return
+		}
+
+		return
 	} else {
 		//should never happen
 		utils.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
