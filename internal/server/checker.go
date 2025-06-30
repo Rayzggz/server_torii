@@ -10,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strings"
 	"time"
 )
 
@@ -109,7 +110,18 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 
 	} else if bytes.Compare(decision.HTTPCode, []byte("EXTERNAL")) == 0 {
 		w.Header().Set("Set-Cookie", "__torii_session_id="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
-		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+string(decision.ResponseData)+"&original_uri="+userRequestData.Uri)
+
+		sessionID := string(decision.ResponseData)
+		sessionParts := strings.Split(sessionID, ":")
+		if len(sessionParts) != 2 {
+			utils.LogError(userRequestData, "Invalid session ID format", "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		timestamp := sessionParts[0]
+		hmacValue := check.CalculateRedirectHMAC(userRequestData.Host, timestamp, userRequestData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
+
+		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+sessionID+"&original_uri="+userRequestData.Uri+"&hmac="+hmacValue)
 		w.WriteHeader(http.StatusFound)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {

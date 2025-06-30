@@ -96,8 +96,14 @@ func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSe
 
 }
 
-func CalculateExternalMigrationHMAC(sessionID, timestampStr, secretKey string) string {
+func CalculateExternalMigrationHMAC(sessionID, timestampStr, originalURI, secretKey string) string {
 	mac := hmac.New(sha512.New, []byte(secretKey))
-	mac.Write([]byte(fmt.Sprintf("%s%s", sessionID, timestampStr)))
+	mac.Write([]byte(fmt.Sprintf("%s%s%s", sessionID, timestampStr, originalURI)))
+	return fmt.Sprintf("%x", mac.Sum(nil))
+}
+
+func CalculateRedirectHMAC(domain, timestampStr, originalUri, secretKey string) string {
+	mac := hmac.New(sha512.New, []byte(secretKey))
+	mac.Write([]byte(fmt.Sprintf("%s:%s:%s", domain, timestampStr, originalUri)))
 	return fmt.Sprintf("%x", mac.Sum(nil))
 }

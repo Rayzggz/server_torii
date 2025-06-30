@@ -132,7 +132,7 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 		return
 	}
 
-	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, ruleSet.ExternalMigrationRule.SecretKey)
+	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.ExternalMigrationRule.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
 		utils.LogInfo(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Invalid migration signature")
