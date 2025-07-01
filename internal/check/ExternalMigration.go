@@ -31,7 +31,7 @@ func GenExternalMigrationClearance(reqData dataType.UserRequest, ruleSet config.
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
-	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", time.Now().Unix()), fmt.Sprintf("%x", mac.Sum(nil))))
+	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
 func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
@@ -68,7 +68,7 @@ func genExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
-	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", time.Now().Unix()), fmt.Sprintf("%x", mac.Sum(nil))))
+	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
 func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
