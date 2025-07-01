@@ -10,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strings"
 	"time"
 )
 
@@ -25,6 +26,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.VerifyBot)
 	checkFuncs = append(checkFuncs, check.HTTPFlood)
+	checkFuncs = append(checkFuncs, check.ExternalMigration)
 	checkFuncs = append(checkFuncs, check.Captcha)
 
 	for _, checkFunc := range checkFuncs {
@@ -106,6 +108,27 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 			return
 		}
 
+	} else if bytes.Compare(decision.HTTPCode, []byte("EXTERNAL")) == 0 {
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(decision.ResponseData)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+
+		sessionID := string(decision.ResponseData)
+		sessionParts := strings.Split(sessionID, ":")
+		if len(sessionParts) != 2 {
+			utils.LogError(userRequestData, "Invalid session ID format", "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		timestamp := sessionParts[0]
+		hmacValue := check.CalculateRedirectHMAC(userRequestData.Host, timestamp, userRequestData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
+
+		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+userRequestData.Host+"&session_id="+sessionID+"&original_uri="+userRequestData.Uri+"&hmac="+hmacValue)
+		w.WriteHeader(http.StatusFound)
+		_, err := w.Write([]byte("OK"))
+		if err != nil {
+			return
+		}
+
+		return
 	} else {
 		//should never happen
 		utils.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")

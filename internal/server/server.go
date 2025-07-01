@@ -81,11 +81,12 @@ func getClientIP(cfg *config.MainConfig, r *http.Request) string {
 	var clientIP string
 	for _, headerName := range cfg.ConnectingIPHeaders {
 		if ipVal := r.Header.Get(headerName); ipVal != "" {
-			if strings.Contains(clientIP, ",") {
+			if strings.Contains(ipVal, ",") {
 				parts := strings.Split(ipVal, ",")
 				clientIP = strings.TrimSpace(parts[0])
+			} else {
+				clientIP = ipVal
 			}
-			clientIP = ipVal
 			break
 		}
 	}

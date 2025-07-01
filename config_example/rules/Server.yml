@@ -1,0 +1,22 @@
+CAPTCHA:
+  secret_key: "0378b0f84c4310279918d71a5647ba5d"
+  captcha_validate_time: 600
+  captcha_challenge_session_timeout: 120
+  hcaptcha_secret: ""
+HTTPFlood:
+  HTTPFloodSpeedLimit:
+    - "150/10s"
+  HTTPFloodSameURILimit:
+    - "50/10s"
+VerifyBot:
+  verify_google_bot: true
+  verify_bing_bot: true
+  verify_baidu_bot: true
+  verify_yandex_bot: true
+  verify_sogou_bot: true
+  verify_apple_bot: true
+ExternalMigration:
+  enabled: false
+  redirect_url: "https://example.com/migration"
+  secret_key: "0378b0f84c4310279918d71a5647ba5d"
+  session_timeout: 1800

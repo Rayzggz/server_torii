@@ -1,4 +1,0 @@
-HTTPFloodSpeedLimit:
-  - "150/10s"
-HTTPFloodSameURILimit:
-  - "50/10s"
