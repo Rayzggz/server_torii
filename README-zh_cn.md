@@ -4,6 +4,9 @@
 
 [English](README.md) | 简体中文
 
+<img src="https://github.com/user-attachments/assets/c78d708e-4936-4aa4-8fea-8cb5287e8acf" width="400" alt="" />
+<img src="https://github.com/user-attachments/assets/f39a886a-2745-4de8-b8db-6f6412997fd9" width="400" alt="" />
+
 ## ⭐ 特性
 
 * 易于与现有的 Nginx 或 OpenResty 集成
