@@ -11,6 +11,8 @@ English | [简体中文](README-zh_cn.md)
 * HTTP FLOOD Mitigation
 * CAPTCHA Challenge
 * Crawlers Verification
+* Custom Error Page 
+* External Mitigation (using services such as Cloudflare for mitigation)
 * IP Address Block List  
 * IP Address Allow List  
 * URL Block List  
