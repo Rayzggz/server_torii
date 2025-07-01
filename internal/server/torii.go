@@ -120,7 +120,7 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 	}
 
 	currentTime := time.Now().Unix()
-	if currentTime-timestamp > ruleSet.ExternalMigrationRule.SessionTimeout {
+	if currentTime-timestamp > 30 {
 		utils.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: %ds", currentTime-timestamp, ruleSet.ExternalMigrationRule.SessionTimeout), "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Migration link has expired")
 		return
