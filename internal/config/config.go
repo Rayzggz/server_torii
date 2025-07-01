@@ -127,27 +127,26 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	}
 
 	YAMLFile := filepath.Join(rulePath, "Server.yml")
-	set, err := loadServerRules(YAMLFile, rs)
-	if err != nil {
-		return set, err
+	if err := loadServerRules(YAMLFile, &rs); err != nil {
+		return nil, err
 	}
 
 	return &rs, nil
 }
 
-func loadServerRules(YAMLFile string, rs RuleSet) (*RuleSet, error) {
+func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("[ERROR] rules file %s does not exist: %w", YAMLFile, err)
+			return fmt.Errorf("[ERROR] rules file %s does not exist: %w", YAMLFile, err)
 		} else {
-			return nil, fmt.Errorf("[ERROR] failed to read rules file %s: %w", YAMLFile, err)
+			return fmt.Errorf("[ERROR] failed to read rules file %s: %w", YAMLFile, err)
 		}
 	}
 
 	var wrapper ruleSetWrapper
 	if err := yaml.Unmarshal(yamlData, &wrapper); err != nil {
-		return nil, fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
+		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
 	*rs.CAPTCHARule = *wrapper.CAPTCHARule
@@ -162,7 +161,7 @@ func loadServerRules(YAMLFile string, rs RuleSet) (*RuleSet, error) {
 	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSpeedLimit {
 		limit, seconds, err := utils.ParseRate(s)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rs.HTTPFloodRule.HTTPFloodSpeedLimit[seconds] = limit
 	}
@@ -170,11 +169,11 @@ func loadServerRules(YAMLFile string, rs RuleSet) (*RuleSet, error) {
 	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSameURILimit {
 		limit, seconds, err := utils.ParseRate(s)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		rs.HTTPFloodRule.HTTPFloodSameURILimit[seconds] = limit
 	}
-	return nil, nil
+	return nil
 }
 
 // loadIPRules read the IP rule file and insert the rules into the trie
