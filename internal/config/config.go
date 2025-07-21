@@ -64,6 +64,12 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 	return &cfg, nil
 }
 
+type AllSiteRuleSet struct {
+	Host     string `yaml:"host"`
+	RulePath string `yaml:"rule_path"`
+	RuleSet  *RuleSet
+}
+
 // RuleSet stores all rules
 type RuleSet struct {
 	IPAllowTrie           *dataType.TrieNode
