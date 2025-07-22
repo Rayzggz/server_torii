@@ -30,15 +30,42 @@ func main() {
 		log.Printf("[ERROR] Load config failed: %v. Using default config.", err)
 	}
 
-	// Load rules
-	ruleSet, err := config.LoadRules(cfg.RulePath)
+	// Load site-specific rules
+	siteRules, err := config.LoadSiteRules(cfg)
 	if err != nil {
-		log.Fatalf("Load rules failed: %v", err)
+		log.Fatalf("Load site rules failed: %v", err)
 	}
+
+	//allocate shared memory
+	maxSpeedLimitTime := int64(0)
+	maxSameURILimitTime := int64(0)
+	for _, rules := range siteRules {
+		speedTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit)
+		uriTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit)
+		if speedTime > maxSpeedLimitTime {
+			maxSpeedLimitTime = speedTime
+		}
+		if uriTime > maxSameURILimitTime {
+			maxSameURILimitTime = uriTime
+		}
+	}
+
+	sharedMem := &dataType.SharedMemory{
+		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
+		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
+	}
+
+	//GC
+	gcStopCh := make(chan struct{})
+	go dataType.StartCounterGC(sharedMem.HTTPFloodSpeedLimitCounter, time.Minute, gcStopCh)
+	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
+
+	// Initialize log system
+	utils.InitLogx(cfg.LogPath)
 
 	log.Printf("Ready to start server on port %s", cfg.Port)
 
-	//set log file
+	//set default log file
 	defaultLogPath := filepath.Join(cfg.LogPath + "server_torii.log")
 	logFile, err := os.OpenFile(defaultLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
@@ -52,18 +79,8 @@ func main() {
 	}(logFile)
 	log.SetOutput(logFile)
 
-	utils.InitLogx(cfg.LogPath)
-
-	//allocate shared memory
-	sharedMem := &dataType.SharedMemory{
-		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit)),
-		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), utils.FindMaxRateTime(ruleSet.HTTPFloodRule.HTTPFloodSameURILimit)),
-	}
-
-	//GC
-	gcStopCh := make(chan struct{})
-	go dataType.StartCounterGC(sharedMem.HTTPFloodSpeedLimitCounter, time.Minute, gcStopCh)
-	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
+	//log startup information and time
+	log.Printf("%s - Server starting...", time.Now().Format(time.RFC3339))
 
 	// Start server
 	stop := make(chan os.Signal, 1)
@@ -71,7 +88,7 @@ func main() {
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg, ruleSet, sharedMem)
+		serverErr <- server.StartServer(cfg, siteRules, sharedMem)
 	}()
 
 	select {

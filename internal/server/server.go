@@ -10,10 +10,18 @@ import (
 )
 
 // StartServer starts the HTTP server
-func StartServer(cfg *config.MainConfig, ruleSet *config.RuleSet, sharedMem *dataType.SharedMemory) error {
+func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, sharedMem *dataType.SharedMemory) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		userRequestData := processRequestData(cfg, r)
+
+		// Get site-specific rules based on the Host header
+		ruleSet := config.GetSiteRules(siteRules, userRequestData.Host)
+		if ruleSet == nil {
+			log.Printf("[ERROR] No rules found for host: %s", userRequestData.Host)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 
 		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
 			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)

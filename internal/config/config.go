@@ -14,16 +14,16 @@ import (
 )
 
 type MainConfig struct {
-	Port                           string   `yaml:"port"`
-	WebPath                        string   `yaml:"web_path"`
-	RulePath                       string   `yaml:"rule_path"`
-	ErrorPage                      string   `yaml:"error_page"`
-	LogPath                        string   `yaml:"log_path"`
-	NodeName                       string   `yaml:"node_name"`
-	ConnectingHostHeaders          []string `yaml:"connecting_host_headers"`
-	ConnectingIPHeaders            []string `yaml:"connecting_ip_headers"`
-	ConnectingURIHeaders           []string `yaml:"connecting_uri_headers"`
-	ConnectingCaptchaStatusHeaders []string `yaml:"connecting_captcha_status_headers"`
+	Port                           string           `yaml:"port"`
+	WebPath                        string           `yaml:"web_path"`
+	ErrorPage                      string           `yaml:"error_page"`
+	LogPath                        string           `yaml:"log_path"`
+	NodeName                       string           `yaml:"node_name"`
+	ConnectingHostHeaders          []string         `yaml:"connecting_host_headers"`
+	ConnectingIPHeaders            []string         `yaml:"connecting_ip_headers"`
+	ConnectingURIHeaders           []string         `yaml:"connecting_uri_headers"`
+	ConnectingCaptchaStatusHeaders []string         `yaml:"connecting_captcha_status_headers"`
+	Sites                          []AllSiteRuleSet `yaml:"sites"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
@@ -32,7 +32,6 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 	defaultCfg := MainConfig{
 		Port:                           "25555",
 		WebPath:                        "/torii",
-		RulePath:                       "/www/server_torii/config/rules",
 		ErrorPage:                      "/www/server_torii/config/error_page",
 		LogPath:                        "/www/server_torii/log/",
 		NodeName:                       "Server Torii",
@@ -40,6 +39,12 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		ConnectingIPHeaders:            []string{"Torii-Real-IP"},
 		ConnectingURIHeaders:           []string{"Torii-Original-URI"},
 		ConnectingCaptchaStatusHeaders: []string{"Torii-Captcha-Status"},
+		Sites: []AllSiteRuleSet{
+			{
+				Host:     "default_site",
+				RulePath: "/www/server_torii/config/rules",
+			},
+		},
 	}
 
 	exePath, err := os.Executable()
@@ -67,7 +72,6 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 type AllSiteRuleSet struct {
 	Host     string `yaml:"host"`
 	RulePath string `yaml:"rule_path"`
-	RuleSet  *RuleSet
 }
 
 // RuleSet stores all rules
@@ -256,4 +260,53 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 	}
 
 	return scanner.Err()
+}
+
+// LoadSiteRules loads all site-specific rules and returns a map
+func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
+	siteRules := make(map[string]*RuleSet)
+
+	// Check if any sites are configured
+	if len(cfg.Sites) == 0 {
+		return nil, fmt.Errorf("no sites configured in torii.yml")
+	}
+
+	// Load rules for each configured site
+	for _, site := range cfg.Sites {
+		rules, err := LoadRules(site.RulePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load rules for site %s: %w", site.Host, err)
+		}
+		siteRules[site.Host] = rules
+	}
+
+	// Check if default_site exists
+	if _, exists := siteRules["default_site"]; !exists {
+		return nil, fmt.Errorf("default_site is required but not found in configuration")
+	}
+
+	return siteRules, nil
+}
+
+// GetSiteRules returns the rules for a specific host
+func GetSiteRules(siteRules map[string]*RuleSet, host string) *RuleSet {
+	if rules, ok := siteRules[host]; ok {
+		return rules
+	}
+
+	// Check for wildcard match (e.g., *.example.com)
+	parts := strings.Split(host, ".")
+	if len(parts) > 1 {
+		wildcardHost := "*." + strings.Join(parts[1:], ".")
+		if rules, ok := siteRules[wildcardHost]; ok {
+			return rules
+		}
+	}
+
+	// Return default site rules
+	if rules, ok := siteRules["default_site"]; ok {
+		return rules
+	}
+
+	return nil
 }
