@@ -16,16 +16,12 @@ import (
 )
 
 func main() {
-	var basePath string
-	flag.StringVar(&basePath, "prefix", "", "Config file base path")
+	var inputConfigPath string
+	flag.StringVar(&inputConfigPath, "config", "", "Config file base path")
 	flag.Parse()
 
-	if basePath == "" {
-		basePath, _ = os.Getwd()
-	}
-
 	// Load MainConfig
-	cfg, err := config.LoadMainConfig(basePath)
+	cfg, err := config.LoadMainConfig(inputConfigPath)
 	if err != nil {
 		log.Printf("[ERROR] Load config failed: %v. Using default config.", err)
 	}

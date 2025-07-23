@@ -47,14 +47,22 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		},
 	}
 
-	exePath, err := os.Executable()
-	if err != nil {
-		return nil, err
+	var configPath string
+	var err error
+
+	if basePath != "" {
+		if strings.HasSuffix(basePath, "torii.yml") {
+			configPath = basePath
+		} else {
+			configPath = filepath.Join(basePath, "torii.yml")
+			if _, err := os.Stat(configPath); os.IsNotExist(err) {
+				configPath = filepath.Join(basePath, "config", "torii.yml")
+			}
+		}
+	} else {
+		cwd, _ := os.Getwd()
+		configPath = filepath.Join(cwd, "config", "torii.yml")
 	}
-	if basePath == "" {
-		basePath = filepath.Dir(exePath)
-	}
-	configPath := filepath.Join(basePath, "config", "torii.yml")
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
