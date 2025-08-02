@@ -14,31 +14,31 @@ import (
 )
 
 type MainConfig struct {
-	Port                           string           `yaml:"port"`
-	WebPath                        string           `yaml:"web_path"`
-	ErrorPage                      string           `yaml:"error_page"`
-	LogPath                        string           `yaml:"log_path"`
-	NodeName                       string           `yaml:"node_name"`
-	ConnectingHostHeaders          []string         `yaml:"connecting_host_headers"`
-	ConnectingIPHeaders            []string         `yaml:"connecting_ip_headers"`
-	ConnectingURIHeaders           []string         `yaml:"connecting_uri_headers"`
-	ConnectingCaptchaStatusHeaders []string         `yaml:"connecting_captcha_status_headers"`
-	Sites                          []AllSiteRuleSet `yaml:"sites"`
+	Port                            string           `yaml:"port"`
+	WebPath                         string           `yaml:"web_path"`
+	ErrorPage                       string           `yaml:"error_page"`
+	LogPath                         string           `yaml:"log_path"`
+	NodeName                        string           `yaml:"node_name"`
+	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers"`
+	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers"`
+	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers"`
+	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers"`
+	Sites                           []AllSiteRuleSet `yaml:"sites"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
 func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 	defaultCfg := MainConfig{
-		Port:                           "25555",
-		WebPath:                        "/torii",
-		ErrorPage:                      "/www/server_torii/config/error_page",
-		LogPath:                        "/www/server_torii/log/",
-		NodeName:                       "Server Torii",
-		ConnectingHostHeaders:          []string{"Torii-Real-Host"},
-		ConnectingIPHeaders:            []string{"Torii-Real-IP"},
-		ConnectingURIHeaders:           []string{"Torii-Original-URI"},
-		ConnectingCaptchaStatusHeaders: []string{"Torii-Captcha-Status"},
+		Port:                            "25555",
+		WebPath:                         "/torii",
+		ErrorPage:                       "/www/server_torii/config/error_page",
+		LogPath:                         "/www/server_torii/log/",
+		NodeName:                        "Server Torii",
+		ConnectingHostHeaders:           []string{"Torii-Real-Host"},
+		ConnectingIPHeaders:             []string{"Torii-Real-IP"},
+		ConnectingURIHeaders:            []string{"Torii-Original-URI"},
+		ConnectingFeatureControlHeaders: []string{"Torii-Feature-Control"},
 		Sites: []AllSiteRuleSet{
 			{
 				Host:     "default_site",

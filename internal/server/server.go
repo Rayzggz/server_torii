@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"strconv"
 	"strings"
 )
 
@@ -40,7 +41,7 @@ func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRe
 	userRequest := dataType.UserRequest{
 		RemoteIP:       getClientIP(cfg, r),
 		Uri:            getReqURI(cfg, r),
-		Captcha:        getCaptchaStatus(cfg, r),
+		FeatureControl: getFeatureControl(cfg, r),
 		ToriiClearance: getHeader(r, "__torii_clearance"),
 		ToriiSessionID: getHeader(r, "__torii_session_id"),
 		UserAgent:      r.UserAgent(),
@@ -57,18 +58,16 @@ func getHeader(r *http.Request, headerName string) string {
 	return cookie.Value
 }
 
-func getCaptchaStatus(cfg *config.MainConfig, r *http.Request) bool {
-	captchaStatus := false
-	for _, headerName := range cfg.ConnectingCaptchaStatusHeaders {
-		if captchaVal := r.Header.Get(headerName); captchaVal != "" {
-			if captchaVal == "on" {
-				captchaStatus = true
+func getFeatureControl(cfg *config.MainConfig, r *http.Request) uint64 {
+	for _, headerName := range cfg.ConnectingFeatureControlHeaders {
+		if featureVal := r.Header.Get(headerName); featureVal != "" {
+			// Parse binary string to uint64
+			if result, err := strconv.ParseUint(featureVal, 2, 64); err == nil {
+				return result
 			}
-			break
 		}
 	}
-	return captchaStatus
-
+	return 0 // Default: all features disabled
 }
 
 func getReqURI(cfg *config.MainConfig, r *http.Request) string {

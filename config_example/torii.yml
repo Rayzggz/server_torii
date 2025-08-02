@@ -9,8 +9,8 @@ connecting_ip_headers:
   - "Torii-Real-IP"
 connecting_uri_headers:
   - "Torii-Original-URI"
-connecting_captcha_status_headers:
-  - "Torii-Captcha-Status"
+connecting_feature_control_headers:
+  - "Torii-Feature-Control"
 
 sites:
   - host: "default_site"
