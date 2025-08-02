@@ -9,7 +9,8 @@ import (
 )
 
 func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.IPBlockRule.Enabled {
+	// Check if IPBlock feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureIPBlock) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

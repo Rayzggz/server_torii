@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
-	"strconv"
 	"strings"
 )
 
@@ -23,6 +22,9 @@ func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, s
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+
+		// Process feature control after ruleSet is loaded
+		userRequestData.FeatureControl = processFeatureControl(cfg, r, ruleSet)
 
 		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
 			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
@@ -41,7 +43,7 @@ func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRe
 	userRequest := dataType.UserRequest{
 		RemoteIP:       getClientIP(cfg, r),
 		Uri:            getReqURI(cfg, r),
-		FeatureControl: getFeatureControl(cfg, r),
+		FeatureControl: 0,
 		ToriiClearance: getHeader(r, "__torii_clearance"),
 		ToriiSessionID: getHeader(r, "__torii_session_id"),
 		UserAgent:      r.UserAgent(),
@@ -58,16 +60,65 @@ func getHeader(r *http.Request, headerName string) string {
 	return cookie.Value
 }
 
-func getFeatureControl(cfg *config.MainConfig, r *http.Request) uint64 {
-	for _, headerName := range cfg.ConnectingFeatureControlHeaders {
-		if featureVal := r.Header.Get(headerName); featureVal != "" {
-			// Parse binary string to uint64
-			if result, err := strconv.ParseUint(featureVal, 2, 64); err == nil {
-				return result
-			}
+// processFeatureControl processes the feature control header and combines it with config rules
+// Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
+// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration
+func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
+	// Define feature list in order (position 0 to N)
+	configStates := []bool{
+		ruleSet.IPAllowRule.Enabled,           // position 0
+		ruleSet.IPBlockRule.Enabled,           // position 1
+		ruleSet.URLAllowRule.Enabled,          // position 2
+		ruleSet.URLBlockRule.Enabled,          // position 3
+		ruleSet.VerifyBotRule.Enabled,         // position 4
+		ruleSet.HTTPFloodRule.Enabled,         // position 5
+		ruleSet.CAPTCHARule.Enabled,           // position 6
+		ruleSet.ExternalMigrationRule.Enabled, // position 7
+		// Future features can be added here
+	}
+
+	// Build config baseline from ruleSet
+	var configBits uint16 = 0
+	for i, enabled := range configStates {
+		if enabled {
+			configBits |= 1 << i
 		}
 	}
-	return 0 // Default: all features disabled
+
+	// Get header value
+	var headerValue string
+	for _, headerName := range cfg.ConnectingFeatureControlHeaders {
+		if featureVal := r.Header.Get(headerName); featureVal != "" {
+			headerValue = featureVal
+			break
+		}
+	}
+
+	// If no header, return config baseline
+	if headerValue == "" {
+		return configBits
+	}
+
+	// Process header - pad to 16 characters with '_' for inherit
+	finalBits := configBits
+	for i, char := range headerValue {
+		if i >= 16 { // uint16 has 16 bits max
+			break
+		}
+
+		featureMask := uint16(1 << i)
+
+		switch char {
+		case '1': // Force enable
+			finalBits |= featureMask
+		case '0': // Force disable
+			finalBits &= ^featureMask
+		case '_': // Inherit from config (keep current state)
+			// Do nothing, keep the bit as it is from configBits
+		}
+	}
+
+	return finalBits
 }
 
 func getReqURI(cfg *config.MainConfig, r *http.Request) string {

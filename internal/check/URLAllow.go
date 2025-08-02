@@ -7,7 +7,8 @@ import (
 )
 
 func URLAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.URLAllowRule.Enabled {
+	// Check if URLAllow feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureURLAllow) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

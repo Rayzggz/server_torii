@@ -8,7 +8,8 @@ import (
 )
 
 func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.IPAllowRule.Enabled {
+	// Check if IPAllow feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureIPAllow) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

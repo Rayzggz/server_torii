@@ -9,7 +9,8 @@ import (
 )
 
 func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.HTTPFloodRule.Enabled {
+	// Check if HTTPFlood feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureHTTPFlood) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

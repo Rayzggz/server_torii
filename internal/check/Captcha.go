@@ -25,7 +25,8 @@ type HCaptchaResponse struct {
 }
 
 func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !ruleSet.CAPTCHARule.Enabled {
+	// Check if Captcha feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureCaptcha) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

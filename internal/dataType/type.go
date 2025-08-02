@@ -1,10 +1,35 @@
 package dataType
 
+// Feature Control Bit Positions (0-based from right)
+const (
+	FeatureBitIPAllow           = 0 // bit 0
+	FeatureBitIPBlock           = 1 // bit 1
+	FeatureBitURLAllow          = 2 // bit 2
+	FeatureBitURLBlock          = 3 // bit 3
+	FeatureBitVerifyBot         = 4 // bit 4
+	FeatureBitHTTPFlood         = 5 // bit 5
+	FeatureBitCaptcha           = 6 // bit 6
+	FeatureBitExternalMigration = 7 // bit 7
+	// Bits 8-15 reserved for future features
+)
+
+// Feature Control Values
+const (
+	FeatureIPAllow           = 1 << FeatureBitIPAllow           // 0000000000000001
+	FeatureIPBlock           = 1 << FeatureBitIPBlock           // 0000000000000010
+	FeatureURLAllow          = 1 << FeatureBitURLAllow          // 0000000000000100
+	FeatureURLBlock          = 1 << FeatureBitURLBlock          // 0000000000001000
+	FeatureVerifyBot         = 1 << FeatureBitVerifyBot         // 0000000000010000
+	FeatureHTTPFlood         = 1 << FeatureBitHTTPFlood         // 0000000000100000
+	FeatureCaptcha           = 1 << FeatureBitCaptcha           // 0000000001000000
+	FeatureExternalMigration = 1 << FeatureBitExternalMigration // 0000000010000000
+)
+
 type UserRequest struct {
 	RemoteIP       string
 	Uri            string
 	Captcha        bool
-	FeatureControl uint64
+	FeatureControl uint16
 	ToriiClearance string
 	ToriiSessionID string
 	UserAgent      string
