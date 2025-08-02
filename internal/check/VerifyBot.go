@@ -12,6 +12,11 @@ import (
 )
 
 func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.VerifyBotRule.Enabled {
+		decision.Set(action.Continue)
+		return
+	}
+
 	ua := strings.ToLower(reqData.UserAgent)
 
 	var exptractRDNS []string

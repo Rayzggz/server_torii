@@ -9,8 +9,13 @@ import (
 )
 
 func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.IPBlockRule.Enabled {
+		decision.Set(action.Continue)
+		return
+	}
+
 	remoteIP := reqData.RemoteIP
-	trie := ruleSet.IPBlockTrie
+	trie := ruleSet.IPBlockRule.Trie
 	ip := net.ParseIP(remoteIP)
 	if ip == nil {
 		return

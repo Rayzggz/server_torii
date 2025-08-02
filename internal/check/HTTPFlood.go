@@ -9,6 +9,11 @@ import (
 )
 
 func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.HTTPFloodRule.Enabled {
+		decision.Set(action.Continue)
+		return
+	}
+
 	ipKey := reqData.RemoteIP
 	sharedMem.HTTPFloodSpeedLimitCounter.Add(ipKey, 1)
 

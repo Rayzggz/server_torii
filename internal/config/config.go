@@ -84,10 +84,10 @@ type AllSiteRuleSet struct {
 
 // RuleSet stores all rules
 type RuleSet struct {
-	IPAllowTrie           *dataType.TrieNode
-	IPBlockTrie           *dataType.TrieNode
-	URLAllowList          *dataType.URLRuleList
-	URLBlockList          *dataType.URLRuleList
+	IPAllowRule           *dataType.IPAllowRule
+	IPBlockRule           *dataType.IPBlockRule
+	URLAllowRule          *dataType.URLAllowRule
+	URLBlockRule          *dataType.URLBlockRule
 	CAPTCHARule           *dataType.CaptchaRule
 	VerifyBotRule         *dataType.VerifyBotRule
 	HTTPFloodRule         *dataType.HTTPFloodRule
@@ -96,6 +96,10 @@ type RuleSet struct {
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
+	IPAllowRule           *dataType.IPAllowRule           `yaml:"IPAllow"`
+	IPBlockRule           *dataType.IPBlockRule           `yaml:"IPBlock"`
+	URLAllowRule          *dataType.URLAllowRule          `yaml:"URLAllow"`
+	URLBlockRule          *dataType.URLBlockRule          `yaml:"URLBlock"`
 	CAPTCHARule           *dataType.CaptchaRule           `yaml:"CAPTCHA"`
 	VerifyBotRule         *dataType.VerifyBotRule         `yaml:"VerifyBot"`
 	HTTPFloodRule         httpFloodRuleWrapper            `yaml:"HTTPFlood"`
@@ -103,6 +107,7 @@ type ruleSetWrapper struct {
 }
 
 type httpFloodRuleWrapper struct {
+	Enabled               bool     `yaml:"enabled"`
 	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit"`
 	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit"`
 }
@@ -110,10 +115,10 @@ type httpFloodRuleWrapper struct {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPAllowTrie:           &dataType.TrieNode{},
-		IPBlockTrie:           &dataType.TrieNode{},
-		URLAllowList:          &dataType.URLRuleList{},
-		URLBlockList:          &dataType.URLRuleList{},
+		IPAllowRule:           &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
+		IPBlockRule:           &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
+		URLAllowRule:          &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
+		URLBlockRule:          &dataType.URLBlockRule{List: &dataType.URLRuleList{}},
 		CAPTCHARule:           &dataType.CaptchaRule{},
 		VerifyBotRule:         &dataType.VerifyBotRule{},
 		HTTPFloodRule:         &dataType.HTTPFloodRule{},
@@ -122,25 +127,25 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 
 	// Load IP Allow List
 	ipAllowFile := filepath.Join(rulePath, "/IP_AllowList.conf")
-	if err := loadIPRules(ipAllowFile, rs.IPAllowTrie); err != nil {
+	if err := loadIPRules(ipAllowFile, rs.IPAllowRule.Trie); err != nil {
 		return nil, err
 	}
 
 	// Load IP Block List
 	ipBlockFile := filepath.Join(rulePath, "/IP_BlockList.conf")
-	if err := loadIPRules(ipBlockFile, rs.IPBlockTrie); err != nil {
+	if err := loadIPRules(ipBlockFile, rs.IPBlockRule.Trie); err != nil {
 		return nil, err
 	}
 
 	// Load URL Allow List
 	urlAllowFile := filepath.Join(rulePath, "/URL_AllowList.conf")
-	if err := loadURLRules(urlAllowFile, rs.URLAllowList); err != nil {
+	if err := loadURLRules(urlAllowFile, rs.URLAllowRule.List); err != nil {
 		return nil, err
 	}
 
 	// Load URL Block List
 	urlBlockFile := filepath.Join(rulePath, "/URL_BlockList.conf")
-	if err := loadURLRules(urlBlockFile, rs.URLBlockList); err != nil {
+	if err := loadURLRules(urlBlockFile, rs.URLBlockRule.List); err != nil {
 		return nil, err
 	}
 
@@ -167,12 +172,29 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
-	*rs.CAPTCHARule = *wrapper.CAPTCHARule
-	*rs.VerifyBotRule = *wrapper.VerifyBotRule
+	if wrapper.IPAllowRule != nil {
+		rs.IPAllowRule.Enabled = wrapper.IPAllowRule.Enabled
+	}
+	if wrapper.IPBlockRule != nil {
+		rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
+	}
+	if wrapper.URLAllowRule != nil {
+		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
+	}
+	if wrapper.URLBlockRule != nil {
+		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
+	}
+	if wrapper.CAPTCHARule != nil {
+		*rs.CAPTCHARule = *wrapper.CAPTCHARule
+	}
+	if wrapper.VerifyBotRule != nil {
+		*rs.VerifyBotRule = *wrapper.VerifyBotRule
+	}
 	if wrapper.ExternalMigrationRule != nil {
 		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
 	}
 
+	rs.HTTPFloodRule.Enabled = wrapper.HTTPFloodRule.Enabled
 	rs.HTTPFloodRule.HTTPFloodSpeedLimit = make(map[int64]int64)
 	rs.HTTPFloodRule.HTTPFloodSameURILimit = make(map[int64]int64)
 

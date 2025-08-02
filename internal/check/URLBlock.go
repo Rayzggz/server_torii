@@ -8,8 +8,13 @@ import (
 )
 
 func URLBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.URLBlockRule.Enabled {
+		decision.Set(action.Continue)
+		return
+	}
+
 	url := reqData.Uri
-	list := ruleSet.URLBlockList
+	list := ruleSet.URLBlockRule.List
 	if list.Match(url) {
 		utils.LogInfo(reqData, "", "URLBlockList")
 		decision.SetCode(action.Done, []byte("403"))

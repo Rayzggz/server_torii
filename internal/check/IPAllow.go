@@ -8,8 +8,13 @@ import (
 )
 
 func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	if !ruleSet.IPAllowRule.Enabled {
+		decision.Set(action.Continue)
+		return
+	}
+
 	remoteIP := reqData.RemoteIP
-	trie := ruleSet.IPAllowTrie
+	trie := ruleSet.IPAllowRule.Trie
 
 	ip := net.ParseIP(remoteIP)
 	if ip == nil {

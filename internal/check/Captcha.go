@@ -25,7 +25,7 @@ type HCaptchaResponse struct {
 }
 
 func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if !reqData.Captcha {
+	if !ruleSet.CAPTCHARule.Enabled {
 		decision.Set(action.Continue)
 		return
 	}
