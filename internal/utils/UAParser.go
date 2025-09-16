@@ -2,7 +2,7 @@ package utils
 
 import (
 	"fmt"
-	"github.com/mssola/useragent"
+	"github.com/medama-io/go-useragent"
 	"regexp"
 )
 
@@ -13,13 +13,10 @@ func GetClearanceUserAgent(inputUA string) string {
 		}
 		return inputUA
 	}
+	ua := useragent.NewParser()
+	agent := ua.Parse(inputUA)
 
-	ua := useragent.New(inputUA)
-
-	engin, enginVersion := ua.Engine()
-	browser, browserVersion := ua.Browser()
-
-	ret := fmt.Sprintf("Mozilla:%v,Module:%v,Platform:%v,OS:%v,Engine:%v,EngineVersion:%v,Browser:%v,BrowserVersion:%v", ua.Mozilla(), ua.Model(), ua.Platform(), ua.OS(), engin, enginVersion, browser, browserVersion)
+	ret := fmt.Sprintf("Device:%v,OS:%v,Browser:%v,BrowserVersion:%v", agent.Device(), agent.OS(), agent.Browser(), agent.BrowserVersion())
 	return ret
 
 }
