@@ -3,7 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
-	"gopkg.in/yaml.v3"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -11,19 +11,82 @@ import (
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
 	"strings"
+
+	"github.com/go-playground/validator/v10"
+	"gopkg.in/yaml.v3"
 )
 
+var validate *validator.Validate
+
+func init() {
+	validate = validator.New()
+
+	// Register custom validation for directory paths
+	validate.RegisterValidation("dir", validateDir)
+}
+
+// validateDir validates that a path is a directory
+func validateDir(fl validator.FieldLevel) bool {
+	path := fl.Field().String()
+	if path == "" {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// validateConfiguration validates a struct and logs warnings for validation errors
+func validateConfiguration(cfg interface{}, configName string) {
+	if err := validate.Struct(cfg); err != nil {
+		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+			for _, validationError := range validationErrors {
+				log.Printf("[WARNING] Configuration validation failed for %s.%s: %s (current value: '%v')",
+					configName,
+					validationError.Field(),
+					getValidationErrorMessage(validationError),
+					validationError.Value())
+			}
+		} else {
+			log.Printf("[WARNING] Configuration validation failed for %s: %v", configName, err)
+		}
+	}
+}
+
+// getValidationErrorMessage returns a human-readable validation error message
+func getValidationErrorMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "field is required but missing or empty"
+	case "min":
+		return fmt.Sprintf("value must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("value must be at most %s", fe.Param())
+	case "numeric":
+		return "value must be numeric"
+	case "url":
+		return "value must be a valid URL"
+	case "startswith":
+		return fmt.Sprintf("value must start with %s", fe.Param())
+	case "rate":
+		return "value must be a valid rate format"
+	case "dir":
+		return "path must be an existing directory"
+	default:
+		return fmt.Sprintf("validation rule '%s' failed", fe.Tag())
+	}
+}
+
 type MainConfig struct {
-	Port                            string           `yaml:"port"`
-	WebPath                         string           `yaml:"web_path"`
-	ErrorPage                       string           `yaml:"error_page"`
-	LogPath                         string           `yaml:"log_path"`
-	NodeName                        string           `yaml:"node_name"`
-	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers"`
-	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers"`
-	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers"`
-	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers"`
-	Sites                           []AllSiteRuleSet `yaml:"sites"`
+	Port                            string           `yaml:"port" validate:"required,numeric,min=1,max=65535"`
+	WebPath                         string           `yaml:"web_path" validate:"required,startswith=/"`
+	ErrorPage                       string           `yaml:"error_page" validate:"required"`
+	LogPath                         string           `yaml:"log_path" validate:"required"`
+	NodeName                        string           `yaml:"node_name" validate:"required"`
+	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers" validate:"required"`
+	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`
+	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
+	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers" validate:"required"`
+	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
@@ -74,12 +137,15 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		return &defaultCfg, err
 	}
 
+	// Validate the loaded configuration
+	validateConfiguration(&cfg, "MainConfig")
+
 	return &cfg, nil
 }
 
 type AllSiteRuleSet struct {
-	Host     string `yaml:"host"`
-	RulePath string `yaml:"rule_path"`
+	Host     string `yaml:"host" validate:"required,min=1"`
+	RulePath string `yaml:"rule_path" validate:"required,dir"`
 }
 
 // RuleSet stores all rules
@@ -107,9 +173,9 @@ type ruleSetWrapper struct {
 }
 
 type httpFloodRuleWrapper struct {
-	Enabled               bool     `yaml:"enabled"`
-	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit"`
-	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit"`
+	Enabled               bool     `yaml:"enabled" validate:"required"`
+	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
+	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
 }
 
 // LoadRules Load all rules from the specified path
@@ -173,27 +239,35 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	}
 
 	if wrapper.IPAllowRule != nil {
+		validateConfiguration(wrapper.IPAllowRule, "IPAllowRule")
 		rs.IPAllowRule.Enabled = wrapper.IPAllowRule.Enabled
 	}
 	if wrapper.IPBlockRule != nil {
+		validateConfiguration(wrapper.IPBlockRule, "IPBlockRule")
 		rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
 	}
 	if wrapper.URLAllowRule != nil {
+		validateConfiguration(wrapper.URLAllowRule, "URLAllowRule")
 		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
 	}
 	if wrapper.URLBlockRule != nil {
+		validateConfiguration(wrapper.URLBlockRule, "URLBlockRule")
 		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
 	}
 	if wrapper.CAPTCHARule != nil {
+		validateConfiguration(wrapper.CAPTCHARule, "CAPTCHARule")
 		*rs.CAPTCHARule = *wrapper.CAPTCHARule
 	}
 	if wrapper.VerifyBotRule != nil {
+		validateConfiguration(wrapper.VerifyBotRule, "VerifyBotRule")
 		*rs.VerifyBotRule = *wrapper.VerifyBotRule
 	}
 	if wrapper.ExternalMigrationRule != nil {
+		validateConfiguration(wrapper.ExternalMigrationRule, "ExternalMigrationRule")
 		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
 	}
 
+	validateConfiguration(&wrapper.HTTPFloodRule, "HTTPFloodRule")
 	rs.HTTPFloodRule.Enabled = wrapper.HTTPFloodRule.Enabled
 	rs.HTTPFloodRule.HTTPFloodSpeedLimit = make(map[int64]int64)
 	rs.HTTPFloodRule.HTTPFloodSameURILimit = make(map[int64]int64)
