@@ -2,6 +2,7 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -22,7 +23,10 @@ func init() {
 	validate = validator.New()
 
 	// Register custom validation for directory paths
-	validate.RegisterValidation("dir", validateDir)
+	err := validate.RegisterValidation("dir", validateDir)
+	if err != nil {
+		return
+	}
 }
 
 // validateDir validates that a path is a directory
@@ -38,9 +42,10 @@ func validateDir(fl validator.FieldLevel) bool {
 // validateConfiguration validates a struct and logs warnings for validation errors
 func validateConfiguration(cfg interface{}, configName string) {
 	if err := validate.Struct(cfg); err != nil {
-		if validationErrors, ok := err.(validator.ValidationErrors); ok {
+		var validationErrors validator.ValidationErrors
+		if errors.As(err, &validationErrors) {
 			for _, validationError := range validationErrors {
-				log.Printf("[WARNING] Configuration validation failed for %s.%s: %s (current value: '%v')",
+				log.Printf("[WARNING] Configuration issue in %s.%s may affect runtime: %s (current value: '%v')",
 					configName,
 					validationError.Field(),
 					getValidationErrorMessage(validationError),
