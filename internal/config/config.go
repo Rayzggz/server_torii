@@ -110,7 +110,7 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		Sites: []AllSiteRuleSet{
 			{
 				Host:     "default_site",
-				RulePath: "/www/server_torii/config/rules",
+				RulePath: "/www/server_torii/config/rules/default",
 			},
 		},
 	}
@@ -178,7 +178,7 @@ type ruleSetWrapper struct {
 }
 
 type httpFloodRuleWrapper struct {
-	Enabled               bool     `yaml:"enabled" validate:"required"`
+	Enabled               bool     `yaml:"enabled"`
 	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
 	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
 }

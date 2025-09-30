@@ -37,7 +37,7 @@ type UserRequest struct {
 }
 
 type CaptchaRule struct {
-	Enabled                        bool   `yaml:"enabled" validate:"required"`
+	Enabled                        bool   `yaml:"enabled"`
 	SecretKey                      string `yaml:"secret_key" validate:"required,min=16"`
 	CaptchaValidateTime            int64  `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
 	CaptchaChallengeSessionTimeout int64  `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
@@ -45,7 +45,7 @@ type CaptchaRule struct {
 }
 
 type VerifyBotRule struct {
-	Enabled         bool `yaml:"enabled" validate:"required"`
+	Enabled         bool `yaml:"enabled"`
 	VerifyGoogleBot bool `yaml:"verify_google_bot"`
 	VerifyBingBot   bool `yaml:"verify_bing_bot"`
 	VerifyBaiduBot  bool `yaml:"verify_baidu_bot"`
@@ -55,35 +55,35 @@ type VerifyBotRule struct {
 }
 
 type HTTPFloodRule struct {
-	Enabled               bool `yaml:"enabled" validate:"required"`
+	Enabled               bool `yaml:"enabled"`
 	HTTPFloodSpeedLimit   map[int64]int64
 	HTTPFloodSameURILimit map[int64]int64
 }
 
 type ExternalMigrationRule struct {
-	Enabled        bool   `yaml:"enabled" validate:"required"`
+	Enabled        bool   `yaml:"enabled"`
 	RedirectUrl    string `yaml:"redirect_url" validate:"required,url"`
 	SecretKey      string `yaml:"secret_key" validate:"required,min=16"`
 	SessionTimeout int64  `yaml:"session_timeout" validate:"required,min=1,max=9223372036854775807"`
 }
 
 type IPAllowRule struct {
-	Enabled bool `yaml:"enabled" validate:"required"`
+	Enabled bool `yaml:"enabled"`
 	Trie    *TrieNode
 }
 
 type IPBlockRule struct {
-	Enabled bool `yaml:"enabled" validate:"required"`
+	Enabled bool `yaml:"enabled"`
 	Trie    *TrieNode
 }
 
 type URLAllowRule struct {
-	Enabled bool `yaml:"enabled" validate:"required"`
+	Enabled bool `yaml:"enabled"`
 	List    *URLRuleList
 }
 
 type URLBlockRule struct {
-	Enabled bool `yaml:"enabled" validate:"required"`
+	Enabled bool `yaml:"enabled"`
 	List    *URLRuleList
 }
 
