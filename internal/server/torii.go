@@ -97,10 +97,6 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
-	if !ruleSet.ExternalMigrationRule.Enabled {
-		showExternalMigrationError(w, reqData, cfg, "External migration is disabled")
-		return
-	}
 
 	originalURI := r.URL.Query().Get("original_uri")
 	timestampStr := r.URL.Query().Get("timestamp")
