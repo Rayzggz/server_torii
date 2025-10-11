@@ -1,5 +1,7 @@
 package dataType
 
+const ServerToriiVersion string = "1.1.1"
+
 // Feature Control Bit Positions (0-based from right)
 const (
 	FeatureBitIPAllow           = 0 // bit 0

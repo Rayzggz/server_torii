@@ -23,7 +23,8 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
-		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
+		handleHealthCheck(w, r, reqData, ruleSet, cfg)
+		return
 	} else if strings.HasPrefix(reqData.Uri, cfg.WebPath+"/external_migration") {
 		handleExternalMigration(w, r, reqData, ruleSet, cfg)
 		return
@@ -94,6 +95,32 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			return
 		}
 	}
+}
+
+func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+
+	var builder strings.Builder
+	builder.WriteString("ok\n")
+	builder.WriteString("version=")
+	builder.WriteString(dataType.ServerToriiVersion)
+	builder.WriteString("\n")
+	builder.WriteString("time=")
+	builder.WriteString(time.Now().Format(time.RFC3339))
+	builder.WriteString("\n")
+	builder.WriteString("ts=")
+	builder.WriteString(strconv.FormatFloat(float64(time.Now().UnixNano())/1e9, 'f', 3, 64))
+	builder.WriteString("\n")
+	builder.WriteString("sliver=")
+	builder.WriteString(cfg.NodeName)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte(builder.String()))
+	if err != nil {
+		utils.LogError(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
+		return
+	}
+	return
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
