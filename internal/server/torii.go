@@ -124,6 +124,14 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+	if !ruleSet.ExternalMigrationRule.Enabled {
+		if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
+			showExternalMigrationError(w, reqData, cfg, "Migration disabled")
+			return
+		}
+		http.Redirect(w, r, r.URL.Query().Get("original_uri"), http.StatusFound)
+		return
+	}
 
 	originalURI := r.URL.Query().Get("original_uri")
 	timestampStr := r.URL.Query().Get("timestamp")
