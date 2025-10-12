@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
@@ -125,15 +126,28 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
 	if !ruleSet.ExternalMigrationRule.Enabled {
+		originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
+		if err != nil {
+			utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+			showExternalMigrationError(w, reqData, cfg, "Invalid Original URI")
+			return
+		}
+
 		if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
 			showExternalMigrationError(w, reqData, cfg, "Migration disabled")
 			return
 		}
-		http.Redirect(w, r, r.URL.Query().Get("original_uri"), http.StatusFound)
+		http.Redirect(w, r, originalURI, http.StatusFound)
 		return
 	}
 
-	originalURI := r.URL.Query().Get("original_uri")
+	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
+	if err != nil {
+		utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+		showExternalMigrationError(w, reqData, cfg, "Invalid Original URI")
+		return
+	}
+
 	timestampStr := r.URL.Query().Get("timestamp")
 	hmacParam := r.URL.Query().Get("hmac")
 
@@ -203,4 +217,24 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func validateInternalRedirectPath(raw string) (string, error) {
+	if raw == "" {
+		return "", fmt.Errorf("missing original_uri parameter")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid redirect URL: %v", err)
+	}
+	if u.Scheme != "" || u.Host != "" {
+		return "", fmt.Errorf("redirect target must not contain scheme or host")
+	}
+	if strings.HasPrefix(u.Path, "//") {
+		return "", fmt.Errorf("redirect target must not be scheme-relative")
+	}
+	if !strings.HasPrefix(u.Path, "/") {
+		return "", fmt.Errorf("redirect path must be absolute")
+	}
+	return u.Path + "?" + u.RawQuery, nil
 }
