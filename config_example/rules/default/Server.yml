@@ -1,14 +1,25 @@
+IPAllow:
+  enabled: true
+IPBlock:
+  enabled: true
+URLAllow:
+  enabled: true
+URLBlock:
+  enabled: true
 CAPTCHA:
+  enabled: true
   secret_key: "0378b0f84c4310279918d71a5647ba5d"
   captcha_validate_time: 600
   captcha_challenge_session_timeout: 120
   hcaptcha_secret: ""
 HTTPFlood:
+  enabled: true
   HTTPFloodSpeedLimit:
     - "150/10s"
   HTTPFloodSameURILimit:
     - "50/10s"
 VerifyBot:
+  enabled: true
   verify_google_bot: true
   verify_bing_bot: true
   verify_baidu_bot: true

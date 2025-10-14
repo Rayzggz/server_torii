@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
@@ -23,7 +24,8 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
-		decision.SetResponse(action.Done, []byte("200"), []byte("ok"))
+		handleHealthCheck(w, r, reqData, ruleSet, cfg)
+		return
 	} else if strings.HasPrefix(reqData.Uri, cfg.WebPath+"/external_migration") {
 		handleExternalMigration(w, r, reqData, ruleSet, cfg)
 		return
@@ -96,13 +98,56 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	}
 }
 
+func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+
+	var builder strings.Builder
+	builder.WriteString("ok\n")
+	builder.WriteString("version=")
+	builder.WriteString(dataType.ServerToriiVersion)
+	builder.WriteString("\n")
+	builder.WriteString("time=")
+	builder.WriteString(time.Now().Format(time.RFC3339))
+	builder.WriteString("\n")
+	builder.WriteString("ts=")
+	builder.WriteString(strconv.FormatFloat(float64(time.Now().UnixNano())/1e9, 'f', 3, 64))
+	builder.WriteString("\n")
+	builder.WriteString("sliver=")
+	builder.WriteString(cfg.NodeName)
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, err := w.Write([]byte(builder.String()))
+	if err != nil {
+		utils.LogError(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
+		return
+	}
+	return
+}
+
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
 	if !ruleSet.ExternalMigrationRule.Enabled {
-		showExternalMigrationError(w, reqData, cfg, "External migration is disabled")
+		originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
+		if err != nil {
+			utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+			showExternalMigrationError(w, reqData, cfg, "Invalid Original URI")
+			return
+		}
+
+		if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
+			showExternalMigrationError(w, reqData, cfg, "Migration disabled")
+			return
+		}
+		http.Redirect(w, r, originalURI, http.StatusFound)
 		return
 	}
 
-	originalURI := r.URL.Query().Get("original_uri")
+	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
+	if err != nil {
+		utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+		showExternalMigrationError(w, reqData, cfg, "Invalid Original URI")
+		return
+	}
+
 	timestampStr := r.URL.Query().Get("timestamp")
 	hmacParam := r.URL.Query().Get("hmac")
 
@@ -172,4 +217,24 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
+}
+
+func validateInternalRedirectPath(raw string) (string, error) {
+	if raw == "" {
+		return "", fmt.Errorf("missing original_uri parameter")
+	}
+	u, err := url.Parse(raw)
+	if err != nil {
+		return "", fmt.Errorf("invalid redirect URL: %v", err)
+	}
+	if u.Scheme != "" || u.Host != "" {
+		return "", fmt.Errorf("redirect target must not contain scheme or host")
+	}
+	if strings.HasPrefix(u.Path, "//") {
+		return "", fmt.Errorf("redirect target must not be scheme-relative")
+	}
+	if !strings.HasPrefix(u.Path, "/") {
+		return "", fmt.Errorf("redirect path must be absolute")
+	}
+	return u.Path + "?" + u.RawQuery, nil
 }

@@ -8,8 +8,14 @@ import (
 )
 
 func URLBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+	// Check if URLBlock feature is enabled using binary operation
+	if (reqData.FeatureControl & dataType.FeatureURLBlock) == 0 {
+		decision.Set(action.Continue)
+		return
+	}
+
 	url := reqData.Uri
-	list := ruleSet.URLBlockList
+	list := ruleSet.URLBlockRule.List
 	if list.Match(url) {
 		utils.LogInfo(reqData, "", "URLBlockList")
 		decision.SetCode(action.Done, []byte("403"))
