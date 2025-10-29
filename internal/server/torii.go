@@ -128,7 +128,7 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
-	if !ruleSet.ExternalMigrationRule.Enabled {
+	if (reqData.FeatureControl & dataType.FeatureExternalMigration) != 0 {
 		originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
 		if err != nil {
 			utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
@@ -223,13 +223,16 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 }
 
 func validateInternalRedirectPath(raw string) (string, error) {
+
 	if raw == "" {
 		return "", fmt.Errorf("missing original_uri parameter")
 	}
+
 	u, err := url.Parse(raw)
 	if err != nil {
 		return "", fmt.Errorf("invalid redirect URL: %v", err)
 	}
+
 	if u.Scheme != "" || u.Host != "" {
 		return "", fmt.Errorf("redirect target must not contain scheme or host")
 	}
@@ -239,7 +242,16 @@ func validateInternalRedirectPath(raw string) (string, error) {
 	if !strings.HasPrefix(u.Path, "/") {
 		return "", fmt.Errorf("redirect path must be absolute")
 	}
-	return u.Path + "?" + u.RawQuery, nil
+
+	redirect := u.Path
+	if u.RawQuery != "" {
+		redirect += "?" + u.RawQuery
+	}
+	if u.Fragment != "" {
+		redirect += "#" + u.Fragment
+	}
+
+	return redirect, nil
 }
 
 func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
