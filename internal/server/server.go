@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"path"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
@@ -26,10 +27,10 @@ func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, s
 		// Process feature control after ruleSet is loaded
 		userRequestData.FeatureControl = processFeatureControl(cfg, r, ruleSet)
 
-		if strings.HasPrefix(userRequestData.Uri, cfg.WebPath) {
-			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
-		} else {
+		if strings.Compare(r.URL.Path, path.Join(cfg.WebPath, "/checker")) == 0 {
 			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
+		} else {
+			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
 		}
 
 	})

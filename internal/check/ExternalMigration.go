@@ -21,7 +21,7 @@ func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, de
 	}
 
 	if !verifyExternalMigrationClearanceCookie(reqData, *ruleSet) {
-		decision.SetResponse(action.Done, []byte("EXTERNAL"), genExternalMigrationSessionID(reqData, *ruleSet))
+		decision.SetCode(action.Done, []byte("EXTERNAL"))
 		return
 	}
 
@@ -65,7 +65,7 @@ func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSe
 
 }
 
-func genExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+func GenExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))

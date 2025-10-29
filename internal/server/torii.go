@@ -21,7 +21,10 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	decision := action.NewDecision()
 
 	decision.SetCode(action.Continue, []byte("403"))
-	if reqData.Uri == cfg.WebPath+"/captcha" {
+	if strings.HasPrefix(r.URL.Path, cfg.WebPath+"/checker_pages/") {
+		handleCheckerPages(w, r, reqData, ruleSet, cfg)
+		return
+	} else if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		handleHealthCheck(w, r, reqData, ruleSet, cfg)
@@ -237,4 +240,120 @@ func validateInternalRedirectPath(raw string) (string, error) {
 		return "", fmt.Errorf("redirect path must be absolute")
 	}
 	return u.Path + "?" + u.RawQuery, nil
+}
+
+func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+	if r.URL.Path == cfg.WebPath+"/checker_pages/403" {
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
+		if err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		data := struct {
+			EdgeTag   string
+			ConnectIP string
+			Date      string
+		}{
+			EdgeTag:   cfg.NodeName,
+			ConnectIP: reqData.RemoteIP,
+			Date:      time.Now().Format("2006-01-02 15:04:05"),
+		}
+		w.WriteHeader(http.StatusForbidden)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err = tpl.Execute(w, data); err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+	} else if r.URL.Path == cfg.WebPath+"/checker_pages/CAPTCHA" {
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/CAPTCHA.html")
+		if err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(check.GenSessionID(reqData, *ruleSet))+"; Path=/; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if err = tpl.Execute(w, nil); err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+	} else if r.URL.Path == cfg.WebPath+"/checker_pages/429" {
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/429.html")
+		if err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		data := struct {
+			EdgeTag   string
+			ConnectIP string
+			Date      string
+		}{
+			EdgeTag:   cfg.NodeName,
+			ConnectIP: reqData.RemoteIP,
+			Date:      time.Now().Format("2006-01-02 15:04:05"),
+		}
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err = tpl.Execute(w, data); err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+	} else if r.URL.Path == cfg.WebPath+"/checker_pages/EXTERNAL" {
+		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
+
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(externalMigrationSessionID)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+
+		sessionID := string(externalMigrationSessionID)
+		sessionParts := strings.Split(sessionID, ":")
+		if len(sessionParts) != 2 {
+			utils.LogError(reqData, "Invalid session ID format", "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+		timestamp := sessionParts[0]
+		hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
+
+		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+reqData.Host+"&session_id="+sessionID+"&original_uri="+reqData.Uri+"&hmac="+hmacValue)
+		w.WriteHeader(http.StatusFound)
+		_, err := w.Write([]byte("OK"))
+		if err != nil {
+			return
+		}
+
+		return
+	} else {
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
+		if err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		data := struct {
+			EdgeTag   string
+			ConnectIP string
+			Date      string
+		}{
+			EdgeTag:   cfg.NodeName,
+			ConnectIP: reqData.RemoteIP,
+			Date:      time.Now().Format("2006-01-02 15:04:05"),
+		}
+		w.WriteHeader(http.StatusForbidden)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err = tpl.Execute(w, data); err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
+			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+	}
 }
