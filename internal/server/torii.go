@@ -128,22 +128,6 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
-	if (reqData.FeatureControl & dataType.FeatureExternalMigration) != 0 {
-		originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
-		if err != nil {
-			utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
-			showExternalMigrationError(w, reqData, cfg, "Invalid Original URI")
-			return
-		}
-
-		if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
-			showExternalMigrationError(w, reqData, cfg, "Migration disabled")
-			return
-		}
-		http.Redirect(w, r, originalURI, http.StatusFound)
-		return
-	}
-
 	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
 	if err != nil {
 		utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
@@ -169,7 +153,7 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 
 	currentTime := time.Now().Unix()
 	if currentTime-timestamp > 30 {
-		utils.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: %ds", currentTime-timestamp, ruleSet.ExternalMigrationRule.SessionTimeout), "handleExternalMigration")
+		utils.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: 30s", currentTime-timestamp), "handleExternalMigration")
 		showExternalMigrationError(w, reqData, cfg, "Migration link has expired")
 		return
 	}
