@@ -42,7 +42,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 	case "403", "CAPTCHA", "429", "EXTERNAL":
 		w.Header().Set("Torii-Action", string(decision.HTTPCode))
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(445)
 		_, err := w.Write([]byte("Forbidden"))
 		if err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
