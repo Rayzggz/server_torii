@@ -32,7 +32,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	}
 
 	if !verifyClearanceCookie(reqData, *ruleSet) {
-		decision.SetResponse(action.Done, []byte("CAPTCHA"), genSessionID(reqData, *ruleSet))
+		decision.SetCode(action.Done, []byte("CAPTCHA"))
 		return
 	}
 
@@ -136,7 +136,7 @@ func verifyClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 
 }
 
-func genSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+func GenSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))

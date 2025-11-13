@@ -1,6 +1,6 @@
 package dataType
 
-const ServerToriiVersion string = "1.2.0"
+const ServerToriiVersion string = "1.3.0"
 
 // Feature Control Bit Positions (0-based from right)
 const (
