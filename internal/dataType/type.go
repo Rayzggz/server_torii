@@ -60,6 +60,7 @@ type HTTPFloodRule struct {
 	Enabled               bool `yaml:"enabled"`
 	HTTPFloodSpeedLimit   map[int64]int64
 	HTTPFloodSameURILimit map[int64]int64
+	HTTPFloodFailureLimit map[int64]int64
 }
 
 type ExternalMigrationRule struct {
@@ -92,4 +93,5 @@ type URLBlockRule struct {
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
+	HTTPFloodFailureLimitCounter *Counter
 }

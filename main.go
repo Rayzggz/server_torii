@@ -35,26 +35,33 @@ func main() {
 	//allocate shared memory
 	maxSpeedLimitTime := int64(0)
 	maxSameURILimitTime := int64(0)
+	maxFailureLimitTime := int64(0)
 	for _, rules := range siteRules {
 		speedTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit)
 		uriTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit)
+		failureTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodFailureLimit)
 		if speedTime > maxSpeedLimitTime {
 			maxSpeedLimitTime = speedTime
 		}
 		if uriTime > maxSameURILimitTime {
 			maxSameURILimitTime = uriTime
 		}
+		if failureTime > maxFailureLimitTime {
+			maxFailureLimitTime = failureTime
+		}
 	}
 
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
+		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 	}
 
 	//GC
 	gcStopCh := make(chan struct{})
 	go dataType.StartCounterGC(sharedMem.HTTPFloodSpeedLimitCounter, time.Minute, gcStopCh)
 	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
+	go dataType.StartCounterGC(sharedMem.HTTPFloodFailureLimitCounter, time.Minute, gcStopCh)
 
 	// Initialize log system
 	utils.InitLogx(cfg.LogPath)

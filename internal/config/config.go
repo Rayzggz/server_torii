@@ -181,6 +181,7 @@ type httpFloodRuleWrapper struct {
 	Enabled               bool     `yaml:"enabled"`
 	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
 	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
+	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"dive"`
 }
 
 // LoadRules Load all rules from the specified path
@@ -291,6 +292,15 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 			return err
 		}
 		rs.HTTPFloodRule.HTTPFloodSameURILimit[seconds] = limit
+	}
+
+	rs.HTTPFloodRule.HTTPFloodFailureLimit = make(map[int64]int64)
+	for _, s := range wrapper.HTTPFloodRule.HTTPFloodFailureLimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return err
+		}
+		rs.HTTPFloodRule.HTTPFloodFailureLimit[seconds] = limit
 	}
 	return nil
 }
