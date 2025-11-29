@@ -25,7 +25,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 		handleCheckerPages(w, r, reqData, ruleSet, cfg)
 		return
 	} else if reqData.Uri == cfg.WebPath+"/captcha" {
-		check.CheckCaptcha(r, reqData, ruleSet, decision)
+		check.CheckCaptcha(r, reqData, ruleSet, decision, sharedMem)
 	} else if reqData.Uri == cfg.WebPath+"/health_check" {
 		handleHealthCheck(w, r, reqData, ruleSet, cfg)
 		return

@@ -39,11 +39,12 @@ type UserRequest struct {
 }
 
 type CaptchaRule struct {
-	Enabled                        bool   `yaml:"enabled"`
-	SecretKey                      string `yaml:"secret_key" validate:"required,min=16"`
-	CaptchaValidateTime            int64  `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
-	CaptchaChallengeSessionTimeout int64  `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string `yaml:"hcaptcha_secret"`
+	Enabled                        bool            `yaml:"enabled"`
+	SecretKey                      string          `yaml:"secret_key" validate:"required,min=16"`
+	CaptchaValidateTime            int64           `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
+	CaptchaChallengeSessionTimeout int64           `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
+	HCaptchaSecret                 string          `yaml:"hcaptcha_secret"`
+	CaptchaFailureLimit            map[int64]int64 `yaml:"-"`
 }
 
 type VerifyBotRule struct {
@@ -94,4 +95,5 @@ type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
 	HTTPFloodFailureLimitCounter *Counter
+	CaptchaFailureLimitCounter   *Counter
 }
