@@ -14,8 +14,13 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 		decision.Set(action.Continue)
 		return
 	}
-
 	ipKey := reqData.RemoteIP
+
+	if sharedMem.BlockList.IsBlocked(ipKey) {
+		utils.LogInfo(reqData, "", fmt.Sprintf("IP %s is blocked", ipKey))
+		decision.SetCode(action.Done, []byte("403"))
+		return
+	}
 	sharedMem.HTTPFloodSpeedLimitCounter.Add(ipKey, 1)
 
 	uriKey := reqData.RemoteIP + "|" + reqData.Uri
@@ -25,6 +30,9 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
 		if sharedMem.HTTPFloodFailureLimitCounter.Query(ipKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
+			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
+				sharedMem.BlockList.Block(ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration)
+			}
 			decision.SetCode(action.Done, []byte("403"))
 			return
 		}

@@ -32,10 +32,19 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	}
 
 	ipKey := reqData.RemoteIP
+
+	if sharedMem.BlockList.IsBlocked(ipKey) {
+		utils.LogInfo(reqData, "", fmt.Sprintf("IP %s is blocked", ipKey))
+		decision.SetCode(action.Done, []byte("403"))
+		return
+	}
 	// Check failure limit
 	for window, limit := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
 		if sharedMem.CaptchaFailureLimitCounter.Query(ipKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
+			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
+				sharedMem.BlockList.Block(ipKey, ruleSet.CAPTCHARule.FailureBlockDuration)
+			}
 			decision.SetCode(action.Done, []byte("403"))
 			return
 		}
@@ -111,8 +120,6 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	}
 
 	decision.SetResponse(action.Done, []byte("200"), []byte("good"))
-	return
-
 }
 
 func GenClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {

@@ -45,6 +45,7 @@ type CaptchaRule struct {
 	CaptchaChallengeSessionTimeout int64           `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
 	HCaptchaSecret                 string          `yaml:"hcaptcha_secret"`
 	CaptchaFailureLimit            map[int64]int64 `yaml:"-"`
+	FailureBlockDuration           int64           `yaml:"failure_block_duration"`
 }
 
 type VerifyBotRule struct {
@@ -62,6 +63,7 @@ type HTTPFloodRule struct {
 	HTTPFloodSpeedLimit   map[int64]int64
 	HTTPFloodSameURILimit map[int64]int64
 	HTTPFloodFailureLimit map[int64]int64
+	FailureBlockDuration  int64
 }
 
 type ExternalMigrationRule struct {
@@ -96,4 +98,5 @@ type SharedMemory struct {
 	HTTPFloodSameURILimitCounter *Counter
 	HTTPFloodFailureLimitCounter *Counter
 	CaptchaFailureLimitCounter   *Counter
+	BlockList                    *BlockList
 }
