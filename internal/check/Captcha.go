@@ -34,23 +34,24 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	ipKey := reqData.RemoteIP
 
 	if sharedMem.BlockList.IsBlocked(ipKey) {
-		utils.LogInfo(reqData, "", fmt.Sprintf("IP %s is blocked", ipKey))
 		decision.SetCode(action.Done, []byte("403"))
 		return
 	}
 	// Check failure limit
 	for window, limit := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
 		if sharedMem.CaptchaFailureLimitCounter.Query(ipKey, window) > limit {
-			utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
+
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
 				sharedMem.BlockList.Block(ipKey, ruleSet.CAPTCHARule.FailureBlockDuration)
+				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))
+				decision.SetCode(action.Done, []byte("403"))
+				return
 			}
-			decision.SetCode(action.Done, []byte("403"))
-			return
 		}
 	}
 
 	if !verifyClearanceCookie(reqData, *ruleSet) {
+		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetCode(action.Done, []byte("CAPTCHA"))
 		return
 	}
@@ -86,7 +87,6 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	resp, err := http.PostForm("https://api.hcaptcha.com/siteverify", data)
 	if err != nil {
 		utils.LogError(reqData, "", fmt.Sprintf("Error sending request to hCaptcha: %v", err))
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 	}
 	defer func(Body io.ReadCloser) {
@@ -99,7 +99,6 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		utils.LogError(reqData, "", fmt.Sprintf("Error reading response from hCaptcha: %v", err))
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
@@ -108,7 +107,6 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	err = json.Unmarshal(body, &hCaptchaResp)
 	if err != nil {
 		utils.LogError(reqData, "", fmt.Sprintf("Error parsing response from hCaptcha: %v", err))
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
