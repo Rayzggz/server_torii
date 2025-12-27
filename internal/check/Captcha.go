@@ -85,10 +85,12 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	data.Set("response", hCaptchaResponse)
 	data.Set("remoteip", reqData.RemoteIP)
 
-	resp, err := http.PostForm("https://api.hcaptcha.com/siteverify", data)
+	httpClient := http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.PostForm("https://api.hcaptcha.com/siteverify", data)
 	if err != nil {
 		utils.LogError(reqData, "", fmt.Sprintf("Error sending request to hCaptcha: %v", err))
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
+		return
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
