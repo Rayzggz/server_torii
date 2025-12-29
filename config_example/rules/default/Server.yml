@@ -12,12 +12,18 @@ CAPTCHA:
   captcha_validate_time: 600
   captcha_challenge_session_timeout: 120
   hcaptcha_secret: ""
+  CaptchaFailureLimit:
+    - "300/300s"
+  failure_block_duration: 1200
 HTTPFlood:
   enabled: true
   HTTPFloodSpeedLimit:
     - "150/10s"
   HTTPFloodSameURILimit:
     - "50/10s"
+  HTTPFloodFailureLimit:
+    - "300/300s"
+  failure_block_duration: 1200
 VerifyBot:
   enabled: true
   verify_google_bot: true

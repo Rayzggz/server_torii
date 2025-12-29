@@ -140,6 +140,14 @@ func (tc *Counter) Query(key string, lastN int64) int64 {
 	return 0
 }
 
+func (tc *Counter) Reset(key string) {
+	bucket := tc.getBucket(key)
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+	hashKey := xxhash.Sum64String(key)
+	delete(bucket.counters, hashKey)
+}
+
 func (tc *Counter) QueryBatch(key string, lastN []int64) []int64 {
 	now := time.Now().Unix()
 	bucket := tc.getBucket(key)

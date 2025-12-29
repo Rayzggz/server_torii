@@ -171,7 +171,7 @@ type ruleSetWrapper struct {
 	IPBlockRule           *dataType.IPBlockRule           `yaml:"IPBlock"`
 	URLAllowRule          *dataType.URLAllowRule          `yaml:"URLAllow"`
 	URLBlockRule          *dataType.URLBlockRule          `yaml:"URLBlock"`
-	CAPTCHARule           *dataType.CaptchaRule           `yaml:"CAPTCHA"`
+	CAPTCHARule           *captchaRuleWrapper             `yaml:"CAPTCHA"`
 	VerifyBotRule         *dataType.VerifyBotRule         `yaml:"VerifyBot"`
 	HTTPFloodRule         httpFloodRuleWrapper            `yaml:"HTTPFlood"`
 	ExternalMigrationRule *dataType.ExternalMigrationRule `yaml:"ExternalMigration"`
@@ -181,6 +181,18 @@ type httpFloodRuleWrapper struct {
 	Enabled               bool     `yaml:"enabled"`
 	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
 	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
+	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"required,dive"`
+	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,min=1"`
+}
+
+type captchaRuleWrapper struct {
+	Enabled                        bool     `yaml:"enabled"`
+	SecretKey                      string   `yaml:"secret_key" validate:"required,min=16"`
+	CaptchaValidateTime            int64    `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
+	CaptchaChallengeSessionTimeout int64    `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
+	HCaptchaSecret                 string   `yaml:"hcaptcha_secret" validate:"required"`
+	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
+	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
 // LoadRules Load all rules from the specified path
@@ -261,7 +273,21 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	}
 	if wrapper.CAPTCHARule != nil {
 		validateConfiguration(wrapper.CAPTCHARule, "CAPTCHARule")
-		*rs.CAPTCHARule = *wrapper.CAPTCHARule
+		rs.CAPTCHARule.Enabled = wrapper.CAPTCHARule.Enabled
+		rs.CAPTCHARule.SecretKey = wrapper.CAPTCHARule.SecretKey
+		rs.CAPTCHARule.CaptchaValidateTime = wrapper.CAPTCHARule.CaptchaValidateTime
+		rs.CAPTCHARule.CaptchaChallengeSessionTimeout = wrapper.CAPTCHARule.CaptchaChallengeSessionTimeout
+		rs.CAPTCHARule.HCaptchaSecret = wrapper.CAPTCHARule.HCaptchaSecret
+
+		rs.CAPTCHARule.CaptchaFailureLimit = make(map[int64]int64)
+		for _, s := range wrapper.CAPTCHARule.CaptchaFailureLimit {
+			limit, seconds, err := utils.ParseRate(s)
+			if err != nil {
+				return err
+			}
+			rs.CAPTCHARule.CaptchaFailureLimit[seconds] = limit
+		}
+		rs.CAPTCHARule.FailureBlockDuration = wrapper.CAPTCHARule.FailureBlockDuration
 	}
 	if wrapper.VerifyBotRule != nil {
 		validateConfiguration(wrapper.VerifyBotRule, "VerifyBotRule")
@@ -292,6 +318,16 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		}
 		rs.HTTPFloodRule.HTTPFloodSameURILimit[seconds] = limit
 	}
+
+	rs.HTTPFloodRule.HTTPFloodFailureLimit = make(map[int64]int64)
+	for _, s := range wrapper.HTTPFloodRule.HTTPFloodFailureLimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return err
+		}
+		rs.HTTPFloodRule.HTTPFloodFailureLimit[seconds] = limit
+	}
+	rs.HTTPFloodRule.FailureBlockDuration = wrapper.HTTPFloodRule.FailureBlockDuration
 	return nil
 }
 

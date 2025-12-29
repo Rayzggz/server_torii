@@ -1,6 +1,6 @@
 package dataType
 
-const ServerToriiVersion string = "1.3.1"
+const ServerToriiVersion string = "1.4.0"
 
 // Feature Control Bit Positions (0-based from right)
 const (
@@ -39,11 +39,13 @@ type UserRequest struct {
 }
 
 type CaptchaRule struct {
-	Enabled                        bool   `yaml:"enabled"`
-	SecretKey                      string `yaml:"secret_key" validate:"required,min=16"`
-	CaptchaValidateTime            int64  `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
-	CaptchaChallengeSessionTimeout int64  `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string `yaml:"hcaptcha_secret"`
+	Enabled                        bool            `yaml:"enabled"`
+	SecretKey                      string          `yaml:"secret_key" validate:"required,min=16"`
+	CaptchaValidateTime            int64           `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
+	CaptchaChallengeSessionTimeout int64           `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
+	HCaptchaSecret                 string          `yaml:"hcaptcha_secret"`
+	CaptchaFailureLimit            map[int64]int64 `yaml:"-"`
+	FailureBlockDuration           int64           `yaml:"failure_block_duration"`
 }
 
 type VerifyBotRule struct {
@@ -60,6 +62,8 @@ type HTTPFloodRule struct {
 	Enabled               bool `yaml:"enabled"`
 	HTTPFloodSpeedLimit   map[int64]int64
 	HTTPFloodSameURILimit map[int64]int64
+	HTTPFloodFailureLimit map[int64]int64
+	FailureBlockDuration  int64
 }
 
 type ExternalMigrationRule struct {
@@ -92,4 +96,7 @@ type URLBlockRule struct {
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
+	HTTPFloodFailureLimitCounter *Counter
+	CaptchaFailureLimitCounter   *Counter
+	BlockList                    *BlockList
 }

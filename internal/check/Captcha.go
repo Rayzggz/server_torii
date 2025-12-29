@@ -31,7 +31,28 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 		return
 	}
 
+	ipKey := reqData.RemoteIP
+
+	if sharedMem.BlockList.IsBlocked(ipKey) {
+		decision.SetCode(action.Done, []byte("403"))
+		return
+	}
+	// Check failure limit
+	for window, limit := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
+		if sharedMem.CaptchaFailureLimitCounter.Query(ipKey, window) > limit {
+
+			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
+				sharedMem.BlockList.Block(ipKey, ruleSet.CAPTCHARule.FailureBlockDuration)
+				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))
+				sharedMem.CaptchaFailureLimitCounter.Reset(ipKey)
+				decision.SetCode(action.Done, []byte("403"))
+				return
+			}
+		}
+	}
+
 	if !verifyClearanceCookie(reqData, *ruleSet) {
+		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetCode(action.Done, []byte("CAPTCHA"))
 		return
 	}
@@ -40,7 +61,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 
 }
 
-func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision) {
+func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	if r.Method != "POST" {
 		decision.SetResponse(action.Done, []byte("403"), nil)
 		return
@@ -48,11 +69,13 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 
 	hCaptchaResponse := r.FormValue("h-captcha-response")
 	if hCaptchaResponse == "" {
+		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
 		return
 	}
 
 	if !verifySessionIDCookie(reqData, *ruleSet) {
+		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("badSession"))
 		return
 	}
@@ -62,10 +85,12 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	data.Set("response", hCaptchaResponse)
 	data.Set("remoteip", reqData.RemoteIP)
 
-	resp, err := http.PostForm("https://api.hcaptcha.com/siteverify", data)
+	httpClient := http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.PostForm("https://api.hcaptcha.com/siteverify", data)
 	if err != nil {
 		utils.LogError(reqData, "", fmt.Sprintf("Error sending request to hCaptcha: %v", err))
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
+		return
 	}
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
@@ -90,13 +115,12 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	}
 
 	if !hCaptchaResp.Success {
+		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
 		return
 	}
 
 	decision.SetResponse(action.Done, []byte("200"), []byte("good"))
-	return
-
 }
 
 func GenClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
