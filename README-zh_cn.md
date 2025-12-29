@@ -24,3 +24,10 @@
 ## 🔧 文档
 
 https://rayzggz.github.io/server_torii-docs/zh/
+
+
+如果你无法访问上述链接，请访问：
+
+https://server-torii-docs.ranfu.net/zh/
+
+https://server-torii-docs.pages.dev/zh/

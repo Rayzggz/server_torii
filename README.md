@@ -25,4 +25,8 @@ English | [简体中文](README-zh_cn.md)
 
 https://rayzggz.github.io/server_torii-docs/
 
+If you cannot access the above link, please visit:
 
+https://server-torii-docs.ranfu.net/
+
+https://server-torii-docs.pages.dev/
