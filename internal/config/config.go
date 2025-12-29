@@ -182,7 +182,7 @@ type httpFloodRuleWrapper struct {
 	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
 	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
 	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"required,dive"`
-	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,omitempty,min=1"`
+	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
 type captchaRuleWrapper struct {
@@ -190,9 +190,9 @@ type captchaRuleWrapper struct {
 	SecretKey                      string   `yaml:"secret_key" validate:"required,min=16"`
 	CaptchaValidateTime            int64    `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
 	CaptchaChallengeSessionTimeout int64    `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string   `yaml:"hcaptcha_secret" validate:"required,omitempty"`
+	HCaptchaSecret                 string   `yaml:"hcaptcha_secret" validate:"required"`
 	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
-	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,omitempty,min=1"`
+	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
 // LoadRules Load all rules from the specified path
