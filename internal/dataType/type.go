@@ -99,4 +99,5 @@ type SharedMemory struct {
 	HTTPFloodFailureLimitCounter *Counter
 	CaptchaFailureLimitCounter   *Counter
 	BlockList                    *BlockList
+	GossipChan                   chan GossipMessage
 }

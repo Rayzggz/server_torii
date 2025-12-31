@@ -62,7 +62,12 @@ func main() {
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
 		BlockList:                    dataType.NewBlockList(),
+		GossipChan:                   make(chan dataType.GossipMessage, 1000),
 	}
+
+	// Initialize GossipManager
+	gossipManager := server.NewGossipManager(cfg, sharedMem.BlockList)
+	go gossipManager.Start(sharedMem.GossipChan)
 
 	//GC
 	gcStopCh := make(chan struct{})

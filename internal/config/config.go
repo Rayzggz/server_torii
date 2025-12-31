@@ -92,6 +92,12 @@ type MainConfig struct {
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
 	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers" validate:"required"`
 	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required"`
+	Peers                           []Peer           `yaml:"peers"`
+}
+
+type Peer struct {
+	Address string `yaml:"address" validate:"required,url"`
+	Host    string `yaml:"host"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
