@@ -23,9 +23,24 @@ func NewBlockList() *BlockList {
 func (bl *BlockList) Block(ip string, duration int64) {
 	bl.mu.Lock()
 	defer bl.mu.Unlock()
+
 	expiration := time.Now().Unix() + duration
+
+	// If already blocked with a later expiration, ignore
+	if existingExp, exists := bl.blockedIPs[ip]; exists && existingExp >= expiration {
+		return
+	}
+
 	bl.blockedIPs[ip] = expiration
 	bl.buckets[expiration] = append(bl.buckets[expiration], ip)
+}
+
+func (bl *BlockList) BlockUntil(ip string, expiration int64) {
+	duration := expiration - time.Now().Unix()
+	if duration <= 0 {
+		return
+	}
+	bl.Block(ip, duration)
 }
 
 func (bl *BlockList) IsBlocked(ip string) bool {
@@ -60,6 +75,21 @@ func (bl *BlockList) Cleanup() {
 		}
 	}
 	bl.lastCheck = now
+}
+
+// GetSnapshot returns a copy of the current blocked IPs and their expiration times
+func (bl *BlockList) GetSnapshot() map[string]int64 {
+	bl.mu.RLock()
+	defer bl.mu.RUnlock()
+
+	snapshot := make(map[string]int64, len(bl.blockedIPs))
+	now := time.Now().Unix()
+	for ip, exp := range bl.blockedIPs {
+		if exp > now {
+			snapshot[ip] = exp
+		}
+	}
+	return snapshot
 }
 
 func StartBlockListGC(blockList *BlockList, _ time.Duration, stopCh <-chan struct{}) {

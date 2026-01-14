@@ -18,6 +18,7 @@ import (
 )
 
 var validate *validator.Validate
+var GlobalConfig *MainConfig
 
 func init() {
 	validate = validator.New()

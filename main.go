@@ -25,6 +25,7 @@ func main() {
 	if err != nil {
 		log.Printf("[WARNING] Load config failed: %v. Using default config.", err)
 	}
+	config.GlobalConfig = cfg
 
 	// Load site-specific rules
 	siteRules, err := config.LoadSiteRules(cfg)
@@ -67,6 +68,7 @@ func main() {
 
 	// Initialize GossipManager
 	gossipManager := server.NewGossipManager(cfg, sharedMem.BlockList)
+	sharedMem.GossipManager = gossipManager
 	go gossipManager.Start(sharedMem.GossipChan)
 
 	//GC

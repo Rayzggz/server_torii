@@ -30,7 +30,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 		if sharedMem.HTTPFloodFailureLimitCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
 				sharedMem.BlockList.Block(ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration)
-				utils.BroadcastBlock(ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration, sharedMem.GossipChan)
+				utils.BroadcastBlock(config.GlobalConfig.NodeName, ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration, sharedMem.GossipChan)
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				sharedMem.HTTPFloodFailureLimitCounter.Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))

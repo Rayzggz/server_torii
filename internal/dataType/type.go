@@ -1,5 +1,7 @@
 package dataType
 
+import "net/http"
+
 const ServerToriiVersion string = "1.4.0"
 
 // Feature Control Bit Positions (0-based from right)
@@ -93,6 +95,10 @@ type URLBlockRule struct {
 	List    *URLRuleList
 }
 
+type GossipHandler interface {
+	HandleGossip(w http.ResponseWriter, r *http.Request)
+}
+
 type SharedMemory struct {
 	HTTPFloodSpeedLimitCounter   *Counter
 	HTTPFloodSameURILimitCounter *Counter
@@ -100,4 +106,5 @@ type SharedMemory struct {
 	CaptchaFailureLimitCounter   *Counter
 	BlockList                    *BlockList
 	GossipChan                   chan GossipMessage
+	GossipManager                GossipHandler
 }
