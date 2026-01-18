@@ -2,7 +2,12 @@ package server
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"crypto/sha512"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log"
 	"math/rand"
 	"net/http"
@@ -153,6 +158,13 @@ func (gm *GossipManager) sendGossip(p config.Peer, msg dataType.GossipMessage) {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+
+	// Calculate HMAC-SHA512 Signature
+	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
+	mac.Write(data)
+	signature := hex.EncodeToString(mac.Sum(nil))
+	req.Header.Set("X-Torii-Signature", signature)
+
 	if p.Host != "" {
 		req.Host = p.Host
 	}
@@ -176,12 +188,37 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg dataType.GossipMessage
-	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	// Read Body
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		return
 	}
 	defer r.Body.Close()
+
+	// Verify HMAC-SHA512 Signature
+	signatureHeader := r.Header.Get("X-Torii-Signature")
+	if signatureHeader == "" {
+		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
+	mac.Write(body)
+	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+
+	if subtle.ConstantTimeCompare([]byte(signatureHeader), []byte(expectedSignature)) != 1 {
+		log.Printf("[SECURITY] Invalid signature from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	var msg dataType.GossipMessage
+	if err := json.Unmarshal(body, &msg); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
 
 	// Processing
 	gm.processRemoteMessage(msg)

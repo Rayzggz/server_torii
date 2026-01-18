@@ -87,6 +87,7 @@ type MainConfig struct {
 	WebPath                         string           `yaml:"web_path" validate:"required,startswith=/"`
 	ErrorPage                       string           `yaml:"error_page" validate:"required"`
 	LogPath                         string           `yaml:"log_path" validate:"required"`
+	GlobalSecret                    string           `yaml:"global_secret" validate:"required,min=32"`
 	NodeName                        string           `yaml:"node_name" validate:"required"`
 	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers" validate:"required"`
 	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`

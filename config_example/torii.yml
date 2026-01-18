@@ -2,6 +2,7 @@ port: "25555"
 web_path: "/torii"
 error_page: "/www/server_torii/config/error_page"
 log_path: "/www/server_torii/log/"
+global_secret: "0378b0f84c4310279918d71a5647ba5d"
 node_name: "Server Torii"
 connecting_host_headers:
   - "Torii-Real-Host"
