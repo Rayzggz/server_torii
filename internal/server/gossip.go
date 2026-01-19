@@ -20,17 +20,19 @@ import (
 )
 
 type GossipManager struct {
-	cfg          *config.MainConfig
-	blockList    *dataType.BlockList
-	seenMessages map[string]time.Time
-	mu           sync.RWMutex
+	cfg                 *config.MainConfig
+	blockList           *dataType.BlockList
+	seenMessages        map[string]time.Time
+	mu                  sync.RWMutex
+	AntiEntropyInterval time.Duration
 }
 
 func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *GossipManager {
 	return &GossipManager{
-		cfg:          cfg,
-		blockList:    blockList,
-		seenMessages: make(map[string]time.Time),
+		cfg:                 cfg,
+		blockList:           blockList,
+		seenMessages:        make(map[string]time.Time),
+		AntiEntropyInterval: 30 * time.Second,
 	}
 }
 
@@ -110,7 +112,7 @@ func (gm *GossipManager) epidemicBroadcast(msg dataType.GossipMessage) {
 }
 
 func (gm *GossipManager) startAntiEntropy() {
-	ticker := time.NewTicker(30 * time.Second) // Run every 30s
+	ticker := time.NewTicker(gm.AntiEntropyInterval) // Run every interval
 	defer ticker.Stop()
 
 	for range ticker.C {
