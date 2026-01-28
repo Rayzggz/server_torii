@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha512"
-	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -206,11 +205,18 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sigBytes, err := hex.DecodeString(signatureHeader)
+	if err != nil {
+		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
 	mac.Write(body)
-	expectedSignature := hex.EncodeToString(mac.Sum(nil))
+	expectedMAC := mac.Sum(nil)
 
-	if subtle.ConstantTimeCompare([]byte(signatureHeader), []byte(expectedSignature)) != 1 {
+	if !hmac.Equal(sigBytes, expectedMAC) {
 		log.Printf("[SECURITY] Invalid signature from %s", r.RemoteAddr)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return
