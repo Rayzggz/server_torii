@@ -118,7 +118,9 @@ EOF
     for j in $(seq 1 $NUM_NODES); do
         if [ "$i" -ne "$j" ]; then
             PEER_PORT=$((BASE_PORT + j))
-            echo "  - address: \"http://127.0.0.1:$PEER_PORT\"" >> "$NODE_CONF_DIR/torii.yml"
+            echo "  - name: \"Node_$j\"" >> "$NODE_CONF_DIR/torii.yml"
+            echo "    address: \"http://127.0.0.1:$PEER_PORT\"" >> "$NODE_CONF_DIR/torii.yml"
+            echo "    host: \"node-$j.local\"" >> "$NODE_CONF_DIR/torii.yml"
         fi
     done
 done
@@ -230,7 +232,7 @@ EXPIRATION=$(( $(date +%s) + TTL_SEC ))
 MSG_ID="uuid-$(date +%s)-$RANDOM"
 # Construct BlockIP message
 # TYPE IS BLOCK_IP (uppercase)
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"manual_test\",\"timestamp\":$(date +%s)}"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s)}"
 
 # Calculate HMAC
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
@@ -285,7 +287,7 @@ log "=== Test 3: Idempotency ==="
 IDEM_IP="10.10.3.3"
 EXPIRATION=$(( $(date +%s) + 60 ))
 MSG_ID="fixed-uuid-dup_test"
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"manual_test\",\"timestamp\":$(date +%s)}"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s)}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
 log "Sending duplicate messages to Node 1..."

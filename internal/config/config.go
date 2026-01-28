@@ -98,6 +98,7 @@ type MainConfig struct {
 }
 
 type Peer struct {
+	Name    string `yaml:"name" validate:"required"`
 	Address string `yaml:"address" validate:"required,url"`
 	Host    string `yaml:"host"`
 }

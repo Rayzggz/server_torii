@@ -222,6 +222,21 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Verify OriginNode is in Peers list
+	knownPeer := false
+	for _, p := range gm.cfg.Peers {
+		if p.Name == msg.OriginNode {
+			knownPeer = true
+			break
+		}
+	}
+
+	if !knownPeer {
+		log.Printf("[SECURITY] Received gossip from unknown node: %s", msg.OriginNode)
+		http.Error(w, "Forbidden: Unknown OriginNode", http.StatusForbidden)
+		return
+	}
+
 	// Processing
 	gm.processRemoteMessage(msg)
 
