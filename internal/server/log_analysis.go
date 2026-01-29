@@ -4,6 +4,7 @@ import (
 	"log"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"sort"
 	"sync"
 	"time"
 )
@@ -172,9 +173,13 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 	}
 
 	stats := make(map[string]*ipStats)
+	globalUriCounts := make(map[string]int64)
 
 	// 1. Aggregate Stats
 	for _, l := range logs {
+		if l.URI != "" {
+			globalUriCounts[l.URI]++
+		}
 		if l.IP == "" {
 			continue
 		}
@@ -200,6 +205,31 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 			if l.Status != 200 {
 				uStats.Fail++
 			}
+		}
+	}
+
+	// Identify Top N URIs
+	topNUriSet := make(map[string]bool)
+	if non200Rule.UriRateThreshold > 0 && non200Rule.UriRateTopN > 0 {
+		type uriCount struct {
+			URI   string
+			Count int64
+		}
+		var sortedURIs []uriCount
+		for u, c := range globalUriCounts {
+			sortedURIs = append(sortedURIs, uriCount{URI: u, Count: c})
+		}
+
+		sort.Slice(sortedURIs, func(i, j int) bool {
+			return sortedURIs[i].Count > sortedURIs[j].Count
+		})
+
+		count := non200Rule.UriRateTopN
+		if count > len(sortedURIs) {
+			count = len(sortedURIs)
+		}
+		for i := 0; i < count; i++ {
+			topNUriSet[sortedURIs[i].URI] = true
 		}
 	}
 
@@ -230,44 +260,21 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 			}
 		}
 
-		// Condition 3: Top N URI Rate
-		if !blocked && non200Rule.UriRateThreshold > 0 && non200Rule.UriRateTopN > 0 {
-			// Extract URIs
-			type uriItem struct {
-				URI   string
-				Count int64
-				Fail  int64
-			}
-			items := make([]uriItem, 0, len(stat.UriStats))
-			for u, us := range stat.UriStats {
-				items = append(items, uriItem{URI: u, Count: us.Total, Fail: us.Fail})
-			}
-
-			// Sort descending by Count
-			for i := 0; i < len(items); i++ {
-				for j := i + 1; j < len(items); j++ {
-					if items[j].Count > items[i].Count {
-						items[i], items[j] = items[j], items[i]
-					}
+		// Condition 3: Top N URI Interaction
+		if !blocked && len(topNUriSet) > 0 {
+			hitTopN := false
+			for u := range stat.UriStats {
+				if topNUriSet[u] {
+					hitTopN = true
+					break
 				}
 			}
 
-			// Check Top N
-			checkCount := non200Rule.UriRateTopN
-			if checkCount > len(items) {
-				checkCount = len(items)
-			}
-
-			for i := 0; i < checkCount; i++ {
-				uItem := items[i]
-				if uItem.Count == 0 {
-					continue
-				}
-				rate := float64(uItem.Fail) / float64(uItem.Count)
+			if hitTopN {
+				rate := float64(stat.FailRequests) / float64(stat.TotalRequests)
 				if rate >= non200Rule.UriRateThreshold {
 					blocked = true
-					reason = "URI Rate Exceeded: " + uItem.URI
-					break
+					reason = "Top N URI Rate Exceeded"
 				}
 			}
 		}
