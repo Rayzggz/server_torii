@@ -81,7 +81,12 @@ func parseAndSubmitLog(message string, analyzer *AdaptiveTrafficAnalyzer) {
 		tag = tag[:bracketIdx]
 	}
 
-	// 2. Parse Message Body (Nginx Combined Log) for IP and Status
+	// 2. Validate Tag - Discard if no rule exists
+	if analyzer.findRuleByTag(tag) == nil {
+		return
+	}
+
+	// 3. Parse Message Body (Nginx Combined Log) for IP and Status
 	matches := nginxLogRegex.FindStringSubmatch(body)
 	if len(matches) < 4 {
 		return
