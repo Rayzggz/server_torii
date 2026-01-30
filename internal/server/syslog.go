@@ -14,6 +14,11 @@ import (
 // Example: 127.0.0.1 - - [28/Jan/2026:19:50:24 -0500] "GET / HTTP/1.1" 200 612 "-" "Mozilla/5.0..."
 var nginxLogRegex = regexp.MustCompile(`^(\S+)\s+\S+\s+\S+\s+\[[^]]+]\s+"([^"]*)"\s+(\d{3})\s+`)
 
+const (
+	syslogBufferSize = 10000
+	syslogWorkers    = 20
+)
+
 // StartSyslogUDPListener starts a UDP listener for Syslog messages
 func StartSyslogUDPListener(port string, analyzer *AdaptiveTrafficAnalyzer) error {
 	udpAddr, err := net.ResolveUDPAddr("udp", ":"+port)
@@ -25,11 +30,31 @@ func StartSyslogUDPListener(port string, analyzer *AdaptiveTrafficAnalyzer) erro
 	if err != nil {
 		return err
 	}
-	// defer conn.Close() // Should run until server stops
+	// defer conn.Close() // Should run until server resumes
+	// Note: Not closing the connection to allow the server to continue running
 
 	log.Printf("Syslog UDP Listener started on port %s", port)
 
-	buf := make([]byte, 4096) // 4KB buffer for UDP packets
+	// Create a buffered channel to hold incoming messages
+	logChan := make(chan string, syslogBufferSize)
+
+	// Start worker pool
+	for i := 0; i < syslogWorkers; i++ {
+		go func() {
+			for msg := range logChan {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("[Recovered] Syslog worker panic: %v", r)
+						}
+					}()
+					parseAndSubmitLog(msg, analyzer)
+				}()
+			}
+		}()
+	}
+
+	buf := make([]byte, 64*1024) // 64KB buffer for UDP packets
 	for {
 		// ReadFromUDP can read a packet
 		n, _, err := conn.ReadFromUDP(buf)
@@ -39,7 +64,14 @@ func StartSyslogUDPListener(port string, analyzer *AdaptiveTrafficAnalyzer) erro
 		}
 
 		message := string(buf[:n])
-		go parseAndSubmitLog(message, analyzer)
+
+		// Non-blocking send to channel
+		select {
+		case logChan <- message:
+			// Message queued successfully
+		default:
+			// Channel is full, drop the message
+		}
 	}
 }
 
