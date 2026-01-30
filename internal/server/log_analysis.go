@@ -61,10 +61,18 @@ type AdaptiveTrafficAnalyzer struct {
 
 func NewAdaptiveTrafficAnalyzer(siteRules map[string]*config.RuleSet, sharedMem *dataType.SharedMemory) *AdaptiveTrafficAnalyzer {
 	tagRules := make(map[string]*config.RuleSet)
-	for _, rules := range siteRules {
+	for siteHost, rules := range siteRules {
 		if rules.AdaptiveTrafficAnalyzerRule != nil {
-			tagRules[rules.AdaptiveTrafficAnalyzerRule.Tag] = rules
+			tag := rules.AdaptiveTrafficAnalyzerRule.Tag
+			if _, exists := tagRules[tag]; exists {
+				log.Printf("[WARNING] Duplicate AdaptiveTrafficAnalyzer tag '%s' found in site '%s'. This will overwrite the previous rule.", tag, siteHost)
+			}
+			tagRules[tag] = rules
 		}
+	}
+
+	if len(tagRules) == 0 {
+		log.Println("[WARNING] No AdaptiveTrafficAnalyzer rules found. Log analysis will be effectively disabled.")
 	}
 
 	return &AdaptiveTrafficAnalyzer{
