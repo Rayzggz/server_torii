@@ -87,13 +87,21 @@ func NewAdaptiveTrafficAnalyzer(siteRules map[string]*config.RuleSet, sharedMem 
 
 func (ata *AdaptiveTrafficAnalyzer) Start() {
 	// Find the minimum analysis interval across all sites
-	minInterval := int64(60) // Default 1 minute
+	var minInterval int64
 	for _, rules := range ata.siteRules {
 		if rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled {
-			if rules.AdaptiveTrafficAnalyzerRule.AnalysisInterval < minInterval {
-				minInterval = rules.AdaptiveTrafficAnalyzerRule.AnalysisInterval
+			interval := rules.AdaptiveTrafficAnalyzerRule.AnalysisInterval
+			if interval <= 0 {
+				interval = 60
+			}
+			if minInterval == 0 || interval < minInterval {
+				minInterval = interval
 			}
 		}
+	}
+
+	if minInterval == 0 {
+		minInterval = 60 // Default 1 minute
 	}
 
 	ticker := time.NewTicker(time.Duration(minInterval) * time.Second)
