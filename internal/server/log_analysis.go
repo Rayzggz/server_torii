@@ -4,6 +4,7 @@ import (
 	"log"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 	"sort"
 	"sync"
 	"time"
@@ -77,7 +78,7 @@ func NewAdaptiveTrafficAnalyzer(siteRules map[string]*config.RuleSet, sharedMem 
 
 	return &AdaptiveTrafficAnalyzer{
 		buffer:    NewLogBuffer(),
-		analyzers: []Analyzer{&Non200Analyzer{}}, // Register default analyzers
+		analyzers: []Analyzer{&Non200Analyzer{}, &UriAnalyzer{}}, // Register default analyzers
 		siteRules: siteRules,
 		tagRules:  tagRules,
 		sharedMem: sharedMem,
@@ -301,4 +302,102 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 				ip, non200Rule.BlockDuration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason)
 		}
 	}
+}
+
+// UriAnalyzer implements Analyzer for URI-based attacks
+type UriAnalyzer struct{}
+
+func (u *UriAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *dataType.SharedMemory) {
+	uriRule := rule.AdaptiveTrafficAnalyzerRule.UriAnalysis
+	if !uriRule.Enabled {
+		return
+	}
+
+	// 1. Stats Aggregation
+	type uriStats struct {
+		Total    int64
+		Failures int64
+	}
+	stats := make(map[string]*uriStats)
+	var allCounts []float64
+
+	for _, l := range logs {
+		if l.URI == "" {
+			continue
+		}
+
+		// Canonicalization: Remove query, duplicate slashes
+		canonicalURI := utils.CanonicalizeURI(l.URI)
+
+		s, exists := stats[canonicalURI]
+		if !exists {
+			s = &uriStats{}
+			stats[canonicalURI] = s
+		}
+		s.Total++
+		if l.Status >= 400 && l.Status < 600 {
+			s.Failures++
+		}
+	}
+
+	for _, s := range stats {
+		allCounts = append(allCounts, float64(s.Total))
+	}
+
+	// Calculate IQR threshold if outlier check enabled
+	var iqrThreshold float64
+	checkOutliers := uriRule.RequestCountSensitivity > 0 && len(allCounts) > 4
+	if checkOutliers {
+		sort.Float64s(allCounts)
+		q1 := u.percentile(allCounts, 25)
+		q3 := u.percentile(allCounts, 75)
+		iqr := q3 - q1
+		iqrThreshold = q3 + (uriRule.RequestCountSensitivity * iqr)
+
+		// Fallback to min threshold if IQR calculation yields something too low
+		if uriRule.RequestCountThreshold > 0 && iqrThreshold < float64(uriRule.RequestCountThreshold) {
+			iqrThreshold = float64(uriRule.RequestCountThreshold)
+		}
+	}
+
+	// 2. Evaluate Rules
+	for uri, s := range stats {
+		blocked := false
+		reason := ""
+
+		// Condition 1: Failure Rate
+		if uriRule.FailRateThreshold > 0 && s.Total >= uriRule.FailRateCountThreshold {
+			rate := float64(s.Failures) / float64(s.Total)
+			if rate >= uriRule.FailRateThreshold {
+				blocked = true
+				reason = "URI Failure Rate Exceeded"
+			}
+		}
+
+		// Condition 2: Request Count Outlier (IQR)
+		if !blocked && checkOutliers {
+			if float64(s.Total) > iqrThreshold {
+				blocked = true
+				reason = "URI Request Count Outlier"
+			}
+		}
+
+		if blocked {
+			// TODO: Implement URI banning logic here.
+			// Currently just logging.
+			log.Printf("[AdaptiveTrafficAnalyzer] [URI] Would block URI %s (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
+				uri, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
+		}
+	}
+}
+
+func (u *UriAnalyzer) percentile(sortedData []float64, p float64) float64 {
+	index := (p / 100) * float64(len(sortedData)-1)
+	idxInt := int(index)
+	fraction := index - float64(idxInt)
+
+	if idxInt+1 < len(sortedData) {
+		return sortedData[idxInt] + fraction*(sortedData[idxInt+1]-sortedData[idxInt])
+	}
+	return sortedData[idxInt]
 }

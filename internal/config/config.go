@@ -315,6 +315,13 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold
 		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN
 		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold
+
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold
 	}
 
 	validateConfiguration(&wrapper.HTTPFloodRule, "HTTPFloodRule")

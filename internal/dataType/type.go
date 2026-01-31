@@ -71,6 +71,7 @@ type AdaptiveTrafficAnalyzerRule struct {
 	Tag              string             `yaml:"tag" validate:"required"`
 	AnalysisInterval int64              `yaml:"analysis_interval" validate:"min=1"`
 	Non200Analysis   Non200AnalysisRule `yaml:"non_200_analysis"`
+	UriAnalysis      UriAnalysisRule    `yaml:"uri_analysis"`
 }
 
 type Non200AnalysisRule struct {
@@ -81,6 +82,15 @@ type Non200AnalysisRule struct {
 	FailRateThreshold      float64 `yaml:"fail_rate_threshold"`
 	UriRateTopN            int     `yaml:"uri_rate_top_n"`
 	UriRateThreshold       float64 `yaml:"uri_rate_threshold"`
+}
+
+type UriAnalysisRule struct {
+	Enabled                 bool    `yaml:"enabled"`
+	BlockDuration           int64   `yaml:"block_duration"`
+	FailRateThreshold       float64 `yaml:"fail_rate_threshold"`
+	FailRateCountThreshold  int64   `yaml:"fail_rate_count_threshold"`
+	RequestCountSensitivity float64 `yaml:"request_count_sensitivity"`
+	RequestCountThreshold   int64   `yaml:"request_count_threshold"`
 }
 
 type ExternalMigrationRule struct {
