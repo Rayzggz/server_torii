@@ -3,6 +3,8 @@ package action
 import (
 	"sync"
 	"time"
+
+	"server_torii/internal/dataType"
 )
 
 // ActionType defines the type of action to take.
@@ -109,6 +111,11 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 	}
 
 	return ActionNone
+}
+
+// CheckRequest evaluates the request against the rules using UserRequest data.
+func (e *ActionRuleEngine) CheckRequest(req *dataType.UserRequest) ActionType {
+	return e.Check(req.RemoteIP, req.UserAgent, req.Uri)
 }
 
 // runCleanup periodically removes expired rules.

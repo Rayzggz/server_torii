@@ -1,6 +1,7 @@
 package action
 
 import (
+	"server_torii/internal/dataType"
 	"sync"
 	"testing"
 	"time"
@@ -103,4 +104,31 @@ func TestActionRuleEngine_Concurrency(t *testing.T) {
 	}()
 
 	wg.Wait()
+}
+
+func TestActionRuleEngine_CheckRequest(t *testing.T) {
+	engine := NewActionRuleEngine(time.Second)
+	defer engine.Stop()
+
+	engine.AddIPRule("10.0.0.5", ActionBlock, time.Minute)
+
+	req := &dataType.UserRequest{
+		RemoteIP:  "10.0.0.5",
+		UserAgent: "Mozilla/5.0",
+		Uri:       "/index.html",
+	}
+
+	if action := engine.CheckRequest(req); action != ActionBlock {
+		t.Errorf("Expected ActionBlock for CheckRequest, got %v", action)
+	}
+
+	reqNormal := &dataType.UserRequest{
+		RemoteIP:  "10.0.0.6",
+		UserAgent: "Mozilla/5.0",
+		Uri:       "/index.html",
+	}
+
+	if action := engine.CheckRequest(reqNormal); action != ActionNone {
+		t.Errorf("Expected ActionNone for CheckRequest, got %v", action)
+	}
 }
