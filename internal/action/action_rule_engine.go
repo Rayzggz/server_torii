@@ -1,10 +1,10 @@
 package action
 
 import (
+	"server_torii/internal/dataType"
+	"server_torii/internal/utils"
 	"sync"
 	"time"
-
-	"server_torii/internal/dataType"
 )
 
 // ActionType defines the type of action to take.
@@ -107,6 +107,16 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 	if rule, ok := e.uriRules[uri]; ok {
 		if rule.ExpiresAt.After(now) {
 			return rule.Action
+		}
+	}
+
+	// Check Canonical URI Rules
+	canonicalURI := utils.CanonicalizeURI(uri)
+	if canonicalURI != uri {
+		if rule, ok := e.uriRules[canonicalURI]; ok {
+			if rule.ExpiresAt.After(now) {
+				return rule.Action
+			}
 		}
 	}
 

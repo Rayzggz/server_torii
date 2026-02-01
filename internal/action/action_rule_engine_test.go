@@ -132,3 +132,21 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 		t.Errorf("Expected ActionNone for CheckRequest, got %v", action)
 	}
 }
+
+func TestActionRuleEngine_CanonicalURI(t *testing.T) {
+	engine := NewActionRuleEngine(time.Second)
+	defer engine.Stop()
+
+	// Rule added for canonical URI (no query params)
+	engine.AddURIRule("/admin", ActionBlock, time.Minute)
+
+	// Check with raw URI containing query params
+	if action := engine.Check("10.0.0.1", "Mozilla", "/admin?debug=true"); action != ActionBlock {
+		t.Errorf("Expected ActionBlock for raw URI matching canonical rule, got %v", action)
+	}
+
+	// Check with raw URI containing extra slashes
+	if action := engine.Check("10.0.0.1", "Mozilla", "//admin/"); action != ActionBlock {
+		t.Errorf("Expected ActionBlock for non-clean URI matching canonical rule, got %v", action)
+	}
+}
