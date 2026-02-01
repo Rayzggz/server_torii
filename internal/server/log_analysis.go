@@ -2,6 +2,7 @@ package server
 
 import (
 	"log"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
@@ -383,10 +384,18 @@ func (u *UriAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *
 		}
 
 		if blocked {
-			// TODO: Implement URI banning logic here.
-			// Currently just logging.
-			log.Printf("[AdaptiveTrafficAnalyzer] [URI] Would block URI %s (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
-				uri, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
+			// Implement URI banning logic here.
+			if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
+				duration := time.Duration(uriRule.BlockDuration) * time.Second
+				if duration == 0 {
+					duration = 5 * time.Minute // Default fallback
+				}
+				engine.AddURIRule(uri, action.ActionBlock, duration)
+				log.Printf("[AdaptiveTrafficAnalyzer] [URI] Blocked URI %s for %v (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
+					uri, duration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
+			} else {
+				log.Printf("[AdaptiveTrafficAnalyzer] [ERROR] Failed to cast ActionRuleEngine for URI: %s", uri)
+			}
 		}
 	}
 }

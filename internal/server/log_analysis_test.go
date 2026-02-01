@@ -1,27 +1,27 @@
 package server
 
 import (
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"testing"
+	"time"
 )
 
 func TestUriAnalyzer_Analyze(t *testing.T) {
-	// Setup shared memory and rule set
-	sharedMem := &dataType.SharedMemory{}
+	// Setup shared memory
+	engine := action.NewActionRuleEngine(time.Minute)
+	sharedMem := &dataType.SharedMemory{
+		ActionRuleEngine: engine,
+	}
+	defer engine.Stop()
 
 	tests := []struct {
-		name    string
-		rule    config.RuleSet
-		logs    []LogEntry
-		wantLog bool // We can't easily check log output in unit test without mocking logger,
-		// so we'll rely on running this and visually checking or use a more complex setup.
-		// For this iteration, we trust the logic if it compiles and runs without panic,
-		// and we can verify specific logic by inspecting internal state if we exposed it,
-		// or by trusting the coverage.
-		// actually, checking logic correctness is better done by testing the helper methods
-		// or by temporarily modifying the analyzer to return results.
-		// For now, let's test specific scenarios and ensure no panics.
+		name        string
+		rule        config.RuleSet
+		logs        []LogEntry
+		checkUri    string
+		expectBlock bool
 	}{
 		{
 			name: "Canonicalization and Rate Limit",
@@ -31,6 +31,7 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 						Enabled:                true,
 						FailRateThreshold:      0.5,
 						FailRateCountThreshold: 2,
+						BlockDuration:          300,
 					},
 					Tag: "test_tag",
 				},
@@ -40,6 +41,8 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 				{URI: "/test?q=2", Status: 500},
 				{URI: "/test", Status: 200},
 			},
+			checkUri:    "/test",
+			expectBlock: true,
 		},
 		{
 			name: "IQR Outlier Detection",
@@ -48,6 +51,7 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 					UriAnalysis: dataType.UriAnalysisRule{
 						Enabled:                 true,
 						RequestCountSensitivity: 1.5,
+						BlockDuration:           300,
 					},
 					Tag: "test_tag",
 				},
@@ -64,6 +68,8 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 				{URI: "/bad", Status: 200}, {URI: "/bad", Status: 200}, {URI: "/bad", Status: 200},
 				{URI: "/bad", Status: 200}, {URI: "/bad", Status: 200}, {URI: "/bad", Status: 200},
 			},
+			checkUri:    "/bad",
+			expectBlock: true,
 		},
 	}
 
@@ -71,6 +77,15 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			u := &UriAnalyzer{}
 			u.Analyze(tt.logs, &tt.rule, sharedMem)
+
+			if tt.checkUri != "" {
+				act := engine.Check("", "", tt.checkUri)
+				if tt.expectBlock && act != action.ActionBlock {
+					t.Errorf("Expected URI %s to be blocked, got %v", tt.checkUri, act)
+				} else if !tt.expectBlock && act == action.ActionBlock {
+					t.Errorf("Expected URI %s NOT to be blocked, got %v", tt.checkUri, act)
+				}
+			}
 		})
 	}
 }
