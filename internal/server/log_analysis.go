@@ -390,7 +390,7 @@ func (u *UriAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *
 				if duration == 0 {
 					duration = 5 * time.Minute // Default fallback
 				}
-				engine.AddURIRule(uri, action.ActionBlock, duration)
+				engine.AddURIRule(uri, action.ActionCaptcha, duration)
 				log.Printf("[AdaptiveTrafficAnalyzer] [URI] Blocked URI %s for %v (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
 					uri, duration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
 			} else {
