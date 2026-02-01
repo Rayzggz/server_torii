@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/server"
@@ -62,6 +63,7 @@ func main() {
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
 		BlockList:                    dataType.NewBlockList(),
+		ActionRuleEngine:             action.NewActionRuleEngine(time.Minute),
 	}
 
 	//GC

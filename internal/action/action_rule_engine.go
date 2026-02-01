@@ -114,7 +114,7 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 }
 
 // CheckRequest evaluates the request against the rules using UserRequest data.
-func (e *ActionRuleEngine) CheckRequest(req *dataType.UserRequest) ActionType {
+func (e *ActionRuleEngine) CheckRequest(req dataType.UserRequest) ActionType {
 	return e.Check(req.RemoteIP, req.UserAgent, req.Uri)
 }
 

@@ -127,4 +127,5 @@ type SharedMemory struct {
 	CaptchaFailureLimitCounter   *Counter
 	BlockList                    *BlockList
 	AdaptiveTrafficAnalyzer      interface{}
+	ActionRuleEngine             interface{}
 }

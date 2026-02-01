@@ -118,7 +118,7 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 		Uri:       "/index.html",
 	}
 
-	if action := engine.CheckRequest(req); action != ActionBlock {
+	if action := engine.CheckRequest(*req); action != ActionBlock {
 		t.Errorf("Expected ActionBlock for CheckRequest, got %v", action)
 	}
 
@@ -128,7 +128,7 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 		Uri:       "/index.html",
 	}
 
-	if action := engine.CheckRequest(reqNormal); action != ActionNone {
+	if action := engine.CheckRequest(*reqNormal); action != ActionNone {
 		t.Errorf("Expected ActionNone for CheckRequest, got %v", action)
 	}
 }
