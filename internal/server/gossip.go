@@ -6,12 +6,15 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"math/rand"
+	"net"
 	"net/http"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"strings"
 	"sync"
 	"time"
 
@@ -256,9 +259,14 @@ func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 		return
 	}
 	gm.markSeen(msg.ID)
+	now := time.Now()
 
 	switch msg.Type {
 	case dataType.GossipTypeBlockIP:
+		if err := validateGossipBlock(msg.Content, msg.Expiration, now); err != nil {
+			log.Printf("[SECURITY] Dropped gossip BlockIP from %s: ip=%q exp=%d err=%v", msg.OriginNode, msg.Content, msg.Expiration, err)
+			return
+		}
 		// Apply block
 		gm.blockList.BlockUntil(msg.Content, msg.Expiration)
 		log.Printf("[GOSSIP] Received BlockIP for %s from %s (Exp: %d)", msg.Content, msg.OriginNode, msg.Expiration)
@@ -274,8 +282,55 @@ func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 			return
 		}
 
+		invalidCount := 0
 		for ip, expiration := range snapshot {
+			if err := validateGossipBlock(ip, expiration, now); err != nil {
+				invalidCount++
+				if invalidCount <= 5 {
+					log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: ip=%q exp=%d err=%v", msg.OriginNode, ip, expiration, err)
+				}
+				continue
+			}
 			gm.blockList.BlockUntil(ip, expiration)
 		}
+
+		if invalidCount > 0 {
+			if invalidCount > 5 {
+				log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s (only first 5 shown)", invalidCount, msg.OriginNode)
+			} else {
+				log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s", invalidCount, msg.OriginNode)
+			}
+		}
 	}
+}
+
+const maxGossipBlockDuration = 7 * 24 * time.Hour
+
+func validateGossipBlock(ipStr string, expiration int64, now time.Time) error {
+	trimmed := strings.TrimSpace(ipStr)
+	if trimmed == "" {
+		return fmt.Errorf("empty ip")
+	}
+
+	ip := net.ParseIP(trimmed)
+	if ip == nil {
+		return fmt.Errorf("invalid ip format")
+	}
+
+	if ip.IsPrivate() || ip.IsLoopback() || ip.IsMulticast() || ip.IsUnspecified() ||
+		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || !ip.IsGlobalUnicast() {
+		return fmt.Errorf("non-global ip")
+	}
+
+	nowUnix := now.Unix()
+	if expiration <= nowUnix {
+		return fmt.Errorf("expiration already passed")
+	}
+
+	maxExpiration := nowUnix + int64(maxGossipBlockDuration/time.Second)
+	if expiration > maxExpiration {
+		return fmt.Errorf("expiration exceeds max allowed duration")
+	}
+
+	return nil
 }
