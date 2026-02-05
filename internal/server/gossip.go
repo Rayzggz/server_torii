@@ -23,8 +23,10 @@ import (
 )
 
 const (
-	GossipMaxSkew = 2 * time.Minute
-	GossipMaxAge  = 10 * time.Minute
+	GossipMaxSkew       = 2 * time.Minute
+	GossipMaxAge        = 10 * time.Minute
+	maxGossipBodySize   = 10 * 1024 * 1024 // 10MB
+	maxSyncEntriesBatch = 5000             // conservative count to stay under 10MB
 )
 
 type GossipManager struct {
@@ -136,22 +138,46 @@ func (gm *GossipManager) startAntiEntropy() {
 
 		// Create snapshot
 		snapshot := gm.blockList.GetSnapshot()
-		content, err := json.Marshal(snapshot)
-		if err != nil {
-			log.Printf("[ERROR] Failed to marshal snapshot for anti-entropy: %v", err)
-			continue
+
+		// Chunking logic for large snapshots
+		batch := make(map[string]int64, maxSyncEntriesBatch)
+		count := 0
+
+		for ip, exp := range snapshot {
+			batch[ip] = exp
+			count++
+
+			if count >= maxSyncEntriesBatch {
+				gm.sendSyncBatch(peer, batch)
+				// Reset batch
+				batch = make(map[string]int64, maxSyncEntriesBatch)
+				count = 0
+			}
 		}
 
-		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeSync,
-			ID:         uuid.New().String(),
-			OriginNode: gm.cfg.NodeName,
-			Timestamp:  time.Now().Unix(),
-			Content:    string(content),
+		// Send remaining
+		if len(batch) > 0 {
+			gm.sendSyncBatch(peer, batch)
 		}
-
-		go gm.sendGossip(peer, msg)
 	}
+}
+
+func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch map[string]int64) {
+	content, err := json.Marshal(batch)
+	if err != nil {
+		log.Printf("[ERROR] Failed to marshal snapshot batch for anti-entropy: %v", err)
+		return
+	}
+
+	msg := dataType.GossipMessage{
+		Type:       dataType.GossipTypeSync,
+		ID:         uuid.New().String(),
+		OriginNode: gm.cfg.NodeName,
+		Timestamp:  time.Now().Unix(),
+		Content:    string(content),
+	}
+
+	go gm.sendGossip(peer, msg)
 }
 
 func (gm *GossipManager) sendGossip(p config.Peer, msg dataType.GossipMessage) {
@@ -204,10 +230,19 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read Body
+	// Limit Body Size
+	r.Body = http.MaxBytesReader(w, r.Body, maxGossipBodySize)
+
+	// Read Body (Protected by MaxBytesReader)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "Failed to read body", http.StatusInternalServerError)
+		if err.Error() == "http: request body too large" {
+			log.Printf("[SECURITY] Dropped oversized gossip request from %s", r.RemoteAddr)
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+		} else {
+			log.Printf("[ERROR] Failed to read gossip body: %v", err)
+			http.Error(w, "Failed to read body", http.StatusInternalServerError)
+		}
 		return
 	}
 	defer func() {
