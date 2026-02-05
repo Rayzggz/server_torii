@@ -164,7 +164,7 @@ check_is_blocked() {
 
 # 1. Basic Propagation
 log "=== Test 1: Basic Propagation ==="
-ATTACKER_IP="10.10.1.1"
+ATTACKER_IP="203.0.113.1"
 TARGET_URL="http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/checker"
 
 # Verify initially allowed
@@ -226,13 +226,13 @@ fi
 # 2. TTL Expiration
 log "=== Test 2: TTL Expiration and Manual Gossip Injection ==="
 
-SHORT_TTL_IP="10.10.2.2"
+SHORT_TTL_IP="203.0.113.2"
 TTL_SEC=5
 EXPIRATION=$(( $(date +%s) + TTL_SEC ))
 MSG_ID="uuid-$(date +%s)-$RANDOM"
 # Construct BlockIP message
 # TYPE IS BLOCK_IP (uppercase)
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s)}"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 
 # Calculate HMAC
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
@@ -284,10 +284,10 @@ fi
 # 3. Idempotency / Deduplication
 log "=== Test 3: Idempotency ==="
 # Send same message multiple times
-IDEM_IP="10.10.3.3"
+IDEM_IP="203.0.113.3"
 EXPIRATION=$(( $(date +%s) + 60 ))
 MSG_ID="fixed-uuid-dup_test"
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s)}"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
 log "Sending duplicate messages to Node 1..."
@@ -306,9 +306,9 @@ fi
 
 # 4. Security: Invalid Signature
 log "=== Test 4: Security (Invalid HMAC) ==="
-SEC_IP="10.10.4.4"
+SEC_IP="203.0.113.4"
 EXPIRATION=$(( $(date +%s) + 60 ))
-PAYLOAD="{\"id\":\"bad-sec-id\",\"type\":\"BLOCK_IP\",\"content\":\"$SEC_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"bad_actor\",\"timestamp\":$(date +%s)}"
+PAYLOAD="{\"id\":\"bad-sec-id\",\"type\":\"BLOCK_IP\",\"content\":\"$SEC_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"bad_actor\",\"timestamp\":$(date +%s),\"seq\":1}"
 BAD_SIG="deadbeefdeadbeef"
 
 resp_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
@@ -322,10 +322,75 @@ else
     fail "Node 1 did not reject invalid signature (Got $resp_code)"
 fi
 
-if check_is_blocked 1 "$SEC_IP"; then
+
+	if check_is_blocked 1 "$SEC_IP"; then
     fail "Node 1 applied block from invalid message!"
 else
     pass "Node 1 did not apply block"
 fi
+
+# 5. Invalid IP (Private Network)
+log "=== Test 5: Reject Private/Invalid IPs ==="
+INVALID_IP="192.168.1.100"
+EXPIRATION=$(( $(date +%s) + 60 ))
+MSG_ID="invalid-ip-$RANDOM"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$INVALID_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
+SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
+
+curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
+     -H "Content-Type: application/json" \
+     -H "X-Torii-Signature: $SIG" \
+     -d "$PAYLOAD" > /dev/null
+
+sleep 1
+if check_is_blocked 1 "$INVALID_IP"; then
+    fail "Node 1 blocked a private IP (Should be rejected)"
+else
+    pass "Node 1 correctly ignored private IP block"
+fi
+
+# 6. Replay Attack (Old Timestamp)
+log "=== Test 6: Replay Attack (Old Timestamp) ==="
+REPLAY_IP="203.0.113.10"
+# 11 minutes ago (GossipMaxAge is 10m)
+OLD_TS=$(( $(date +%s) - 660 ))
+EXPIRATION=$(( $(date +%s) + 60 ))
+MSG_ID="replay-$RANDOM"
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$REPLAY_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$OLD_TS,\"seq\":1}"
+SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
+
+curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
+     -H "Content-Type: application/json" \
+     -H "X-Torii-Signature: $SIG" \
+     -d "$PAYLOAD" > /dev/null
+
+sleep 1
+if check_is_blocked 1 "$REPLAY_IP"; then
+    fail "Node 1 blocked based on old timestamp message"
+else
+    pass "Node 1 ignored old message"
+fi
+
+# 7. Oversized Request
+log "=== Test 7: Oversized Request Rejection ==="
+# Create >10MB dummy data
+OVERSIZE_FILE="$TEMP_DIR/large_payload.json"
+# 11MB file
+dd if=/dev/zero of="$OVERSIZE_FILE" bs=1M count=11 2>/dev/null
+
+code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
+     -H "Content-Type: application/json" \
+     --data-binary "@$OVERSIZE_FILE")
+
+# Expect 413 (Entity Too Large) or connection cut (000/empty depending on client behavior with closed conn)
+# MaxBytesReader usually returns 413 provided the handler writes it before reading ends/error handling.
+if [ "$code" == "413" ]; then
+    pass "Node 1 rejected oversized request (413)"
+else
+    # Some servers might close connection immediately or curl might return differently
+    warn "Node 1 returned code $code for oversized request (Expected 413)"
+fi
+rm -f "$OVERSIZE_FILE"
+
 
 log "Integration Tests Completed Successfully."
