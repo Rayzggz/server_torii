@@ -187,7 +187,11 @@ func (gm *GossipManager) sendGossip(p config.Peer, msg dataType.GossipMessage) {
 		log.Printf("[WARNING] Failed to send gossip to peer %s: %v", p.Address, err)
 		return
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("[WARNING] Failed to close response body from %s: %v", p.Address, err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("[WARNING] Peer %s returned status %d", p.Address, resp.StatusCode)
@@ -206,7 +210,11 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		return
 	}
-	defer r.Body.Close()
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("[WARNING] HandleGossip: Failed to close request body: %v", err)
+		}
+	}()
 
 	// Verify HMAC-SHA512 Signature
 	signatureHeader := r.Header.Get("X-Torii-Signature")
@@ -263,14 +271,18 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		// We don't error 403 here because it might be just lag, but we act as if we processed it (OK) or just ignore.
 		// Returning OK to stop retry storm if any.
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ACK"))
+		if _, err := w.Write([]byte("ACK")); err != nil {
+			log.Printf("[ERROR] Failed to write ACK response: %v", err)
+		}
 		return
 	}
 
 	if msgTime.Sub(now) > GossipMaxSkew {
 		log.Printf("[SECURITY] Dropped future gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ACK"))
+		if _, err := w.Write([]byte("ACK")); err != nil {
+			log.Printf("[ERROR] Failed to write ACK response: %v", err)
+		}
 		return
 	}
 
@@ -278,7 +290,9 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	gm.processRemoteMessage(msg)
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("ACK"))
+	if _, err := w.Write([]byte("ACK")); err != nil {
+		log.Printf("[ERROR] Failed to write ACK response: %v", err)
+	}
 }
 
 func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
