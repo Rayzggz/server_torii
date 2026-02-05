@@ -16,9 +16,15 @@ import (
 	"server_torii/internal/dataType"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
+)
+
+const (
+	GossipMaxSkew = 2 * time.Minute
+	GossipMaxAge  = 10 * time.Minute
 )
 
 type GossipManager struct {
@@ -26,6 +32,7 @@ type GossipManager struct {
 	blockList           *dataType.BlockList
 	seenMessages        map[string]time.Time
 	mu                  sync.RWMutex
+	localSeq            int64
 	AntiEntropyInterval time.Duration
 }
 
@@ -54,6 +61,7 @@ func (gm *GossipManager) Start(gossipChan <-chan dataType.GossipMessage) {
 				msg.ID = uuid.New().String()
 			}
 			msg.Timestamp = time.Now().Unix()
+			msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
 
 			gm.markSeen(msg.ID)
 			gm.epidemicBroadcast(msg)
@@ -85,7 +93,7 @@ func (gm *GossipManager) cleanupSeenMessages() {
 		gm.mu.Lock()
 		now := time.Now()
 		for id, t := range gm.seenMessages {
-			if now.Sub(t) > 1*time.Hour { // Keep seen IDs for 1 hour to prevent cycles
+			if now.Sub(t) > GossipMaxAge { // Keep seen IDs for 10 min
 				delete(gm.seenMessages, id)
 			}
 		}
@@ -243,6 +251,26 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	if !knownPeer {
 		log.Printf("[SECURITY] Received gossip from unknown node: %s", msg.OriginNode)
 		http.Error(w, "Forbidden: Unknown OriginNode", http.StatusForbidden)
+		return
+	}
+
+	// Replay Protection: Timestamp Validation
+	now := time.Now()
+	msgTime := time.Unix(msg.Timestamp, 0)
+
+	if now.Sub(msgTime) > GossipMaxAge {
+		log.Printf("[SECURITY] Dropped old gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
+		// We don't error 403 here because it might be just lag, but we act as if we processed it (OK) or just ignore.
+		// Returning OK to stop retry storm if any.
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ACK"))
+		return
+	}
+
+	if msgTime.Sub(now) > GossipMaxSkew {
+		log.Printf("[SECURITY] Dropped future gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ACK"))
 		return
 	}
 
