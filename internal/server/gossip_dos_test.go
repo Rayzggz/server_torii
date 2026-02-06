@@ -70,6 +70,29 @@ func TestGossipManager_HandleGossip_DoS(t *testing.T) {
 	if wLarge.Code != http.StatusRequestEntityTooLarge {
 		t.Errorf("Expected 413 Request Entity Too Large, got %d", wLarge.Code)
 	}
+
+	// 3. Test Content-Length Check explicitly (Fake Large Header)
+	// We verify that even if body is small, if header says it's big, we reject it early.
+	// This proves we check the header before reading.
+	reqFakeLarge := httptest.NewRequest("POST", "/gossip", bytes.NewBuffer([]byte("small actual body")))
+	reqFakeLarge.ContentLength = maxGossipBodySize + 1
+	wFakeLarge := httptest.NewRecorder()
+	gm.HandleGossip(wFakeLarge, reqFakeLarge)
+
+	if wFakeLarge.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("Expected 413 for large Content-Length header, got %d", wFakeLarge.Code)
+	}
+
+	// 4. Test Missing Signature (Early Check)
+	// Even with a valid body size, it should fail immediately if signature is missing.
+	reqNoSig := httptest.NewRequest("POST", "/gossip", bytes.NewBuffer([]byte("valid size body")))
+	// Ensure valid Content-Length so it passes the first check
+	wNoSig := httptest.NewRecorder()
+	gm.HandleGossip(wNoSig, reqNoSig)
+
+	if wNoSig.Code != http.StatusForbidden {
+		t.Errorf("Expected 403 Forbidden for missing signature, got %d", wNoSig.Code)
+	}
 }
 
 func createSignedGossipRequest(t *testing.T, cfg *config.MainConfig, bodyStr string) *http.Request {

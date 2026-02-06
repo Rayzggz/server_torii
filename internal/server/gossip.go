@@ -230,6 +230,28 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check Content-Length if provided
+	if r.ContentLength > maxGossipBodySize {
+		log.Printf("[SECURITY] Rejected oversized gossip request from %s (Content-Length: %d)", r.RemoteAddr, r.ContentLength)
+		http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	// Verify HMAC-SHA512 Signature Header EARLY (before reading body)
+	signatureHeader := r.Header.Get("X-Torii-Signature")
+	if signatureHeader == "" {
+		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
+	sigBytes, err := hex.DecodeString(signatureHeader)
+	if err != nil {
+		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	// Limit Body Size
 	r.Body = http.MaxBytesReader(w, r.Body, maxGossipBodySize)
 
@@ -250,21 +272,6 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 			log.Printf("[WARNING] HandleGossip: Failed to close request body: %v", err)
 		}
 	}()
-
-	// Verify HMAC-SHA512 Signature
-	signatureHeader := r.Header.Get("X-Torii-Signature")
-	if signatureHeader == "" {
-		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	sigBytes, err := hex.DecodeString(signatureHeader)
-	if err != nil {
-		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
 
 	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
 	mac.Write(body)
