@@ -27,6 +27,7 @@ const (
 	GossipMaxAge        = 10 * time.Minute
 	maxGossipBodySize   = 10 * 1024 * 1024 // 10MB
 	maxSyncEntriesBatch = 5000             // conservative count to stay under 10MB
+	maxSeenMessages     = 50000            // default limit for seen messages
 )
 
 type GossipManager struct {
@@ -36,6 +37,7 @@ type GossipManager struct {
 	mu                  sync.RWMutex
 	localSeq            int64
 	AntiEntropyInterval time.Duration
+	maxSeenEntries      int
 }
 
 func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *GossipManager {
@@ -44,6 +46,7 @@ func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *Go
 		blockList:           blockList,
 		seenMessages:        make(map[string]time.Time),
 		AntiEntropyInterval: 30 * time.Second,
+		maxSeenEntries:      maxSeenMessages,
 	}
 }
 
@@ -78,6 +81,12 @@ func (gm *GossipManager) Start(gossipChan <-chan dataType.GossipMessage) {
 func (gm *GossipManager) markSeen(id string) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
+
+	// Enforce capacity limit
+	if len(gm.seenMessages) >= gm.maxSeenEntries {
+		gm.pruneSeenMessagesLocked()
+	}
+
 	gm.seenMessages[id] = time.Now()
 }
 
@@ -88,17 +97,46 @@ func (gm *GossipManager) isSeen(id string) bool {
 	return ok
 }
 
+// pruneSeenMessagesLocked removes expired messages and enforces the size limit.
+// It must be called with mu.Lock() held.
+func (gm *GossipManager) pruneSeenMessagesLocked() {
+	now := time.Now()
+	// 1. Remove expired messages
+	for id, t := range gm.seenMessages {
+		if now.Sub(t) > GossipMaxAge {
+			delete(gm.seenMessages, id)
+		}
+	}
+
+	// 2. If still over limit, remove random entries until under limit.
+	// We do not sort by time to avoid O(N log N) or O(N) sort cost on every insert/prune.
+	// Random eviction is acceptable for DoS protection.
+	if len(gm.seenMessages) >= gm.maxSeenEntries {
+		// Calculate how many to remove
+		toRemove := len(gm.seenMessages) - gm.maxSeenEntries + 1 // +1 to make room for new one
+		// To avoid infinite loop (though unlikely), cap at current size
+		if toRemove > len(gm.seenMessages) {
+			toRemove = len(gm.seenMessages)
+		}
+
+		removedCount := 0
+		for id := range gm.seenMessages {
+			if removedCount >= toRemove {
+				break
+			}
+			delete(gm.seenMessages, id)
+			removedCount++
+		}
+		log.Printf("[GOSSIP-W] Pruned %d messages from seen cache (size was %d)", removedCount, len(gm.seenMessages)+removedCount)
+	}
+}
+
 func (gm *GossipManager) cleanupSeenMessages() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
 		gm.mu.Lock()
-		now := time.Now()
-		for id, t := range gm.seenMessages {
-			if now.Sub(t) > GossipMaxAge { // Keep seen IDs for 10 min
-				delete(gm.seenMessages, id)
-			}
-		}
+		gm.pruneSeenMessagesLocked()
 		gm.mu.Unlock()
 	}
 }

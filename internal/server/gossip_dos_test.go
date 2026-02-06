@@ -6,6 +6,7 @@ import (
 	"crypto/sha512"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"server_torii/internal/config"
@@ -119,4 +120,32 @@ func createSignedGossipRequest(t *testing.T, cfg *config.MainConfig, bodyStr str
 	req.Header.Set("X-Torii-Signature", signature)
 
 	return req
+}
+
+func TestGossipManager_SeenMessagesLimit(t *testing.T) {
+	cfg := &config.MainConfig{
+		GlobalSecret: "secret123",
+		NodeName:     "TestNode",
+	}
+
+	// 5. Test maxSeenMessages Limit
+	// Create a new GM
+	gmLimit := &GossipManager{
+		cfg:            cfg,
+		seenMessages:   make(map[string]time.Time),
+		maxSeenEntries: 10,
+	}
+
+	// Add 20 messages
+	for i := 0; i < 20; i++ {
+		gmLimit.markSeen(fmt.Sprintf("msg-%d", i))
+	}
+
+	gmLimit.mu.RLock()
+	count := len(gmLimit.seenMessages)
+	gmLimit.mu.RUnlock()
+
+	if count > 10 {
+		t.Errorf("Expected seenMessages to be capped at 10, got %d", count)
+	}
 }
