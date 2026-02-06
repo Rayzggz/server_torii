@@ -145,4 +145,59 @@ func TestGossipSecurityFixes(t *testing.T) {
 			t.Errorf("Blocklist should be empty as oversized sync was dropped, got %d entries", len(bl.GetSnapshot()))
 		}
 	})
+
+	t.Run("RejectInvalidSignatureLength", func(t *testing.T) {
+		gm, _, _ := setup()
+		msg := dataType.GossipMessage{
+			Type:       dataType.GossipTypeBlockIP,
+			ID:         uuid.New().String(),
+			OriginNode: "valid-peer",
+			Timestamp:  time.Now().Unix(),
+			Content:    "1.2.3.4",
+			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+		}
+
+		body, _ := json.Marshal(msg)
+		req := httptest.NewRequest("POST", "/torii/gossip", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+
+		// Create a signature that is valid hex but wrong length (e.g., too short)
+		// valid SHA-512 is 128 hex chars. Let's try 64 chars.
+		shortSig := strings.Repeat("a", 64)
+		req.Header.Set("X-Torii-Signature", shortSig)
+
+		w := httptest.NewRecorder()
+		gm.HandleGossip(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Expected status Forbidden (403), got %d", w.Code)
+		}
+	})
+
+	t.Run("RejectNonV4UUID", func(t *testing.T) {
+		gm, _, cfg := setup()
+
+		// Create a V1 UUID
+		v1UUID, _ := uuid.NewUUID()
+
+		msg := dataType.GossipMessage{
+			Type:       dataType.GossipTypeBlockIP,
+			ID:         v1UUID.String(), // Version 1 UUID
+			OriginNode: "valid-peer",
+			Timestamp:  time.Now().Unix(),
+			Content:    "1.2.3.4",
+			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+		}
+
+		req := createSignedRequest(msg, cfg)
+		w := httptest.NewRecorder()
+		gm.HandleGossip(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("Expected status Forbidden (403), got %d", w.Code)
+		}
+		if !strings.Contains(w.Body.String(), "UUID v4 required") {
+			t.Errorf("Expected response body to contain 'UUID v4 required', got %q", w.Body.String())
+		}
+	})
 }

@@ -283,6 +283,13 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SHA-512 is 64 bytes -> 128 hex characters
+	if len(signatureHeader) != 128 {
+		log.Printf("[SECURITY] Invalid signature length from %s (%d chars)", r.RemoteAddr, len(signatureHeader))
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return
+	}
+
 	sigBytes, err := hex.DecodeString(signatureHeader)
 	if err != nil {
 		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
@@ -333,9 +340,15 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Forbidden: Empty Message ID", http.StatusForbidden)
 		return
 	}
-	if _, err := uuid.Parse(msg.ID); err != nil {
+	u, err := uuid.Parse(msg.ID)
+	if err != nil {
 		log.Printf("[SECURITY] Dropped gossip with invalid UUID from %s: %s", r.RemoteAddr, msg.ID)
 		http.Error(w, "Forbidden: Invalid Message ID", http.StatusForbidden)
+		return
+	}
+	if u.Version() != 4 {
+		log.Printf("[SECURITY] Dropped gossip with non-v4 UUID from %s: %s (v%d)", r.RemoteAddr, msg.ID, u.Version())
+		http.Error(w, "Forbidden: UUID v4 required", http.StatusForbidden)
 		return
 	}
 
