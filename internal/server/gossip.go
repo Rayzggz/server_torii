@@ -289,6 +289,18 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check msg.ID constraints (UUID v4)
+	if msg.ID == "" {
+		log.Printf("[SECURITY] Dropped gossip with empty ID from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden: Empty Message ID", http.StatusForbidden)
+		return
+	}
+	if _, err := uuid.Parse(msg.ID); err != nil {
+		log.Printf("[SECURITY] Dropped gossip with invalid UUID from %s: %s", r.RemoteAddr, msg.ID)
+		http.Error(w, "Forbidden: Invalid Message ID", http.StatusForbidden)
+		return
+	}
+
 	// Verify OriginNode is in Peers list
 	knownPeer := false
 	for _, p := range gm.cfg.Peers {
@@ -363,6 +375,11 @@ func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 		var snapshot map[string]int64
 		if err := json.Unmarshal([]byte(msg.Content), &snapshot); err != nil {
 			log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
+			return
+		}
+
+		if len(snapshot) > maxSyncEntriesBatch {
+			log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(snapshot), maxSyncEntriesBatch)
 			return
 		}
 
