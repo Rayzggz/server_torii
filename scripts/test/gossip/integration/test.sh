@@ -229,7 +229,7 @@ log "=== Test 2: TTL Expiration and Manual Gossip Injection ==="
 SHORT_TTL_IP="203.0.113.2"
 TTL_SEC=5
 EXPIRATION=$(( $(date +%s) + TTL_SEC ))
-MSG_ID="uuid-$(date +%s)-$RANDOM"
+MSG_ID=$(uuidgen)
 # Construct BlockIP message
 # TYPE IS BLOCK_IP (uppercase)
 PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
@@ -286,7 +286,7 @@ log "=== Test 3: Idempotency ==="
 # Send same message multiple times
 IDEM_IP="203.0.113.3"
 EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID="fixed-uuid-dup_test"
+MSG_ID="b33f9a26-7b09-47d7-9c7f-5fabb1f70ae3"
 PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
@@ -333,7 +333,7 @@ fi
 log "=== Test 5: Reject Private/Invalid IPs ==="
 INVALID_IP="192.168.1.100"
 EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID="invalid-ip-$RANDOM"
+MSG_ID=$(uuidgen)
 PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$INVALID_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
@@ -355,7 +355,7 @@ REPLAY_IP="203.0.113.10"
 # 11 minutes ago (GossipMaxAge is 10m)
 OLD_TS=$(( $(date +%s) - 660 ))
 EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID="replay-$RANDOM"
+MSG_ID=$(uuidgen)
 PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$REPLAY_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$OLD_TS,\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 

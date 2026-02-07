@@ -97,6 +97,15 @@ func (gm *GossipManager) isSeen(id string) bool {
 	return ok
 }
 
+func (gm *GossipManager) isKnownPeer(name string) bool {
+	for _, p := range gm.cfg.Peers {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 // pruneSeenMessagesLocked removes expired messages and enforces the size limit.
 // It must be called with mu.Lock() held.
 func (gm *GossipManager) pruneSeenMessagesLocked() {
@@ -268,63 +277,8 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check Content-Length if provided
-	if r.ContentLength > maxGossipBodySize {
-		log.Printf("[SECURITY] Rejected oversized gossip request from %s (Content-Length: %d)", r.RemoteAddr, r.ContentLength)
-		http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
-		return
-	}
-
-	// Verify HMAC-SHA512 Signature Header EARLY (before reading body)
-	signatureHeader := r.Header.Get("X-Torii-Signature")
-	if signatureHeader == "" {
-		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	// SHA-512 is 64 bytes -> 128 hex characters
-	if len(signatureHeader) != 128 {
-		log.Printf("[SECURITY] Invalid signature length from %s (%d chars)", r.RemoteAddr, len(signatureHeader))
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	sigBytes, err := hex.DecodeString(signatureHeader)
-	if err != nil {
-		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
-		return
-	}
-
-	// Limit Body Size
-	r.Body = http.MaxBytesReader(w, r.Body, maxGossipBodySize)
-
-	// Read Body (Protected by MaxBytesReader)
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		if err.Error() == "http: request body too large" {
-			log.Printf("[SECURITY] Dropped oversized gossip request from %s", r.RemoteAddr)
-			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
-		} else {
-			log.Printf("[ERROR] Failed to read gossip body: %v", err)
-			http.Error(w, "Failed to read body", http.StatusInternalServerError)
-		}
-		return
-	}
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			log.Printf("[WARNING] HandleGossip: Failed to close request body: %v", err)
-		}
-	}()
-
-	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
-	mac.Write(body)
-	expectedMAC := mac.Sum(nil)
-
-	if !hmac.Equal(sigBytes, expectedMAC) {
-		log.Printf("[SECURITY] Invalid signature from %s", r.RemoteAddr)
-		http.Error(w, "Forbidden", http.StatusForbidden)
+	body, ok := gm.readAndVerifyBody(w, r)
+	if !ok {
 		return
 	}
 
@@ -353,15 +307,7 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify OriginNode is in Peers list
-	knownPeer := false
-	for _, p := range gm.cfg.Peers {
-		if p.Name == msg.OriginNode {
-			knownPeer = true
-			break
-		}
-	}
-
-	if !knownPeer {
+	if !gm.isKnownPeer(msg.OriginNode) {
 		log.Printf("[SECURITY] Received gossip from unknown node: %s", msg.OriginNode)
 		http.Error(w, "Forbidden: Unknown OriginNode", http.StatusForbidden)
 		return
@@ -373,31 +319,81 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 
 	if now.Sub(msgTime) > GossipMaxAge {
 		log.Printf("[SECURITY] Dropped old gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
-		// We don't error 403 here because it might be just lag, but we act as if we processed it (OK) or just ignore.
-		// Returning OK to stop retry storm if any.
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("ACK")); err != nil {
-			log.Printf("[ERROR] Failed to write ACK response: %v", err)
-		}
-		return
-	}
-
-	if msgTime.Sub(now) > GossipMaxSkew {
+	} else if msgTime.Sub(now) > GossipMaxSkew {
 		log.Printf("[SECURITY] Dropped future gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
-		w.WriteHeader(http.StatusOK)
-		if _, err := w.Write([]byte("ACK")); err != nil {
-			log.Printf("[ERROR] Failed to write ACK response: %v", err)
-		}
-		return
+	} else {
+		// Processing
+		gm.processRemoteMessage(msg)
 	}
-
-	// Processing
-	gm.processRemoteMessage(msg)
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("ACK")); err != nil {
 		log.Printf("[ERROR] Failed to write ACK response: %v", err)
 	}
+}
+
+func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	// Check Content-Length if provided
+	if r.ContentLength > maxGossipBodySize {
+		log.Printf("[SECURITY] Rejected oversized gossip request from %s (Content-Length: %d)", r.RemoteAddr, r.ContentLength)
+		http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+
+	// Verify HMAC-SHA512 Signature Header EARLY (before reading body)
+	signatureHeader := r.Header.Get("X-Torii-Signature")
+	if signatureHeader == "" {
+		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return nil, false
+	}
+
+	// SHA-512 is 64 bytes -> 128 hex characters
+	if len(signatureHeader) != 128 {
+		log.Printf("[SECURITY] Invalid signature length from %s (%d chars)", r.RemoteAddr, len(signatureHeader))
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return nil, false
+	}
+
+	sigBytes, err := hex.DecodeString(signatureHeader)
+	if err != nil {
+		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return nil, false
+	}
+
+	// Limit Body Size
+	r.Body = http.MaxBytesReader(w, r.Body, maxGossipBodySize)
+
+	// Read Body (Protected by MaxBytesReader)
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		if err.Error() == "http: request body too large" {
+			log.Printf("[SECURITY] Dropped oversized gossip request from %s", r.RemoteAddr)
+			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
+		} else {
+			log.Printf("[ERROR] Failed to read gossip body: %v", err)
+			http.Error(w, "Failed to read body", http.StatusInternalServerError)
+		}
+		return nil, false
+	}
+	defer func() {
+		if err := r.Body.Close(); err != nil {
+			log.Printf("[WARNING] readAndVerifyBody: Failed to close request body: %v", err)
+		}
+	}()
+
+	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
+	mac.Write(body)
+	expectedMAC := mac.Sum(nil)
+
+	if !hmac.Equal(sigBytes, expectedMAC) {
+		log.Printf("[SECURITY] Invalid signature from %s", r.RemoteAddr)
+		http.Error(w, "Forbidden", http.StatusForbidden)
+		return nil, false
+	}
+
+	return body, true
 }
 
 func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
@@ -410,48 +406,55 @@ func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 
 	switch msg.Type {
 	case dataType.GossipTypeBlockIP:
-		if err := validateGossipBlock(msg.Content, msg.Expiration, now); err != nil {
-			log.Printf("[SECURITY] Dropped gossip BlockIP from %s: ip=%q exp=%d err=%v", msg.OriginNode, msg.Content, msg.Expiration, err)
-			return
-		}
-		// Apply block
-		gm.blockList.BlockUntil(msg.Content, msg.Expiration)
-		log.Printf("[GOSSIP] Received BlockIP for %s from %s (Exp: %d)", msg.Content, msg.OriginNode, msg.Expiration)
-
-		// Epidemic: Re-broadcast to infect others
-		gm.epidemicBroadcast(msg)
-
+		gm.processBlockIP(msg, now)
 	case dataType.GossipTypeSync:
-		log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
-		var snapshot map[string]int64
-		if err := json.Unmarshal([]byte(msg.Content), &snapshot); err != nil {
-			log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
-			return
-		}
+		gm.processSync(msg, now)
+	}
+}
 
-		if len(snapshot) > maxSyncEntriesBatch {
-			log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(snapshot), maxSyncEntriesBatch)
-			return
-		}
+func (gm *GossipManager) processBlockIP(msg dataType.GossipMessage, now time.Time) {
+	if err := validateGossipBlock(msg.Content, msg.Expiration, now); err != nil {
+		log.Printf("[SECURITY] Dropped gossip BlockIP from %s: ip=%q exp=%d err=%v", msg.OriginNode, msg.Content, msg.Expiration, err)
+		return
+	}
+	// Apply block
+	gm.blockList.BlockUntil(msg.Content, msg.Expiration)
+	log.Printf("[GOSSIP] Received BlockIP for %s from %s (Exp: %d)", msg.Content, msg.OriginNode, msg.Expiration)
 
-		invalidCount := 0
-		for ip, expiration := range snapshot {
-			if err := validateGossipBlock(ip, expiration, now); err != nil {
-				invalidCount++
-				if invalidCount <= 5 {
-					log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: ip=%q exp=%d err=%v", msg.OriginNode, ip, expiration, err)
-				}
-				continue
+	// Epidemic: Re-broadcast to infect others
+	gm.epidemicBroadcast(msg)
+}
+
+func (gm *GossipManager) processSync(msg dataType.GossipMessage, now time.Time) {
+	log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
+	var snapshot map[string]int64
+	if err := json.Unmarshal([]byte(msg.Content), &snapshot); err != nil {
+		log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
+		return
+	}
+
+	if len(snapshot) > maxSyncEntriesBatch {
+		log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(snapshot), maxSyncEntriesBatch)
+		return
+	}
+
+	invalidCount := 0
+	for ip, expiration := range snapshot {
+		if err := validateGossipBlock(ip, expiration, now); err != nil {
+			invalidCount++
+			if invalidCount <= 5 {
+				log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: ip=%q exp=%d err=%v", msg.OriginNode, ip, expiration, err)
 			}
-			gm.blockList.BlockUntil(ip, expiration)
+			continue
 		}
+		gm.blockList.BlockUntil(ip, expiration)
+	}
 
-		if invalidCount > 0 {
-			if invalidCount > 5 {
-				log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s (only first 5 shown)", invalidCount, msg.OriginNode)
-			} else {
-				log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s", invalidCount, msg.OriginNode)
-			}
+	if invalidCount > 0 {
+		if invalidCount > 5 {
+			log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s (only first 5 shown)", invalidCount, msg.OriginNode)
+		} else {
+			log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s", invalidCount, msg.OriginNode)
 		}
 	}
 }

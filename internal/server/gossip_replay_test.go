@@ -12,6 +12,8 @@ import (
 	"server_torii/internal/dataType"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
@@ -78,7 +80,7 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 			gm := NewGossipManager(cfg, dataType.NewBlockList())
 			// Override start time/random dependencies if needed, but here simple logic suffices.
 
-			id := "msg-" + tt.name
+			id := uuid.New().String()
 			req := createReq(time.Now().Add(tt.tsDelta).Unix(), id)
 			w := httptest.NewRecorder()
 

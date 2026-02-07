@@ -12,6 +12,8 @@ import (
 	"server_torii/internal/dataType"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
@@ -53,7 +55,7 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 	// If we send a message ID that is already seen, it returns early!
 	// So we can pre-populate seenMessages to avoid BlockList interaction!
 
-	msgID := "test-msg-1"
+	msgID := uuid.New().String()
 	gm.markSeen(msgID) // Mark as seen so processRemoteMessage returns early
 
 	// Helper to create request
