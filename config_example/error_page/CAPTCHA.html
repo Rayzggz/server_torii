@@ -1,105 +1,118 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CAPTCHA - ⛩️Server Torii</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      background-color: #f9f9f9;
-    }
-    .container {
-      text-align: left;
-      max-width: 600px;
-    }
-    .icon svg {
-      width: 60px;
-      height: 60px;
-      stroke: #333;
-    }
-    .message {
-      font-size: 24px;
-      font-weight: bold;
-      color: #333;
-    }
-    .description {
-      margin-top: 10px;
-      color: #666;
-    }
-    .toriiVerifyBox {
-      margin-top: 10px;
-      color: #666;
-    }
-    .footer {
-      margin-top: 30px;
-      font-size: 12px;
-      color: #999;
-    }
-    .footer a {
-      color: red;
-      text-decoration: none;
-    }
-  </style>
-  <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
-  <script>
-    function onSubmit(token) {
-      let reqBody = "h-captcha-response=" + token;
-      let httpRequest = new XMLHttpRequest();
-      httpRequest.open("POST", "/torii/captcha", true);
-      httpRequest.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-      httpRequest.send(reqBody);
-      httpRequest.onreadystatechange = () => {
-        if (httpRequest.readyState == 4 && httpRequest.status == 200) {
-          let text = httpRequest.responseText;
-          switch (text) {
-            case "good":
-              window.location.reload();
-              break;
-            case "bad":
-              alert("Bad CAPTCHA, please refresh the page and try again.\n"
-                      + "您未能通过人机验证，请刷新页面后重试。");
-              window.location.reload();
-              break;
-            case "badSession":
-              alert("Session invalid, please refresh the page and try again.\n"
-                      + "会话无效，请刷新页面后重试。");
-              window.location.reload();
-              break;
-            default:
-              alert("Unexpected error occurred, please refresh the page and try again.\n"
-                      + "发生了意料之外的错误，请刷新页面后重试。");
-              window.location.reload();
-          }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CAPTCHA - ⛩️Server Torii</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f9f9f9;
         }
-      }
-    }
 
-    function checkCaptchaRender() {
-      const captchaDiv = document.querySelector(".h-captcha");
+        .container {
+            text-align: left;
+            max-width: 600px;
+            width: 100%;
+            padding: 0 20px;
+            box-sizing: border-box;
+        }
 
-      if (captchaDiv && captchaDiv.children.length > 0) {
-      } else {
-        document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
-                + "加载人机验证失败，请检查尝试更换网络环境后重试。";
-      }
-    }
-    setTimeout(checkCaptchaRender, 5000);
-  </script>
+        .icon svg {
+            width: 60px;
+            height: 60px;
+            stroke: #333;
+        }
+
+        .message {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .description {
+            margin-top: 10px;
+            color: #666;
+        }
+
+        .toriiVerifyBox {
+            margin-top: 10px;
+            color: #666;
+        }
+
+        .footer {
+            margin-top: 30px;
+            font-size: 12px;
+            color: #999;
+        }
+
+        .footer a {
+            color: red;
+            text-decoration: none;
+        }
+    </style>
+    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <script>
+        function onSubmit(token) {
+            let reqBody = "h-captcha-response=" + token;
+            let httpRequest = new XMLHttpRequest();
+            httpRequest.open("POST", "/torii/captcha", true);
+            httpRequest.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+            httpRequest.send(reqBody);
+            httpRequest.onreadystatechange = () => {
+                if (httpRequest.readyState == 4 && httpRequest.status == 200) {
+                    let text = httpRequest.responseText;
+                    switch (text) {
+                        case "good":
+                            window.location.reload();
+                            break;
+                        case "bad":
+                            alert("Bad CAPTCHA, please refresh the page and try again.\n"
+                                + "您未能通过人机验证，请刷新页面后重试。");
+                            window.location.reload();
+                            break;
+                        case "badSession":
+                            alert("Session invalid, please refresh the page and try again.\n"
+                                + "会话无效，请刷新页面后重试。");
+                            window.location.reload();
+                            break;
+                        default:
+                            alert("Unexpected error occurred, please refresh the page and try again.\n"
+                                + "发生了意料之外的错误，请刷新页面后重试。");
+                            window.location.reload();
+                    }
+                }
+            }
+        }
+
+        function checkCaptchaRender() {
+            const captchaDiv = document.querySelector(".h-captcha");
+
+            if (captchaDiv && captchaDiv.children.length > 0) {
+            } else {
+                document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
+                    + "加载人机验证失败，请检查尝试更换网络环境后重试。";
+            }
+        }
+
+        setTimeout(checkCaptchaRender, 5000);
+    </script>
 </head>
 <body>
 <div class="container">
-  <div class="message">Checking that you are not a robot</div>
-  <div class="message">请完成人机验证</div>
-  <div class="toriiVerifyBox" id="toriiVerifyBox"><div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div></div>
-  <div class="footer">
-    DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
-  </div>
+    <div class="message">Checking that you are not a robot</div>
+    <div class="message">请完成人机验证</div>
+    <div class="toriiVerifyBox" id="toriiVerifyBox">
+        <div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div>
+    </div>
+    <div class="footer">
+        DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
+    </div>
 </div>
 
 </body>
