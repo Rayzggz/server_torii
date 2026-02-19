@@ -1,6 +1,6 @@
 #!/bin/bash
 # Integration test for Gossip Protocol
-# Location: /home/roi/GolandProjects/server_torii/scripts/test/gossip/integration/test.sh
+# Location: scripts/test/gossip/integration/test.sh
 
 set -e
 
