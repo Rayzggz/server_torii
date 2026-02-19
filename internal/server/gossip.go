@@ -38,6 +38,8 @@ type GossipManager struct {
 	localSeq            int64
 	AntiEntropyInterval time.Duration
 	maxSeenEntries      int
+	rng                 *rand.Rand
+	rngMu               sync.Mutex
 }
 
 func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *GossipManager {
@@ -47,6 +49,7 @@ func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *Go
 		seenMessages:        make(map[string]time.Time),
 		AntiEntropyInterval: 30 * time.Second,
 		maxSeenEntries:      maxSeenMessages,
+		rng:                 rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 }
 
@@ -159,7 +162,9 @@ func (gm *GossipManager) epidemicBroadcast(msg dataType.GossipMessage) {
 	}
 
 	// Shuffle peers
-	perm := rand.Perm(len(peers))
+	gm.rngMu.Lock()
+	perm := gm.rng.Perm(len(peers))
+	gm.rngMu.Unlock()
 	count := 0
 	for _, i := range perm {
 		if count >= k {
@@ -181,7 +186,10 @@ func (gm *GossipManager) startAntiEntropy() {
 		}
 
 		// Select 1 random peer
-		peer := peers[rand.Intn(len(peers))]
+		gm.rngMu.Lock()
+		idx := gm.rng.Intn(len(peers))
+		gm.rngMu.Unlock()
+		peer := peers[idx]
 
 		// Create snapshot
 		snapshot := gm.blockList.GetSnapshot()
