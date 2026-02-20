@@ -100,6 +100,26 @@ func (gm *GossipManager) isSeen(id string) bool {
 	return ok
 }
 
+// checkAndMarkSeen atomically checks if a message has been seen.
+// If not seen, it marks it as seen and returns false.
+// If already seen, it returns true.
+func (gm *GossipManager) checkAndMarkSeen(id string) bool {
+	gm.mu.Lock()
+	defer gm.mu.Unlock()
+
+	if _, ok := gm.seenMessages[id]; ok {
+		return true
+	}
+
+	// Enforce capacity limit
+	if len(gm.seenMessages) >= gm.maxSeenEntries {
+		gm.pruneSeenMessagesLocked()
+	}
+
+	gm.seenMessages[id] = time.Now()
+	return false
+}
+
 func (gm *GossipManager) isKnownPeer(name string) bool {
 	for _, p := range gm.cfg.Peers {
 		if p.Name == name {
@@ -406,10 +426,9 @@ func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Reques
 
 func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 	// Deduplication
-	if gm.isSeen(msg.ID) {
+	if gm.checkAndMarkSeen(msg.ID) {
 		return
 	}
-	gm.markSeen(msg.ID)
 	now := time.Now()
 
 	switch msg.Type {
