@@ -32,6 +32,9 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	} else if strings.HasPrefix(reqData.Uri, cfg.WebPath+"/external_migration") {
 		handleExternalMigration(w, r, reqData, ruleSet, cfg)
 		return
+	} else if r.URL.Path == cfg.WebPath+"/gossip" {
+		sharedMem.GossipManager.HandleGossip(w, r)
+		return
 	}
 	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
 		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
