@@ -66,6 +66,10 @@ func NewAdaptiveTrafficAnalyzer(siteRules map[string]*config.RuleSet, sharedMem 
 	for siteHost, rules := range siteRules {
 		if rules.AdaptiveTrafficAnalyzerRule != nil {
 			tag := rules.AdaptiveTrafficAnalyzerRule.Tag
+			if tag == "" {
+				log.Printf("[WARNING] AdaptiveTrafficAnalyzer rule in site '%s' has an empty tag and will be ignored.", siteHost)
+				continue
+			}
 			if _, exists := tagRules[tag]; exists {
 				log.Printf("[WARNING] Duplicate AdaptiveTrafficAnalyzer tag '%s' found in site '%s'. This will overwrite the previous rule.", tag, siteHost)
 			}
