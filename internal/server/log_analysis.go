@@ -64,7 +64,7 @@ type AdaptiveTrafficAnalyzer struct {
 func NewAdaptiveTrafficAnalyzer(siteRules map[string]*config.RuleSet, sharedMem *dataType.SharedMemory) *AdaptiveTrafficAnalyzer {
 	tagRules := make(map[string]*config.RuleSet)
 	for siteHost, rules := range siteRules {
-		if rules.AdaptiveTrafficAnalyzerRule != nil {
+		if rules.AdaptiveTrafficAnalyzerRule != nil || !rules.AdaptiveTrafficAnalyzerRule.Enabled {
 			tag := rules.AdaptiveTrafficAnalyzerRule.Tag
 			if tag == "" {
 				log.Printf("[WARNING] AdaptiveTrafficAnalyzer rule in site '%s' has an empty tag and will be ignored.", siteHost)
