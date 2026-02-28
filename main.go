@@ -57,13 +57,16 @@ func main() {
 		}
 	}
 
+	engine := action.NewActionRuleEngine(time.Minute)
+	defer engine.Stop()
+
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
 		BlockList:                    dataType.NewBlockList(),
-		ActionRuleEngine:             action.NewActionRuleEngine(time.Minute),
+		ActionRuleEngine:             engine,
 	}
 
 	//GC
