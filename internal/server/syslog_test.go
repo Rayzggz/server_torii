@@ -38,13 +38,11 @@ func TestSyslogConcurrency(t *testing.T) {
 	conn.Close()
 
 	// Start listener in a goroutine
-	go func() {
-		err := StartSyslogUDPListener(port, analyzer)
-		if err != nil {
-			// This might fail if test finishes and port closes, which is expected
-			return
-		}
-	}()
+	listener := NewSyslogListener(port, analyzer)
+	if err := listener.Start(); err != nil {
+		t.Fatalf("Failed to start listener: %v", err)
+	}
+	defer listener.Stop()
 
 	// Give it a moment to start
 	time.Sleep(100 * time.Millisecond)

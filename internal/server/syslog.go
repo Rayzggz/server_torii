@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,9 +20,28 @@ const (
 	syslogWorkers    = 20
 )
 
-// StartSyslogUDPListener starts a UDP listener for Syslog messages
-func StartSyslogUDPListener(port string, analyzer *AdaptiveTrafficAnalyzer) error {
-	udpAddr, err := net.ResolveUDPAddr("udp", ":"+port)
+type SyslogListener struct {
+	port     string
+	analyzer *AdaptiveTrafficAnalyzer
+	conn     *net.UDPConn
+	stopChan chan struct{}
+	wg       sync.WaitGroup
+	logChan  chan string
+}
+
+// NewSyslogListener creates a new SyslogListener
+func NewSyslogListener(port string, analyzer *AdaptiveTrafficAnalyzer) *SyslogListener {
+	return &SyslogListener{
+		port:     port,
+		analyzer: analyzer,
+		stopChan: make(chan struct{}),
+		logChan:  make(chan string, syslogBufferSize),
+	}
+}
+
+// Start opens the UDP port and starts the listener and worker pool
+func (l *SyslogListener) Start() error {
+	udpAddr, err := net.ResolveUDPAddr("udp", ":"+l.port)
 	if err != nil {
 		return err
 	}
@@ -30,49 +50,70 @@ func StartSyslogUDPListener(port string, analyzer *AdaptiveTrafficAnalyzer) erro
 	if err != nil {
 		return err
 	}
-	// defer conn.Close() // Should run until server resumes
-	// Note: Not closing the connection to allow the server to continue running
+	l.conn = conn
 
-	log.Printf("Syslog UDP Listener started on port %s", port)
-
-	// Create a buffered channel to hold incoming messages
-	logChan := make(chan string, syslogBufferSize)
+	log.Printf("Syslog UDP Listener started on port %s", l.port)
 
 	// Start worker pool
 	for i := 0; i < syslogWorkers; i++ {
+		l.wg.Add(1)
 		go func() {
-			for msg := range logChan {
+			defer l.wg.Done()
+			for msg := range l.logChan {
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
 							log.Printf("[Recovered] Syslog worker panic: %v", r)
 						}
 					}()
-					parseAndSubmitLog(msg, analyzer)
+					parseAndSubmitLog(msg, l.analyzer)
 				}()
 			}
 		}()
 	}
 
-	buf := make([]byte, 64*1024) // 64KB buffer for UDP packets
-	for {
-		// ReadFromUDP can read a packet
-		n, _, err := conn.ReadFromUDP(buf)
-		if err != nil {
-			log.Printf("Error reading UDP packet: %v", err)
-			continue
+	// This goroutine handles reading packets
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		buf := make([]byte, 64*1024) // 64KB buffer for UDP packets
+		for {
+			n, _, err := l.conn.ReadFromUDP(buf)
+			if err != nil {
+				// Check if stopped
+				select {
+				case <-l.stopChan:
+					return
+				default:
+					log.Printf("Error reading UDP packet: %v", err)
+					continue
+				}
+			}
+
+			message := string(buf[:n])
+
+			select {
+			case l.logChan <- message:
+			default:
+				// Channel is full, drop
+			}
 		}
+	}()
 
-		message := string(buf[:n])
+	return nil
+}
 
-		// Non-blocking send to channel
-		select {
-		case logChan <- message:
-			// Message queued successfully
-		default:
-			// Channel is full, drop the message
+// Stop cleanly shuts down the listener and workers
+func (l *SyslogListener) Stop() {
+	close(l.stopChan)
+	if l.conn != nil {
+		err := l.conn.Close()
+		if err != nil {
+			return
 		}
 	}
+	close(l.logChan)
+	l.wg.Wait()
 }
 
 // parseAndSubmitLog parses the raw log message and submits it to the analyzer
