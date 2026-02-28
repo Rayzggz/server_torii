@@ -80,9 +80,9 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 
 			if tt.checkUri != "" {
 				act := engine.Check("", "", tt.checkUri)
-				if tt.expectBlock && act != action.ActionBlock {
+				if tt.expectBlock && act != action.ActionCaptcha {
 					t.Errorf("Expected URI %s to be blocked, got %v", tt.checkUri, act)
-				} else if !tt.expectBlock && act == action.ActionBlock {
+				} else if !tt.expectBlock && act == action.ActionCaptcha {
 					t.Errorf("Expected URI %s NOT to be blocked, got %v", tt.checkUri, act)
 				}
 			}
