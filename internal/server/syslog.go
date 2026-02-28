@@ -76,6 +76,7 @@ func (l *SyslogListener) Start() error {
 	l.wg.Add(1)
 	go func() {
 		defer l.wg.Done()
+		defer close(l.logChan)
 		buf := make([]byte, 64*1024) // 64KB buffer for UDP packets
 		for {
 			n, _, err := l.conn.ReadFromUDP(buf)
@@ -107,12 +108,8 @@ func (l *SyslogListener) Start() error {
 func (l *SyslogListener) Stop() {
 	close(l.stopChan)
 	if l.conn != nil {
-		err := l.conn.Close()
-		if err != nil {
-			return
-		}
+		_ = l.conn.Close()
 	}
-	close(l.logChan)
 	l.wg.Wait()
 }
 
