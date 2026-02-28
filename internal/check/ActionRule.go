@@ -8,10 +8,12 @@ import (
 
 func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	if sharedMem.ActionRuleEngine == nil {
+		decision.Set(action.Continue)
 		return
 	}
 	engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine)
 	if !ok {
+		decision.Set(action.Continue)
 		return
 	}
 
@@ -23,5 +25,7 @@ func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision 
 	case action.ActionCaptcha:
 		reqData.FeatureControl |= dataType.FeatureCaptcha
 		Captcha(reqData, ruleSet, decision, sharedMem)
+	default:
+		decision.Set(action.Continue)
 	}
 }
