@@ -26,6 +26,7 @@ func main() {
 	if err != nil {
 		log.Printf("[WARNING] Load config failed: %v. Using default config.", err)
 	}
+	config.GlobalConfig = cfg
 
 	// Load site-specific rules
 	siteRules, err := config.LoadSiteRules(cfg)
@@ -66,8 +67,14 @@ func main() {
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
 		BlockList:                    dataType.NewBlockList(),
+		GossipChan:                   make(chan dataType.GossipMessage, 1000),
 		ActionRuleEngine:             engine,
 	}
+
+	// Initialize GossipManager
+	gossipManager := server.NewGossipManager(cfg, sharedMem.BlockList)
+	sharedMem.GossipManager = gossipManager
+	go gossipManager.Start(sharedMem.GossipChan)
 
 	//GC
 	gcStopCh := make(chan struct{})

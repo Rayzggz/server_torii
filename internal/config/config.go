@@ -18,6 +18,7 @@ import (
 )
 
 var validate *validator.Validate
+var GlobalConfig *MainConfig
 
 func init() {
 	validate = validator.New()
@@ -86,12 +87,20 @@ type MainConfig struct {
 	WebPath                         string           `yaml:"web_path" validate:"required,startswith=/"`
 	ErrorPage                       string           `yaml:"error_page" validate:"required"`
 	LogPath                         string           `yaml:"log_path" validate:"required"`
+	GlobalSecret                    string           `yaml:"global_secret" validate:"required,min=32"`
 	NodeName                        string           `yaml:"node_name" validate:"required"`
 	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers" validate:"required"`
 	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
 	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers" validate:"required"`
 	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required"`
+	Peers                           []Peer           `yaml:"peers"`
+}
+
+type Peer struct {
+	Name    string `yaml:"name" validate:"required"`
+	Address string `yaml:"address" validate:"required,url"`
+	Host    string `yaml:"host"`
 }
 
 // LoadMainConfig Read the configuration file and return the configuration object
