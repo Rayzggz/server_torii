@@ -66,13 +66,12 @@ func main() {
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
-		BlockList:                    dataType.NewBlockList(),
 		GossipChan:                   make(chan dataType.GossipMessage, 1000),
 		ActionRuleEngine:             engine,
 	}
 
 	// Initialize GossipManager
-	gossipManager := server.NewGossipManager(cfg, sharedMem.BlockList)
+	gossipManager := server.NewGossipManager(cfg, engine)
 	sharedMem.GossipManager = gossipManager
 	go gossipManager.Start(sharedMem.GossipChan)
 
@@ -82,7 +81,6 @@ func main() {
 	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
 	go dataType.StartCounterGC(sharedMem.HTTPFloodFailureLimitCounter, time.Minute, gcStopCh)
 	go dataType.StartCounterGC(sharedMem.CaptchaFailureLimitCounter, time.Minute, gcStopCh)
-	go dataType.StartBlockListGC(sharedMem.BlockList, time.Minute, gcStopCh)
 
 	// Initialize log system
 	utils.InitLogx(cfg.LogPath)

@@ -162,3 +162,45 @@ func (e *ActionRuleEngine) cleanup() {
 		}
 	}
 }
+
+// GetSnapshot returns a copy of the active action rules.
+func (e *ActionRuleEngine) GetSnapshot() []dataType.ActionRulePayload {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	var snapshot []dataType.ActionRulePayload
+	now := time.Now()
+
+	for ip, rule := range e.ipRules {
+		if rule.ExpiresAt.After(now) {
+			snapshot = append(snapshot, dataType.ActionRulePayload{
+				RuleType:  "IP",
+				Value:     ip,
+				Action:    string(rule.Action),
+				ExpiresAt: rule.ExpiresAt.Unix(),
+			})
+		}
+	}
+	for ua, rule := range e.uaRules {
+		if rule.ExpiresAt.After(now) {
+			snapshot = append(snapshot, dataType.ActionRulePayload{
+				RuleType:  "UA",
+				Value:     ua,
+				Action:    string(rule.Action),
+				ExpiresAt: rule.ExpiresAt.Unix(),
+			})
+		}
+	}
+	for uri, rule := range e.uriRules {
+		if rule.ExpiresAt.After(now) {
+			snapshot = append(snapshot, dataType.ActionRulePayload{
+				RuleType:  "URI",
+				Value:     uri,
+				Action:    string(rule.Action),
+				ExpiresAt: rule.ExpiresAt.Unix(),
+			})
+		}
+	}
+
+	return snapshot
+}

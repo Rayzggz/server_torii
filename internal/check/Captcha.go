@@ -33,17 +33,15 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 
 	ipKey := reqData.RemoteIP
 
-	if sharedMem.BlockList.IsBlocked(ipKey) {
-		decision.SetCode(action.Done, []byte("403"))
-		return
-	}
 	// Check failure limit
 	for window, limit := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
 		if sharedMem.CaptchaFailureLimitCounter.Query(ipKey, window) > limit {
 
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
-				sharedMem.BlockList.Block(ipKey, ruleSet.CAPTCHARule.FailureBlockDuration)
-				utils.BroadcastBlock(config.GlobalConfig.NodeName, ipKey, ruleSet.CAPTCHARule.FailureBlockDuration, sharedMem.GossipChan)
+				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
+					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second)
+				}
+				utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
 				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))
 				sharedMem.CaptchaFailureLimitCounter.Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))

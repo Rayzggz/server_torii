@@ -131,7 +131,6 @@ type SharedMemory struct {
 	HTTPFloodSameURILimitCounter *Counter
 	HTTPFloodFailureLimitCounter *Counter
 	CaptchaFailureLimitCounter   *Counter
-	BlockList                    *BlockList
 	GossipChan                   chan GossipMessage
 	GossipManager                GossipHandler
 	AdaptiveTrafficAnalyzer      interface{}

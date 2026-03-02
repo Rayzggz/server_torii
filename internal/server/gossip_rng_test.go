@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 )
@@ -13,7 +14,7 @@ func TestGossipManager_RNG_Seeding(t *testing.T) {
 		NodeName: "test-node",
 		Peers:    []config.Peer{{Name: "p1", Address: "http://localhost:8080"}},
 	}
-	bl := dataType.NewBlockList()
+	bl := action.NewActionRuleEngine(time.Minute)
 
 	// Create two managers with a delay to ensure different seeds
 	gm1 := NewGossipManager(cfg, bl)
@@ -63,7 +64,7 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		cfg.Peers[i] = config.Peer{Name: "p", Address: "http://localhost:8080"}
 	}
-	bl := dataType.NewBlockList()
+	bl := action.NewActionRuleEngine(time.Minute)
 	gm := NewGossipManager(cfg, bl)
 
 	// Simulate concurrent access

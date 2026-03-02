@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"net"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"sync"
@@ -16,7 +17,7 @@ import (
 func TestSyslogConcurrency(t *testing.T) {
 	// Setup dependencies
 	mockSharedMem := &dataType.SharedMemory{
-		BlockList: dataType.NewBlockList(),
+		ActionRuleEngine: action.NewActionRuleEngine(time.Minute),
 	}
 	siteRules := make(map[string]*config.RuleSet)
 	// Add a dummy rule to ensure logs are not discarded early

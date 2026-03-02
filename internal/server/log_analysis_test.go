@@ -16,6 +16,11 @@ func TestUriAnalyzer_Analyze(t *testing.T) {
 	}
 	defer engine.Stop()
 
+	// Mock global config for testing BroadcastActionRule
+	config.GlobalConfig = &config.MainConfig{
+		NodeName: "test-node",
+	}
+
 	tests := []struct {
 		name        string
 		rule        config.RuleSet

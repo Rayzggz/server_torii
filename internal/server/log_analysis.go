@@ -256,8 +256,13 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 	}
 
 	// 2. Evaluate Rules
+	engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine)
+	if !ok {
+		return
+	}
+
 	for ip, stat := range stats {
-		if sharedMem.BlockList.IsBlocked(ip) {
+		if engine.Check(ip, "", "") == action.ActionBlock {
 			continue
 		}
 
@@ -302,7 +307,8 @@ func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMe
 		}
 
 		if blocked {
-			sharedMem.BlockList.Block(ip, non200Rule.BlockDuration)
+			engine.AddIPRule(ip, action.ActionBlock, time.Duration(non200Rule.BlockDuration)*time.Second)
+			utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ip, string(action.ActionBlock), time.Duration(non200Rule.BlockDuration)*time.Second, sharedMem.GossipChan)
 			log.Printf("[AdaptiveTrafficAnalyzer] Blocked IP %s for %ds (Tag: %s, Reason: %s)",
 				ip, non200Rule.BlockDuration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason)
 		}
@@ -395,6 +401,7 @@ func (u *UriAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *
 					duration = 5 * time.Minute // Default fallback
 				}
 				engine.AddURIRule(uri, action.ActionCaptcha, duration)
+				utils.BroadcastActionRule(config.GlobalConfig.NodeName, "URI", uri, string(action.ActionCaptcha), duration, sharedMem.GossipChan)
 				log.Printf("[AdaptiveTrafficAnalyzer] [URI] Blocked URI %s for %v (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
 					uri, duration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
 			} else {

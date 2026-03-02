@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
@@ -32,7 +33,7 @@ const (
 
 type GossipManager struct {
 	cfg                 *config.MainConfig
-	blockList           *dataType.BlockList
+	actionEngine        *action.ActionRuleEngine
 	seenMessages        map[string]time.Time
 	mu                  sync.RWMutex
 	localSeq            int64
@@ -42,10 +43,10 @@ type GossipManager struct {
 	rngMu               sync.Mutex
 }
 
-func NewGossipManager(cfg *config.MainConfig, blockList *dataType.BlockList) *GossipManager {
+func NewGossipManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine) *GossipManager {
 	return &GossipManager{
 		cfg:                 cfg,
-		blockList:           blockList,
+		actionEngine:        actionEngine,
 		seenMessages:        make(map[string]time.Time),
 		AntiEntropyInterval: 30 * time.Second,
 		maxSeenEntries:      maxSeenMessages,
@@ -212,32 +213,32 @@ func (gm *GossipManager) startAntiEntropy() {
 		peer := peers[idx]
 
 		// Create snapshot
-		snapshot := gm.blockList.GetSnapshot()
+		snapshot := gm.actionEngine.GetSnapshot()
 
 		// Chunking logic for large snapshots
-		batch := make(map[string]int64, maxSyncEntriesBatch)
+		var batch []dataType.ActionRulePayload
 		count := 0
 
-		for ip, exp := range snapshot {
-			batch[ip] = exp
+		for _, rule := range snapshot {
+			batch = append(batch, rule)
 			count++
 
 			if count >= maxSyncEntriesBatch {
-				gm.sendSyncBatch(peer, batch)
+				gm.sendSyncBatch(peer, dataType.ActionRuleSyncPayload{Rules: batch})
 				// Reset batch
-				batch = make(map[string]int64, maxSyncEntriesBatch)
+				batch = make([]dataType.ActionRulePayload, 0, maxSyncEntriesBatch)
 				count = 0
 			}
 		}
 
 		// Send remaining
 		if len(batch) > 0 {
-			gm.sendSyncBatch(peer, batch)
+			gm.sendSyncBatch(peer, dataType.ActionRuleSyncPayload{Rules: batch})
 		}
 	}
 }
 
-func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch map[string]int64) {
+func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch dataType.ActionRuleSyncPayload) {
 	content, err := json.Marshal(batch)
 	if err != nil {
 		log.Printf("[ERROR] Failed to marshal snapshot batch for anti-entropy: %v", err)
@@ -432,21 +433,38 @@ func (gm *GossipManager) processRemoteMessage(msg dataType.GossipMessage) {
 	now := time.Now()
 
 	switch msg.Type {
-	case dataType.GossipTypeBlockIP:
-		gm.processBlockIP(msg, now)
+	case dataType.GossipTypeActionRule:
+		gm.processActionRule(msg, now)
 	case dataType.GossipTypeSync:
 		gm.processSync(msg, now)
 	}
 }
 
-func (gm *GossipManager) processBlockIP(msg dataType.GossipMessage, now time.Time) {
-	if err := validateGossipBlock(msg.Content, msg.Expiration, now); err != nil {
-		log.Printf("[SECURITY] Dropped gossip BlockIP from %s: ip=%q exp=%d err=%v", msg.OriginNode, msg.Content, msg.Expiration, err)
+func (gm *GossipManager) processActionRule(msg dataType.GossipMessage, now time.Time) {
+	var payload dataType.ActionRulePayload
+	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
+		log.Printf("[ERROR] Failed to unmarshal action rule gossip: %v", err)
 		return
 	}
-	// Apply block
-	gm.blockList.BlockUntil(msg.Content, msg.Expiration)
-	log.Printf("[GOSSIP] Received BlockIP for %s from %s (Exp: %d)", msg.Content, msg.OriginNode, msg.Expiration)
+
+	if err := validateActionRule(payload, now); err != nil {
+		log.Printf("[SECURITY] Dropped gossip ActionRule from %s: err=%v", msg.OriginNode, err)
+		return
+	}
+
+	// Apply action rule
+	ttl := time.Unix(payload.ExpiresAt, 0).Sub(now)
+	if ttl > 0 {
+		switch payload.RuleType {
+		case "IP":
+			gm.actionEngine.AddIPRule(payload.Value, action.ActionType(payload.Action), ttl)
+		case "UA":
+			gm.actionEngine.AddUARule(payload.Value, action.ActionType(payload.Action), ttl)
+		case "URI":
+			gm.actionEngine.AddURIRule(payload.Value, action.ActionType(payload.Action), ttl)
+		}
+	}
+	log.Printf("[GOSSIP] Received ActionRule for %s:%s from %s (Exp: %d)", payload.RuleType, payload.Value, msg.OriginNode, payload.ExpiresAt)
 
 	// Epidemic: Re-broadcast to infect others
 	gm.epidemicBroadcast(msg)
@@ -454,27 +472,38 @@ func (gm *GossipManager) processBlockIP(msg dataType.GossipMessage, now time.Tim
 
 func (gm *GossipManager) processSync(msg dataType.GossipMessage, now time.Time) {
 	log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
-	var snapshot map[string]int64
-	if err := json.Unmarshal([]byte(msg.Content), &snapshot); err != nil {
+	var syncPayload dataType.ActionRuleSyncPayload
+	if err := json.Unmarshal([]byte(msg.Content), &syncPayload); err != nil {
 		log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
 		return
 	}
 
-	if len(snapshot) > maxSyncEntriesBatch {
-		log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(snapshot), maxSyncEntriesBatch)
+	if len(syncPayload.Rules) > maxSyncEntriesBatch {
+		log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(syncPayload.Rules), maxSyncEntriesBatch)
 		return
 	}
 
 	invalidCount := 0
-	for ip, expiration := range snapshot {
-		if err := validateGossipBlock(ip, expiration, now); err != nil {
+	for _, payload := range syncPayload.Rules {
+		if err := validateActionRule(payload, now); err != nil {
 			invalidCount++
 			if invalidCount <= 5 {
-				log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: ip=%q exp=%d err=%v", msg.OriginNode, ip, expiration, err)
+				log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: value=%q exp=%d err=%v", msg.OriginNode, payload.Value, payload.ExpiresAt, err)
 			}
 			continue
 		}
-		gm.blockList.BlockUntil(ip, expiration)
+
+		ttl := time.Unix(payload.ExpiresAt, 0).Sub(now)
+		if ttl > 0 {
+			switch payload.RuleType {
+			case "IP":
+				gm.actionEngine.AddIPRule(payload.Value, action.ActionType(payload.Action), ttl)
+			case "UA":
+				gm.actionEngine.AddUARule(payload.Value, action.ActionType(payload.Action), ttl)
+			case "URI":
+				gm.actionEngine.AddURIRule(payload.Value, action.ActionType(payload.Action), ttl)
+			}
+		}
 	}
 
 	if invalidCount > 0 {
@@ -488,29 +517,37 @@ func (gm *GossipManager) processSync(msg dataType.GossipMessage, now time.Time) 
 
 const maxGossipBlockDuration = 7 * 24 * time.Hour
 
-func validateGossipBlock(ipStr string, expiration int64, now time.Time) error {
-	trimmed := strings.TrimSpace(ipStr)
+func validateActionRule(payload dataType.ActionRulePayload, now time.Time) error {
+	trimmed := strings.TrimSpace(payload.Value)
 	if trimmed == "" {
-		return fmt.Errorf("empty ip")
+		return fmt.Errorf("empty rule value")
 	}
 
-	ip := net.ParseIP(trimmed)
-	if ip == nil {
-		return fmt.Errorf("invalid ip format")
+	if payload.RuleType == "IP" {
+		ip := net.ParseIP(trimmed)
+		if ip == nil {
+			return fmt.Errorf("invalid ip format")
+		}
+
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsMulticast() || ip.IsUnspecified() ||
+			ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || !ip.IsGlobalUnicast() {
+			return fmt.Errorf("non-global ip")
+		}
+	} else if payload.RuleType != "UA" && payload.RuleType != "URI" {
+		return fmt.Errorf("invalid rule type: %s", payload.RuleType)
 	}
 
-	if ip.IsPrivate() || ip.IsLoopback() || ip.IsMulticast() || ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || !ip.IsGlobalUnicast() {
-		return fmt.Errorf("non-global ip")
+	if payload.Action != string(action.ActionBlock) && payload.Action != string(action.ActionCaptcha) {
+		return fmt.Errorf("invalid action: %s", payload.Action)
 	}
 
 	nowUnix := now.Unix()
-	if expiration <= nowUnix {
+	if payload.ExpiresAt <= nowUnix {
 		return fmt.Errorf("expiration already passed")
 	}
 
 	maxExpiration := nowUnix + int64(maxGossipBlockDuration/time.Second)
-	if expiration > maxExpiration {
+	if payload.ExpiresAt > maxExpiration {
 		return fmt.Errorf("expiration exceeds max allowed duration")
 	}
 

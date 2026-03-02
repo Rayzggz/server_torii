@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
@@ -19,7 +20,7 @@ import (
 
 func TestGossipSecurityFixes(t *testing.T) {
 	// Helper to create a fresh setup for each test
-	setup := func() (*GossipManager, *dataType.BlockList, *config.MainConfig) {
+	setup := func() (*GossipManager, *action.ActionRuleEngine, *config.MainConfig) {
 		cfg := &config.MainConfig{
 			NodeName:     "test-node",
 			WebPath:      "/torii",
@@ -28,7 +29,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 				{Name: "valid-peer", Address: "http://localhost:8081"},
 			},
 		}
-		bl := dataType.NewBlockList()
+		bl := action.NewActionRuleEngine(time.Minute)
 		gm := NewGossipManager(cfg, bl)
 		return gm, bl, cfg
 	}
@@ -48,13 +49,13 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectEmptyMessageID", func(t *testing.T) {
 		gm, _, cfg := setup()
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeBlockIP,
+			Type:       dataType.GossipTypeActionRule,
 			ID:         "", // Empty ID
 			OriginNode: "valid-peer",
 			Timestamp:  time.Now().Unix(),
-			Content:    "1.2.3.4",
-			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+			Content:    string(payload),
 		}
 
 		req := createSignedRequest(msg, cfg)
@@ -71,13 +72,13 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectInvalidUUID", func(t *testing.T) {
 		gm, _, cfg := setup()
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeBlockIP,
+			Type:       dataType.GossipTypeActionRule,
 			ID:         "not-a-uuid", // Invalid UUID
 			OriginNode: "valid-peer",
 			Timestamp:  time.Now().Unix(),
-			Content:    "1.2.3.4",
-			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+			Content:    string(payload),
 		}
 
 		req := createSignedRequest(msg, cfg)
@@ -94,13 +95,13 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("AcceptValidUUID", func(t *testing.T) {
 		gm, _, cfg := setup()
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeBlockIP,
+			Type:       dataType.GossipTypeActionRule,
 			ID:         uuid.New().String(), // Valid UUID
 			OriginNode: "valid-peer",
 			Timestamp:  time.Now().Unix(),
-			Content:    "1.2.3.4",
-			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+			Content:    string(payload),
 		}
 
 		req := createSignedRequest(msg, cfg)
@@ -117,12 +118,12 @@ func TestGossipSecurityFixes(t *testing.T) {
 		gm, bl, _ := setup()
 
 		// Create a large snapshot
-		snapshot := make(map[string]int64)
+		var snapshot []dataType.ActionRulePayload
 		for i := 0; i < maxSyncEntriesBatch+10; i++ {
-			snapshot[uuid.New().String()] = time.Now().Add(1 * time.Hour).Unix()
+			snapshot = append(snapshot, dataType.ActionRulePayload{RuleType: "IP", Value: uuid.New().String(), Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		}
 
-		content, _ := json.Marshal(snapshot)
+		content, _ := json.Marshal(dataType.ActionRuleSyncPayload{Rules: snapshot})
 
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeSync,
@@ -148,13 +149,13 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectInvalidSignatureLength", func(t *testing.T) {
 		gm, _, _ := setup()
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeBlockIP,
+			Type:       dataType.GossipTypeActionRule,
 			ID:         uuid.New().String(),
 			OriginNode: "valid-peer",
 			Timestamp:  time.Now().Unix(),
-			Content:    "1.2.3.4",
-			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+			Content:    string(payload),
 		}
 
 		body, _ := json.Marshal(msg)
@@ -180,13 +181,13 @@ func TestGossipSecurityFixes(t *testing.T) {
 		// Create a V1 UUID
 		v1UUID, _ := uuid.NewUUID()
 
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
-			Type:       dataType.GossipTypeBlockIP,
+			Type:       dataType.GossipTypeActionRule,
 			ID:         v1UUID.String(), // Version 1 UUID
 			OriginNode: "valid-peer",
 			Timestamp:  time.Now().Unix(),
-			Content:    "1.2.3.4",
-			Expiration: time.Now().Add(1 * time.Hour).Unix(),
+			Content:    string(payload),
 		}
 
 		req := createSignedRequest(msg, cfg)
