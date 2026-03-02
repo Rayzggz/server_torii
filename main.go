@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/server"
@@ -57,6 +58,9 @@ func main() {
 		}
 	}
 
+	engine := action.NewActionRuleEngine(time.Minute)
+	defer engine.Stop()
+
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
@@ -64,6 +68,7 @@ func main() {
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
 		BlockList:                    dataType.NewBlockList(),
 		GossipChan:                   make(chan dataType.GossipMessage, 1000),
+		ActionRuleEngine:             engine,
 	}
 
 	// Initialize GossipManager
