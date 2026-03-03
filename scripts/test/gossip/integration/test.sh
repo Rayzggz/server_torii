@@ -230,9 +230,12 @@ SHORT_TTL_IP="203.0.113.2"
 TTL_SEC=5
 EXPIRATION=$(( $(date +%s) + TTL_SEC ))
 MSG_ID=$(uuidgen)
-# Construct BlockIP message
-# TYPE IS BLOCK_IP (uppercase)
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$SHORT_TTL_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
+# Construct ActionRule message
+# TYPE IS ACTION_RULE
+ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$SHORT_TTL_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
+# Escape quotes for main payload wrapper
+ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 
 # Calculate HMAC
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
@@ -287,7 +290,9 @@ log "=== Test 3: Idempotency ==="
 IDEM_IP="203.0.113.3"
 EXPIRATION=$(( $(date +%s) + 60 ))
 MSG_ID="b33f9a26-7b09-47d7-9c7f-5fabb1f70ae3"
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$IDEM_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
+ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$IDEM_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
+ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
 log "Sending duplicate messages to Node 1..."
@@ -308,7 +313,9 @@ fi
 log "=== Test 4: Security (Invalid HMAC) ==="
 SEC_IP="203.0.113.4"
 EXPIRATION=$(( $(date +%s) + 60 ))
-PAYLOAD="{\"id\":\"bad-sec-id\",\"type\":\"BLOCK_IP\",\"content\":\"$SEC_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"bad_actor\",\"timestamp\":$(date +%s),\"seq\":1}"
+ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$SEC_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
+ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"id\":\"bad-sec-id\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"bad_actor\",\"timestamp\":$(date +%s),\"seq\":1}"
 BAD_SIG="deadbeefdeadbeef"
 
 resp_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
@@ -334,7 +341,9 @@ log "=== Test 5: Reject Private/Invalid IPs ==="
 INVALID_IP="192.168.1.100"
 EXPIRATION=$(( $(date +%s) + 60 ))
 MSG_ID=$(uuidgen)
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$INVALID_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
+ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$INVALID_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
+ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
 curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
@@ -356,7 +365,9 @@ REPLAY_IP="203.0.113.10"
 OLD_TS=$(( $(date +%s) - 660 ))
 EXPIRATION=$(( $(date +%s) + 60 ))
 MSG_ID=$(uuidgen)
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"BLOCK_IP\",\"content\":\"$REPLAY_IP\",\"expiration\":$EXPIRATION,\"origin_node\":\"Node_2\",\"timestamp\":$OLD_TS,\"seq\":1}"
+ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$REPLAY_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
+ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
+PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$OLD_TS,\"seq\":1}"
 SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
 
 curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
