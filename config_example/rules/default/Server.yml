@@ -44,15 +44,15 @@ AdaptiveTrafficAnalyzer:
   non_200_analysis:
     enabled: true
     block_duration: 600
-    fail_count_threshold: 120
+    fail_count_threshold: 300
     fail_rate_count_threshold: 60
-    fail_rate_threshold: 0.9
-    uri_rate_top_n: 5
-    uri_rate_threshold: 0.9
+    fail_rate_threshold: 0.6
+    uri_rate_top_n: 1
+    uri_rate_threshold: 0.8
   uri_analysis:
     enabled: true
     block_duration: 600
     fail_rate_threshold: 0.8
-    fail_rate_count_threshold: 120
-    request_count_sensitivity: 1.5
-    request_count_threshold: 300
+    fail_rate_count_threshold: 100
+    request_count_sensitivity: 8
+    request_count_threshold: 5000
