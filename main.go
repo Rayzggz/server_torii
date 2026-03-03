@@ -66,14 +66,17 @@ func main() {
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
-		GossipChan:                   make(chan dataType.GossipMessage, 1000),
 		ActionRuleEngine:             engine,
 	}
 
-	// Initialize GossipManager
-	gossipManager := server.NewGossipManager(cfg, engine)
-	sharedMem.GossipManager = gossipManager
-	go gossipManager.Start(sharedMem.GossipChan)
+	if cfg.EnableGossip {
+		sharedMem.GossipChan = make(chan dataType.GossipMessage, 1000)
+
+		// Initialize GossipManager
+		gossipManager := server.NewGossipManager(cfg, engine)
+		sharedMem.GossipManager = gossipManager
+		go gossipManager.Start(sharedMem.GossipChan)
+	}
 
 	//GC
 	gcStopCh := make(chan struct{})

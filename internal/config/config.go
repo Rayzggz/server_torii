@@ -89,6 +89,7 @@ type MainConfig struct {
 	LogPath                         string           `yaml:"log_path" validate:"required"`
 	GlobalSecret                    string           `yaml:"global_secret" validate:"required,min=32"`
 	NodeName                        string           `yaml:"node_name" validate:"required"`
+	EnableGossip                    bool             `yaml:"enable_gossip"`
 	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers" validate:"required"`
 	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
@@ -112,6 +113,7 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		ErrorPage:                       "/www/server_torii/config/error_page",
 		LogPath:                         "/www/server_torii/log/",
 		NodeName:                        "Server Torii",
+		EnableGossip:                    false,
 		ConnectingHostHeaders:           []string{"Torii-Real-Host"},
 		ConnectingIPHeaders:             []string{"Torii-Real-IP"},
 		ConnectingURIHeaders:            []string{"Torii-Original-URI"},
