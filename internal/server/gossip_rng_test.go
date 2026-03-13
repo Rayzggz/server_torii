@@ -15,6 +15,7 @@ func TestGossipManager_RNG_Seeding(t *testing.T) {
 		Peers:    []config.Peer{{Name: "p1", Address: "http://localhost:8080"}},
 	}
 	bl := action.NewActionRuleEngine(time.Minute)
+	defer bl.Stop()
 
 	// Create two managers with a delay to ensure different seeds
 	gm1 := NewGossipManager(cfg, bl)
@@ -65,6 +66,7 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 		cfg.Peers[i] = config.Peer{Name: "p", Address: "http://localhost:8080"}
 	}
 	bl := action.NewActionRuleEngine(time.Minute)
+	defer bl.Stop()
 	gm := NewGossipManager(cfg, bl)
 
 	// Simulate concurrent access
