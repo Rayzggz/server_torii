@@ -48,7 +48,8 @@ func TestGossipSecurityFixes(t *testing.T) {
 	}
 
 	t.Run("RejectEmptyMessageID", func(t *testing.T) {
-		gm, _, cfg := setup()
+		gm, bl, cfg := setup()
+		t.Cleanup(bl.Stop)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
@@ -71,7 +72,8 @@ func TestGossipSecurityFixes(t *testing.T) {
 	})
 
 	t.Run("RejectInvalidUUID", func(t *testing.T) {
-		gm, _, cfg := setup()
+		gm, bl, cfg := setup()
+		t.Cleanup(bl.Stop)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
