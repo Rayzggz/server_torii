@@ -28,8 +28,10 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
 				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
 					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second)
+					utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
+				} else {
+					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
 				}
-				utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				sharedMem.HTTPFloodFailureLimitCounter.Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))
