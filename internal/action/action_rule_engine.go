@@ -55,9 +55,15 @@ func (e *ActionRuleEngine) Stop() {
 func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	newExpiresAt := time.Now().Add(ttl)
+	if existing, ok := e.ipRules[ip]; ok && existing.ExpiresAt.After(newExpiresAt) {
+		newExpiresAt = existing.ExpiresAt
+	}
+
 	e.ipRules[ip] = actionRule{
 		Action:    action,
-		ExpiresAt: time.Now().Add(ttl),
+		ExpiresAt: newExpiresAt,
 	}
 }
 
@@ -65,9 +71,15 @@ func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Dura
 func (e *ActionRuleEngine) AddUARule(ua string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	newExpiresAt := time.Now().Add(ttl)
+	if existing, ok := e.uaRules[ua]; ok && existing.ExpiresAt.After(newExpiresAt) {
+		newExpiresAt = existing.ExpiresAt
+	}
+
 	e.uaRules[ua] = actionRule{
 		Action:    action,
-		ExpiresAt: time.Now().Add(ttl),
+		ExpiresAt: newExpiresAt,
 	}
 }
 
@@ -75,9 +87,15 @@ func (e *ActionRuleEngine) AddUARule(ua string, action ActionType, ttl time.Dura
 func (e *ActionRuleEngine) AddURIRule(uri string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	newExpiresAt := time.Now().Add(ttl)
+	if existing, ok := e.uriRules[uri]; ok && existing.ExpiresAt.After(newExpiresAt) {
+		newExpiresAt = existing.ExpiresAt
+	}
+
 	e.uriRules[uri] = actionRule{
 		Action:    action,
-		ExpiresAt: time.Now().Add(ttl),
+		ExpiresAt: newExpiresAt,
 	}
 }
 
