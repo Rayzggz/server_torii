@@ -35,6 +35,20 @@ func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, s
 
 	})
 
+	// Start AdaptiveTrafficAnalyzer
+	analyzer := NewAdaptiveTrafficAnalyzer(siteRules, sharedMem)
+	sharedMem.AdaptiveTrafficAnalyzer = analyzer
+	analyzer.Start()
+	defer analyzer.Stop()
+
+	// Start Syslog UDP Listener
+	syslogListener := NewSyslogListener(cfg.Port, analyzer)
+	if err := syslogListener.Start(); err != nil {
+		log.Printf("[ERROR] Failed to start Syslog UDP listener: %v", err)
+	} else {
+		defer syslogListener.Stop()
+	}
+
 	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
 	return http.ListenAndServe(":"+cfg.Port, nil)
 }

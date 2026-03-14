@@ -6,6 +6,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"time"
 )
 
 func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
@@ -16,10 +17,6 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	}
 	ipKey := reqData.RemoteIP
 
-	if sharedMem.BlockList.IsBlocked(ipKey) {
-		decision.SetCode(action.Done, []byte("403"))
-		return
-	}
 	sharedMem.HTTPFloodSpeedLimitCounter.Add(ipKey, 1)
 
 	uriKey := reqData.RemoteIP + "|" + reqData.Uri
@@ -29,8 +26,12 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
 		if sharedMem.HTTPFloodFailureLimitCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
-				sharedMem.BlockList.Block(ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration)
-				utils.BroadcastBlock(config.GlobalConfig.NodeName, ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration, sharedMem.GossipChan)
+				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
+					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second)
+					utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
+				} else {
+					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
+				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				sharedMem.HTTPFloodFailureLimitCounter.Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))

@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/server"
@@ -57,19 +58,25 @@ func main() {
 		}
 	}
 
+	engine := action.NewActionRuleEngine(time.Minute)
+	defer engine.Stop()
+
 	sharedMem := &dataType.SharedMemory{
 		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
 		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
 		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
 		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
-		BlockList:                    dataType.NewBlockList(),
-		GossipChan:                   make(chan dataType.GossipMessage, 1000),
+		ActionRuleEngine:             engine,
 	}
 
-	// Initialize GossipManager
-	gossipManager := server.NewGossipManager(cfg, sharedMem.BlockList)
-	sharedMem.GossipManager = gossipManager
-	go gossipManager.Start(sharedMem.GossipChan)
+	if cfg.EnableGossip {
+		sharedMem.GossipChan = make(chan dataType.GossipMessage, 1000)
+
+		// Initialize GossipManager
+		gossipManager := server.NewGossipManager(cfg, engine)
+		sharedMem.GossipManager = gossipManager
+		go gossipManager.Start(sharedMem.GossipChan)
+	}
 
 	//GC
 	gcStopCh := make(chan struct{})
@@ -77,7 +84,6 @@ func main() {
 	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
 	go dataType.StartCounterGC(sharedMem.HTTPFloodFailureLimitCounter, time.Minute, gcStopCh)
 	go dataType.StartCounterGC(sharedMem.CaptchaFailureLimitCounter, time.Minute, gcStopCh)
-	go dataType.StartBlockListGC(sharedMem.BlockList, time.Minute, gcStopCh)
 
 	// Initialize log system
 	utils.InitLogx(cfg.LogPath)

@@ -89,6 +89,7 @@ type MainConfig struct {
 	LogPath                         string           `yaml:"log_path" validate:"required"`
 	GlobalSecret                    string           `yaml:"global_secret" validate:"required,min=32"`
 	NodeName                        string           `yaml:"node_name" validate:"required"`
+	EnableGossip                    bool             `yaml:"enable_gossip"`
 	ConnectingHostHeaders           []string         `yaml:"connecting_host_headers" validate:"required"`
 	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
@@ -112,6 +113,7 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		ErrorPage:                       "/www/server_torii/config/error_page",
 		LogPath:                         "/www/server_torii/log/",
 		NodeName:                        "Server Torii",
+		EnableGossip:                    false,
 		ConnectingHostHeaders:           []string{"Torii-Real-Host"},
 		ConnectingIPHeaders:             []string{"Torii-Real-IP"},
 		ConnectingURIHeaders:            []string{"Torii-Original-URI"},
@@ -164,26 +166,28 @@ type AllSiteRuleSet struct {
 
 // RuleSet stores all rules
 type RuleSet struct {
-	IPAllowRule           *dataType.IPAllowRule
-	IPBlockRule           *dataType.IPBlockRule
-	URLAllowRule          *dataType.URLAllowRule
-	URLBlockRule          *dataType.URLBlockRule
-	CAPTCHARule           *dataType.CaptchaRule
-	VerifyBotRule         *dataType.VerifyBotRule
-	HTTPFloodRule         *dataType.HTTPFloodRule
-	ExternalMigrationRule *dataType.ExternalMigrationRule
+	IPAllowRule                 *dataType.IPAllowRule
+	IPBlockRule                 *dataType.IPBlockRule
+	URLAllowRule                *dataType.URLAllowRule
+	URLBlockRule                *dataType.URLBlockRule
+	CAPTCHARule                 *dataType.CaptchaRule
+	VerifyBotRule               *dataType.VerifyBotRule
+	HTTPFloodRule               *dataType.HTTPFloodRule
+	ExternalMigrationRule       *dataType.ExternalMigrationRule
+	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule
 }
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
-	IPAllowRule           *dataType.IPAllowRule           `yaml:"IPAllow"`
-	IPBlockRule           *dataType.IPBlockRule           `yaml:"IPBlock"`
-	URLAllowRule          *dataType.URLAllowRule          `yaml:"URLAllow"`
-	URLBlockRule          *dataType.URLBlockRule          `yaml:"URLBlock"`
-	CAPTCHARule           *captchaRuleWrapper             `yaml:"CAPTCHA"`
-	VerifyBotRule         *dataType.VerifyBotRule         `yaml:"VerifyBot"`
-	HTTPFloodRule         httpFloodRuleWrapper            `yaml:"HTTPFlood"`
-	ExternalMigrationRule *dataType.ExternalMigrationRule `yaml:"ExternalMigration"`
+	IPAllowRule                 *dataType.IPAllowRule                 `yaml:"IPAllow"`
+	IPBlockRule                 *dataType.IPBlockRule                 `yaml:"IPBlock"`
+	URLAllowRule                *dataType.URLAllowRule                `yaml:"URLAllow"`
+	URLBlockRule                *dataType.URLBlockRule                `yaml:"URLBlock"`
+	CAPTCHARule                 *captchaRuleWrapper                   `yaml:"CAPTCHA"`
+	VerifyBotRule               *dataType.VerifyBotRule               `yaml:"VerifyBot"`
+	HTTPFloodRule               httpFloodRuleWrapper                  `yaml:"HTTPFlood"`
+	ExternalMigrationRule       *dataType.ExternalMigrationRule       `yaml:"ExternalMigration"`
+	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
 }
 
 type httpFloodRuleWrapper struct {
@@ -207,14 +211,15 @@ type captchaRuleWrapper struct {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPAllowRule:           &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
-		IPBlockRule:           &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
-		URLAllowRule:          &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
-		URLBlockRule:          &dataType.URLBlockRule{List: &dataType.URLRuleList{}},
-		CAPTCHARule:           &dataType.CaptchaRule{},
-		VerifyBotRule:         &dataType.VerifyBotRule{},
-		HTTPFloodRule:         &dataType.HTTPFloodRule{},
-		ExternalMigrationRule: &dataType.ExternalMigrationRule{},
+		IPAllowRule:                 &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
+		IPBlockRule:                 &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
+		URLAllowRule:                &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
+		URLBlockRule:                &dataType.URLBlockRule{List: &dataType.URLRuleList{}},
+		CAPTCHARule:                 &dataType.CaptchaRule{},
+		VerifyBotRule:               &dataType.VerifyBotRule{},
+		HTTPFloodRule:               &dataType.HTTPFloodRule{},
+		ExternalMigrationRule:       &dataType.ExternalMigrationRule{},
+		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{},
 	}
 
 	// Load IP Allow List
@@ -305,6 +310,29 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	if wrapper.ExternalMigrationRule != nil {
 		validateConfiguration(wrapper.ExternalMigrationRule, "ExternalMigrationRule")
 		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
+	}
+	if wrapper.AdaptiveTrafficAnalyzerRule != nil {
+		validateConfiguration(wrapper.AdaptiveTrafficAnalyzerRule, "AdaptiveTrafficAnalyzerRule")
+		rs.AdaptiveTrafficAnalyzerRule.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.Enabled
+		rs.AdaptiveTrafficAnalyzerRule.Tag = wrapper.AdaptiveTrafficAnalyzerRule.Tag
+		rs.AdaptiveTrafficAnalyzerRule.AnalysisInterval = wrapper.AdaptiveTrafficAnalyzerRule.AnalysisInterval
+
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.Enabled
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.BlockDuration = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.BlockDuration
+
+		// Map new fields
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailCountThreshold
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateCountThreshold
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN
+		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold
+
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity
+		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold
 	}
 
 	validateConfiguration(&wrapper.HTTPFloodRule, "HTTPFloodRule")

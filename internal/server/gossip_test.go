@@ -60,11 +60,12 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			ID:         msgID,
 			OriginNode: originNode,
-			Type:       dataType.GossipTypeBlockIP,
-			Content:    "1.2.3.4",
+			Type:       dataType.GossipTypeActionRule,
+			Content:    string(payload),
 			Timestamp:  time.Now().Unix(),
 		}
 		data, _ := json.Marshal(msg)

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"testing"
@@ -26,11 +27,12 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 	}
 
 	createReq := func(ts int64, id string) *http.Request {
+		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			ID:         id,
 			OriginNode: "KnownPeer",
-			Type:       dataType.GossipTypeBlockIP,
-			Content:    "1.2.3.4",
+			Type:       dataType.GossipTypeActionRule,
+			Content:    string(payload),
 			Timestamp:  ts,
 		}
 		data, _ := json.Marshal(msg)
@@ -77,7 +79,9 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gm := NewGossipManager(cfg, dataType.NewBlockList())
+			engine := action.NewActionRuleEngine(time.Minute)
+			t.Cleanup(engine.Stop)
+			gm := NewGossipManager(cfg, engine)
 			// Override start time/random dependencies if needed, but here simple logic suffices.
 
 			id := uuid.New().String()

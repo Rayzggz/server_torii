@@ -37,3 +37,22 @@ ExternalMigration:
   redirect_url: "https://example.com/migration"
   secret_key: "0378b0f84c4310279918d71a5647ba5d"
   session_timeout: 1800
+AdaptiveTrafficAnalyzer:
+  enabled: true
+  tag: "default_site"
+  analysis_interval: 300
+  non_200_analysis:
+    enabled: true
+    block_duration: 600
+    fail_count_threshold: 300
+    fail_rate_count_threshold: 60
+    fail_rate_threshold: 0.6
+    uri_rate_top_n: 1
+    uri_rate_threshold: 0.8
+  uri_analysis:
+    enabled: true
+    block_duration: 600
+    fail_rate_threshold: 0.8
+    fail_rate_count_threshold: 100
+    request_count_sensitivity: 8
+    request_count_threshold: 5000
