@@ -2,7 +2,7 @@ package dataType
 
 import "net/http"
 
-const ServerToriiVersion string = "1.4.0"
+const ServerToriiVersion string = "2.0.0-beta"
 
 // Feature Control Bit Positions (0-based from right)
 const (
