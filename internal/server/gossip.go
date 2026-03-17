@@ -192,6 +192,9 @@ func (gm *GossipManager) epidemicBroadcast(msg dataType.GossipMessage) {
 		if count >= k {
 			break
 		}
+		if peers[i].Name == gm.cfg.NodeName {
+			continue
+		}
 		go gm.sendGossip(peers[i], msg)
 		count++
 	}
@@ -212,6 +215,10 @@ func (gm *GossipManager) startAntiEntropy() {
 		idx := gm.rng.Intn(len(peers))
 		gm.rngMu.Unlock()
 		peer := peers[idx]
+
+		if peer.Name == gm.cfg.NodeName {
+			continue
+		}
 
 		// Create snapshot
 		snapshot := gm.actionEngine.GetSnapshot()
