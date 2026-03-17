@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha512"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -279,11 +280,21 @@ func (gm *GossipManager) sendGossip(p config.Peer, msg dataType.GossipMessage) {
 	signature := hex.EncodeToString(mac.Sum(nil))
 	req.Header.Set("X-Torii-Signature", signature)
 
+	client := &http.Client{Timeout: 5 * time.Second}
+
 	if p.Host != "" {
 		req.Host = p.Host
+
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
+		}
+		transport.TLSClientConfig.ServerName = p.Host
+		client.Transport = transport
+
+		defer transport.CloseIdleConnections()
 	}
 
-	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("[WARNING] Failed to send gossip to peer %s: %v", p.Address, err)
