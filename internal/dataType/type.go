@@ -1,6 +1,9 @@
 package dataType
 
-import "net/http"
+import (
+	"net/http"
+	"sync/atomic"
+)
 
 const ServerToriiVersion string = "2.0.0-beta"
 
@@ -127,12 +130,14 @@ type GossipHandler interface {
 }
 
 type SharedMemory struct {
-	HTTPFloodSpeedLimitCounter   *Counter
-	HTTPFloodSameURILimitCounter *Counter
-	HTTPFloodFailureLimitCounter *Counter
-	CaptchaFailureLimitCounter   *Counter
-	GossipChan                   chan GossipMessage
-	GossipManager                GossipHandler
-	AdaptiveTrafficAnalyzer      interface{}
-	ActionRuleEngine             interface{}
+	GossipChan    chan GossipMessage
+	GossipManager GossipHandler
+
+	HTTPFloodSpeedLimitCounter   atomic.Pointer[Counter]
+	HTTPFloodSameURILimitCounter atomic.Pointer[Counter]
+	HTTPFloodFailureLimitCounter atomic.Pointer[Counter]
+	CaptchaFailureLimitCounter   atomic.Pointer[Counter]
+
+	ActionRuleEngine        interface{}
+	AdaptiveTrafficAnalyzer interface{}
 }

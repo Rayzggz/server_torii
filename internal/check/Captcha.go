@@ -34,8 +34,9 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	ipKey := reqData.RemoteIP
 
 	// Check failure limit
-	for window, limit := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
-		if sharedMem.CaptchaFailureLimitCounter.Query(ipKey, window) > limit {
+	for limitTime, limitCount := range ruleSet.CAPTCHARule.CaptchaFailureLimit {
+		count := sharedMem.CaptchaFailureLimitCounter.Load().Query(ipKey, limitTime)
+		if count > limitCount {
 
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
 				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
@@ -44,8 +45,8 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 				} else {
 					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
 				}
-				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))
-				sharedMem.CaptchaFailureLimitCounter.Reset(ipKey)
+				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
+				sharedMem.CaptchaFailureLimitCounter.Load().Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))
 				return
 			}
@@ -53,7 +54,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 	}
 
 	if !verifyClearanceCookie(reqData, *ruleSet) {
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
+		sharedMem.CaptchaFailureLimitCounter.Load().Add(reqData.RemoteIP, 1)
 		decision.SetCode(action.Done, []byte("CAPTCHA"))
 		return
 	}
@@ -70,13 +71,13 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 
 	hCaptchaResponse := r.FormValue("h-captcha-response")
 	if hCaptchaResponse == "" {
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
+		sharedMem.CaptchaFailureLimitCounter.Load().Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
 		return
 	}
 
 	if !verifySessionIDCookie(reqData, *ruleSet) {
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
+		sharedMem.CaptchaFailureLimitCounter.Load().Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("badSession"))
 		return
 	}
@@ -116,7 +117,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	}
 
 	if !hCaptchaResp.Success {
-		sharedMem.CaptchaFailureLimitCounter.Add(reqData.RemoteIP, 1)
+		sharedMem.CaptchaFailureLimitCounter.Load().Add(reqData.RemoteIP, 1)
 		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
 		return
 	}

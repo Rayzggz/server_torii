@@ -28,7 +28,13 @@ func TestSyslogConcurrency(t *testing.T) {
 		},
 	}
 
-	analyzer := NewAdaptiveTrafficAnalyzer(siteRules, mockSharedMem)
+	// Initialize config Manager with mock rules
+	config.Manager = &config.ConfigManager{}
+	config.Manager.Set(&config.SiteConfigSnapshot{
+		SiteRules: siteRules,
+	})
+
+	analyzer := NewAdaptiveTrafficAnalyzer(mockSharedMem)
 
 	// Find a free port
 	conn, err := net.ListenPacket("udp", ":0")

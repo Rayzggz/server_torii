@@ -11,13 +11,19 @@ import (
 )
 
 // StartServer starts the HTTP server
-func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, sharedMem *dataType.SharedMemory) error {
+func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		userRequestData := processRequestData(cfg, r)
 
+		snap := config.Manager.Get()
+		if snap == nil {
+			http.Error(w, "Service Unavailable: Configuration not loaded", http.StatusServiceUnavailable)
+			return
+		}
+
 		// Get site-specific rules based on the Host header
-		ruleSet := config.GetSiteRules(siteRules, userRequestData.Host)
+		ruleSet := config.GetSiteRules(snap.SiteRules, userRequestData.Host)
 		if ruleSet == nil {
 			log.Printf("[ERROR] No rules found for host: %s", userRequestData.Host)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -36,7 +42,7 @@ func StartServer(cfg *config.MainConfig, siteRules map[string]*config.RuleSet, s
 	})
 
 	// Start AdaptiveTrafficAnalyzer
-	analyzer := NewAdaptiveTrafficAnalyzer(siteRules, sharedMem)
+	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem)
 	sharedMem.AdaptiveTrafficAnalyzer = analyzer
 	analyzer.Start()
 	defer analyzer.Stop()
