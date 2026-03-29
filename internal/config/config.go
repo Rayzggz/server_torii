@@ -104,31 +104,9 @@ type Peer struct {
 	Host    string `yaml:"host"`
 }
 
-// LoadMainConfig Read the configuration file and return the configuration object
-func LoadMainConfig(basePath string) (*MainConfig, error) {
-
-	defaultCfg := MainConfig{
-		Port:                            "25555",
-		WebPath:                         "/torii",
-		ErrorPage:                       "/www/server_torii/config/error_page",
-		LogPath:                         "/www/server_torii/log/",
-		NodeName:                        "Server Torii",
-		EnableGossip:                    false,
-		ConnectingHostHeaders:           []string{"Torii-Real-Host"},
-		ConnectingIPHeaders:             []string{"Torii-Real-IP"},
-		ConnectingURIHeaders:            []string{"Torii-Original-URI"},
-		ConnectingFeatureControlHeaders: []string{"Torii-Feature-Control"},
-		Sites: []AllSiteRuleSet{
-			{
-				Host:     "default_site",
-				RulePath: "/www/server_torii/config/rules/default",
-			},
-		},
-	}
-
+// resolveConfigPath determines the path to the configuration file
+func resolveConfigPath(basePath string) string {
 	var configPath string
-	var err error
-
 	if basePath != "" {
 		if strings.HasSuffix(basePath, "torii.yml") {
 			configPath = basePath
@@ -142,19 +120,84 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 		cwd, _ := os.Getwd()
 		configPath = filepath.Join(cwd, "config", "torii.yml")
 	}
+	return configPath
+}
 
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		return &defaultCfg, err
+// readConfigFile reads the configuration file
+func readConfigFile(path string) ([]byte, error) {
+	return os.ReadFile(path)
+}
+
+// decodeConfig unmarshals the configuration
+func decodeConfig(data []byte, cfg *MainConfig) error {
+	return yaml.Unmarshal(data, cfg)
+}
+
+// applyDefaultConfig populates any empty or missing configuration fields with default values
+func applyDefaultConfig(cfg *MainConfig) {
+	if cfg.Port == "" {
+		cfg.Port = "25555"
 	}
+	if cfg.WebPath == "" {
+		cfg.WebPath = "/torii"
+	}
+	if cfg.ErrorPage == "" {
+		cfg.ErrorPage = "/www/server_torii/config/error_page"
+	}
+	if cfg.LogPath == "" {
+		cfg.LogPath = "/www/server_torii/log/"
+	}
+	if cfg.NodeName == "" {
+		cfg.NodeName = "Server Torii"
+	}
+	if len(cfg.ConnectingHostHeaders) == 0 {
+		cfg.ConnectingHostHeaders = []string{"Torii-Real-Host"}
+	}
+	if len(cfg.ConnectingIPHeaders) == 0 {
+		cfg.ConnectingIPHeaders = []string{"Torii-Real-IP"}
+	}
+	if len(cfg.ConnectingURIHeaders) == 0 {
+		cfg.ConnectingURIHeaders = []string{"Torii-Original-URI"}
+	}
+	if len(cfg.ConnectingFeatureControlHeaders) == 0 {
+		cfg.ConnectingFeatureControlHeaders = []string{"Torii-Feature-Control"}
+	}
+	if len(cfg.Sites) == 0 {
+		cfg.Sites = []AllSiteRuleSet{
+			{
+				Host:     "default_site",
+				RulePath: "/www/server_torii/config/rules/default",
+			},
+		}
+	}
+}
+
+// validateMainConfig validates the main configuration object
+func validateMainConfig(cfg *MainConfig) {
+	validateConfiguration(cfg, "MainConfig")
+}
+
+// LoadMainConfig Read the configuration file and return the configuration object
+func LoadMainConfig(basePath string) (*MainConfig, error) {
+	configPath := resolveConfigPath(basePath)
 
 	var cfg MainConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return &defaultCfg, err
+
+	data, err := readConfigFile(configPath)
+	if err != nil {
+		log.Printf("[WARNING] failed to read configuration file at %s, using default values: %v", configPath, err)
+		applyDefaultConfig(&cfg)
+		return &cfg, nil
 	}
 
-	// Validate the loaded configuration
-	validateConfiguration(&cfg, "MainConfig")
+	if err := decodeConfig(data, &cfg); err != nil {
+		log.Printf("[WARNING] failed to parse configuration file at %s, using default values: %v", configPath, err)
+		applyDefaultConfig(&cfg)
+		return &cfg, nil
+	}
+
+	applyDefaultConfig(&cfg)
+	validateMainConfig(&cfg)
 
 	return &cfg, nil
 }
@@ -223,25 +266,25 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	}
 
 	// Load IP Allow List
-	ipAllowFile := filepath.Join(rulePath, "/IP_AllowList.conf")
+	ipAllowFile := filepath.Join(rulePath, "IP_AllowList.conf")
 	if err := loadIPRules(ipAllowFile, rs.IPAllowRule.Trie); err != nil {
 		return nil, err
 	}
 
 	// Load IP Block List
-	ipBlockFile := filepath.Join(rulePath, "/IP_BlockList.conf")
+	ipBlockFile := filepath.Join(rulePath, "IP_BlockList.conf")
 	if err := loadIPRules(ipBlockFile, rs.IPBlockRule.Trie); err != nil {
 		return nil, err
 	}
 
 	// Load URL Allow List
-	urlAllowFile := filepath.Join(rulePath, "/URL_AllowList.conf")
+	urlAllowFile := filepath.Join(rulePath, "URL_AllowList.conf")
 	if err := loadURLRules(urlAllowFile, rs.URLAllowRule.List); err != nil {
 		return nil, err
 	}
 
 	// Load URL Block List
-	urlBlockFile := filepath.Join(rulePath, "/URL_BlockList.conf")
+	urlBlockFile := filepath.Join(rulePath, "URL_BlockList.conf")
 	if err := loadURLRules(urlBlockFile, rs.URLBlockRule.List); err != nil {
 		return nil, err
 	}
@@ -286,22 +329,9 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
 	}
 	if wrapper.CAPTCHARule != nil {
-		validateConfiguration(wrapper.CAPTCHARule, "CAPTCHARule")
-		rs.CAPTCHARule.Enabled = wrapper.CAPTCHARule.Enabled
-		rs.CAPTCHARule.SecretKey = wrapper.CAPTCHARule.SecretKey
-		rs.CAPTCHARule.CaptchaValidateTime = wrapper.CAPTCHARule.CaptchaValidateTime
-		rs.CAPTCHARule.CaptchaChallengeSessionTimeout = wrapper.CAPTCHARule.CaptchaChallengeSessionTimeout
-		rs.CAPTCHARule.HCaptchaSecret = wrapper.CAPTCHARule.HCaptchaSecret
-
-		rs.CAPTCHARule.CaptchaFailureLimit = make(map[int64]int64)
-		for _, s := range wrapper.CAPTCHARule.CaptchaFailureLimit {
-			limit, seconds, err := utils.ParseRate(s)
-			if err != nil {
-				return err
-			}
-			rs.CAPTCHARule.CaptchaFailureLimit[seconds] = limit
+		if err := mapCaptchaRule(wrapper.CAPTCHARule, rs.CAPTCHARule); err != nil {
+			return err
 		}
-		rs.CAPTCHARule.FailureBlockDuration = wrapper.CAPTCHARule.FailureBlockDuration
 	}
 	if wrapper.VerifyBotRule != nil {
 		validateConfiguration(wrapper.VerifyBotRule, "VerifyBotRule")
@@ -312,59 +342,88 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
 	}
 	if wrapper.AdaptiveTrafficAnalyzerRule != nil {
-		validateConfiguration(wrapper.AdaptiveTrafficAnalyzerRule, "AdaptiveTrafficAnalyzerRule")
-		rs.AdaptiveTrafficAnalyzerRule.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.Enabled
-		rs.AdaptiveTrafficAnalyzerRule.Tag = wrapper.AdaptiveTrafficAnalyzerRule.Tag
-		rs.AdaptiveTrafficAnalyzerRule.AnalysisInterval = wrapper.AdaptiveTrafficAnalyzerRule.AnalysisInterval
-
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.Enabled
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.BlockDuration = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.BlockDuration
-
-		// Map new fields
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailCountThreshold
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateCountThreshold
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailRateThreshold
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateTopN
-		rs.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.Non200Analysis.UriRateThreshold
-
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.Enabled
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.BlockDuration
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateThreshold
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.FailRateCountThreshold
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountSensitivity
-		rs.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold = wrapper.AdaptiveTrafficAnalyzerRule.UriAnalysis.RequestCountThreshold
+		mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule)
 	}
 
-	validateConfiguration(&wrapper.HTTPFloodRule, "HTTPFloodRule")
-	rs.HTTPFloodRule.Enabled = wrapper.HTTPFloodRule.Enabled
-	rs.HTTPFloodRule.HTTPFloodSpeedLimit = make(map[int64]int64)
-	rs.HTTPFloodRule.HTTPFloodSameURILimit = make(map[int64]int64)
+	if err := mapHTTPFloodRule(&wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {
+		return err
+	}
+	return nil
+}
 
-	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSpeedLimit {
+func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) error {
+	validateConfiguration(wrapper, "CAPTCHARule")
+	dest.Enabled = wrapper.Enabled
+	dest.SecretKey = wrapper.SecretKey
+	dest.CaptchaValidateTime = wrapper.CaptchaValidateTime
+	dest.CaptchaChallengeSessionTimeout = wrapper.CaptchaChallengeSessionTimeout
+	dest.HCaptchaSecret = wrapper.HCaptchaSecret
+
+	dest.CaptchaFailureLimit = make(map[int64]int64)
+	for _, s := range wrapper.CaptchaFailureLimit {
 		limit, seconds, err := utils.ParseRate(s)
 		if err != nil {
 			return err
 		}
-		rs.HTTPFloodRule.HTTPFloodSpeedLimit[seconds] = limit
+		dest.CaptchaFailureLimit[seconds] = limit
 	}
+	dest.FailureBlockDuration = wrapper.FailureBlockDuration
+	return nil
+}
 
-	for _, s := range wrapper.HTTPFloodRule.HTTPFloodSameURILimit {
+func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRule, dest *dataType.AdaptiveTrafficAnalyzerRule) {
+	validateConfiguration(wrapper, "AdaptiveTrafficAnalyzerRule")
+	dest.Enabled = wrapper.Enabled
+	dest.Tag = wrapper.Tag
+	dest.AnalysisInterval = wrapper.AnalysisInterval
+
+	dest.Non200Analysis.Enabled = wrapper.Non200Analysis.Enabled
+	dest.Non200Analysis.BlockDuration = wrapper.Non200Analysis.BlockDuration
+	dest.Non200Analysis.FailCountThreshold = wrapper.Non200Analysis.FailCountThreshold
+	dest.Non200Analysis.FailRateCountThreshold = wrapper.Non200Analysis.FailRateCountThreshold
+	dest.Non200Analysis.FailRateThreshold = wrapper.Non200Analysis.FailRateThreshold
+	dest.Non200Analysis.UriRateTopN = wrapper.Non200Analysis.UriRateTopN
+	dest.Non200Analysis.UriRateThreshold = wrapper.Non200Analysis.UriRateThreshold
+
+	dest.UriAnalysis.Enabled = wrapper.UriAnalysis.Enabled
+	dest.UriAnalysis.BlockDuration = wrapper.UriAnalysis.BlockDuration
+	dest.UriAnalysis.FailRateThreshold = wrapper.UriAnalysis.FailRateThreshold
+	dest.UriAnalysis.FailRateCountThreshold = wrapper.UriAnalysis.FailRateCountThreshold
+	dest.UriAnalysis.RequestCountSensitivity = wrapper.UriAnalysis.RequestCountSensitivity
+	dest.UriAnalysis.RequestCountThreshold = wrapper.UriAnalysis.RequestCountThreshold
+}
+
+func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *dataType.HTTPFloodRule) error {
+	validateConfiguration(wrapper, "HTTPFloodRule")
+	dest.Enabled = wrapper.Enabled
+	dest.HTTPFloodSpeedLimit = make(map[int64]int64)
+	dest.HTTPFloodSameURILimit = make(map[int64]int64)
+
+	for _, s := range wrapper.HTTPFloodSpeedLimit {
 		limit, seconds, err := utils.ParseRate(s)
 		if err != nil {
 			return err
 		}
-		rs.HTTPFloodRule.HTTPFloodSameURILimit[seconds] = limit
+		dest.HTTPFloodSpeedLimit[seconds] = limit
 	}
 
-	rs.HTTPFloodRule.HTTPFloodFailureLimit = make(map[int64]int64)
-	for _, s := range wrapper.HTTPFloodRule.HTTPFloodFailureLimit {
+	for _, s := range wrapper.HTTPFloodSameURILimit {
 		limit, seconds, err := utils.ParseRate(s)
 		if err != nil {
 			return err
 		}
-		rs.HTTPFloodRule.HTTPFloodFailureLimit[seconds] = limit
+		dest.HTTPFloodSameURILimit[seconds] = limit
 	}
-	rs.HTTPFloodRule.FailureBlockDuration = wrapper.HTTPFloodRule.FailureBlockDuration
+
+	dest.HTTPFloodFailureLimit = make(map[int64]int64)
+	for _, s := range wrapper.HTTPFloodFailureLimit {
+		limit, seconds, err := utils.ParseRate(s)
+		if err != nil {
+			return err
+		}
+		dest.HTTPFloodFailureLimit[seconds] = limit
+	}
+	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 	return nil
 }
 
