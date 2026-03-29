@@ -77,6 +77,12 @@ func (m *ConfigManager) Reload(cfg *MainConfig, sharedMem *dataType.SharedMemory
 		}
 	}
 
+	// Ensure minimum of 1 second to avoid zero-size counters which would cause panics.
+	maxSpeedLimitTime = maxInt64(maxSpeedLimitTime, 1)
+	maxSameURILimitTime = maxInt64(maxSameURILimitTime, 1)
+	maxFailureLimitTime = maxInt64(maxFailureLimitTime, 1)
+	maxCaptchaFailureLimitTime = maxInt64(maxCaptchaFailureLimitTime, 1)
+
 	// Update SharedMemory Counters conditionally based on required capacity
 	if sharedMem != nil {
 		bucketCount := maxInt(runtime.NumCPU()*8, 16)

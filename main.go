@@ -35,6 +35,9 @@ func main() {
 	}
 
 	err = config.InitManager(cfg, sharedMem)
+	if err != nil {
+		log.Fatalf("Failed to initialize config manager: %v", err)
+	}
 
 	if cfg.EnableGossip {
 		sharedMem.GossipChan = make(chan dataType.GossipMessage, 1000)
@@ -54,10 +57,18 @@ func main() {
 			select {
 			case <-ticker.C:
 				if sharedMem != nil {
-					sharedMem.HTTPFloodSpeedLimitCounter.Load().GC()
-					sharedMem.HTTPFloodSameURILimitCounter.Load().GC()
-					sharedMem.HTTPFloodFailureLimitCounter.Load().GC()
-					sharedMem.CaptchaFailureLimitCounter.Load().GC()
+					if c := sharedMem.HTTPFloodSpeedLimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.HTTPFloodSameURILimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.HTTPFloodFailureLimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.CaptchaFailureLimitCounter.Load(); c != nil {
+						c.GC()
+					}
 				}
 			case <-gcStopCh:
 				return
