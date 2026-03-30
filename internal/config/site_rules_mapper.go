@@ -43,17 +43,11 @@ func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) err
 	dest.CaptchaValidateTime = wrapper.CaptchaValidateTime
 	dest.CaptchaChallengeSessionTimeout = wrapper.CaptchaChallengeSessionTimeout
 	dest.HCaptchaSecret = wrapper.HCaptchaSecret
-
-	dest.CaptchaFailureLimit = make(map[int64]int64)
-	for _, s := range wrapper.CaptchaFailureLimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		dest.CaptchaFailureLimit[seconds] = limit
-	}
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
-	return nil
+
+	var err error
+	dest.CaptchaFailureLimit, err = utils.ParseRateList(wrapper.CaptchaFailureLimit)
+	return err
 }
 
 func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRule, dest *dataType.AdaptiveTrafficAnalyzerRule) {
@@ -81,33 +75,19 @@ func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRul
 func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *dataType.HTTPFloodRule) error {
 	validateConfiguration(wrapper, "HTTPFloodRule")
 	dest.Enabled = wrapper.Enabled
-	dest.HTTPFloodSpeedLimit = make(map[int64]int64)
-	dest.HTTPFloodSameURILimit = make(map[int64]int64)
-
-	for _, s := range wrapper.HTTPFloodSpeedLimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		dest.HTTPFloodSpeedLimit[seconds] = limit
-	}
-
-	for _, s := range wrapper.HTTPFloodSameURILimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		dest.HTTPFloodSameURILimit[seconds] = limit
-	}
-
-	dest.HTTPFloodFailureLimit = make(map[int64]int64)
-	for _, s := range wrapper.HTTPFloodFailureLimit {
-		limit, seconds, err := utils.ParseRate(s)
-		if err != nil {
-			return err
-		}
-		dest.HTTPFloodFailureLimit[seconds] = limit
-	}
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
-	return nil
+
+	var err error
+	dest.HTTPFloodSpeedLimit, err = utils.ParseRateList(wrapper.HTTPFloodSpeedLimit)
+	if err != nil {
+		return err
+	}
+
+	dest.HTTPFloodSameURILimit, err = utils.ParseRateList(wrapper.HTTPFloodSameURILimit)
+	if err != nil {
+		return err
+	}
+
+	dest.HTTPFloodFailureLimit, err = utils.ParseRateList(wrapper.HTTPFloodFailureLimit)
+	return err
 }

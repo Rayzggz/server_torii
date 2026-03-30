@@ -1,7 +1,6 @@
 package config
 
 import (
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,29 +35,4 @@ func readConfigFile(path string) ([]byte, error) {
 // decodeConfig unmarshals the configuration
 func decodeConfig(data []byte, cfg *MainConfig) error {
 	return yaml.Unmarshal(data, cfg)
-}
-
-// LoadMainConfig Read the configuration file and return the configuration object
-func LoadMainConfig(basePath string) (*MainConfig, error) {
-	configPath := resolveConfigPath(basePath)
-
-	var cfg MainConfig
-
-	data, err := readConfigFile(configPath)
-	if err != nil {
-		log.Printf("[WARNING] failed to read configuration file at %s, using default values: %v", configPath, err)
-		applyDefaultConfig(&cfg)
-		return &cfg, nil
-	}
-
-	if err := decodeConfig(data, &cfg); err != nil {
-		log.Printf("[WARNING] failed to parse configuration file at %s, using default values: %v", configPath, err)
-		applyDefaultConfig(&cfg)
-		return &cfg, nil
-	}
-
-	applyDefaultConfig(&cfg)
-	validateMainConfig(&cfg)
-
-	return &cfg, nil
 }

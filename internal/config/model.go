@@ -1,5 +1,6 @@
 package config
 
+// MainConfig is the top-level configuration loaded from torii.yml.
 type MainConfig struct {
 	Port                            string           `yaml:"port" validate:"required,numeric,min=1,max=65535"`
 	WebPath                         string           `yaml:"web_path" validate:"required,startswith=/"`
@@ -16,57 +17,15 @@ type MainConfig struct {
 	Peers                           []Peer           `yaml:"peers"`
 }
 
+// Peer represents a gossip peer node.
 type Peer struct {
 	Name    string `yaml:"name" validate:"required"`
 	Address string `yaml:"address" validate:"required,url"`
 	Host    string `yaml:"host"`
 }
 
+// AllSiteRuleSet maps a host to its rule directory path.
 type AllSiteRuleSet struct {
 	Host     string `yaml:"host" validate:"required,min=1"`
 	RulePath string `yaml:"rule_path" validate:"required,dir"`
-}
-
-// applyDefaultConfig populates any empty or missing configuration fields with default values
-func applyDefaultConfig(cfg *MainConfig) {
-	if cfg.Port == "" {
-		cfg.Port = "25555"
-	}
-	if cfg.WebPath == "" {
-		cfg.WebPath = "/torii"
-	}
-	if cfg.ErrorPage == "" {
-		cfg.ErrorPage = "/www/server_torii/config/error_page"
-	}
-	if cfg.LogPath == "" {
-		cfg.LogPath = "/www/server_torii/log/"
-	}
-	if cfg.NodeName == "" {
-		cfg.NodeName = "Server Torii"
-	}
-	if len(cfg.ConnectingHostHeaders) == 0 {
-		cfg.ConnectingHostHeaders = []string{"Torii-Real-Host"}
-	}
-	if len(cfg.ConnectingIPHeaders) == 0 {
-		cfg.ConnectingIPHeaders = []string{"Torii-Real-IP"}
-	}
-	if len(cfg.ConnectingURIHeaders) == 0 {
-		cfg.ConnectingURIHeaders = []string{"Torii-Original-URI"}
-	}
-	if len(cfg.ConnectingFeatureControlHeaders) == 0 {
-		cfg.ConnectingFeatureControlHeaders = []string{"Torii-Feature-Control"}
-	}
-	if len(cfg.Sites) == 0 {
-		cfg.Sites = []AllSiteRuleSet{
-			{
-				Host:     "default_site",
-				RulePath: "/www/server_torii/config/rules/default",
-			},
-		}
-	}
-}
-
-// validateMainConfig validates the main configuration object
-func validateMainConfig(cfg *MainConfig) {
-	validateConfiguration(cfg, "MainConfig")
 }
