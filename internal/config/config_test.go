@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,8 +11,11 @@ func TestLoadMainConfig_MissingFileFallsBackToDefaults(t *testing.T) {
 	tempDir := t.TempDir()
 
 	cfg, err := LoadMainConfig(tempDir)
-	if err != nil {
-		t.Fatalf("LoadMainConfig returned unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("LoadMainConfig error = nil, want read error")
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("LoadMainConfig error = %v, want os.ErrNotExist", err)
 	}
 
 	want := DefaultMainConfig()
@@ -26,8 +30,8 @@ func TestLoadMainConfig_InvalidYAMLFallsBackToDefaults(t *testing.T) {
 	}
 
 	cfg, err := LoadMainConfig(tempDir)
-	if err != nil {
-		t.Fatalf("LoadMainConfig returned unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("LoadMainConfig error = nil, want YAML parse error")
 	}
 
 	want := DefaultMainConfig()

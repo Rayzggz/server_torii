@@ -1,6 +1,6 @@
 package config
 
-import "log"
+import "fmt"
 
 var GlobalConfig *MainConfig
 
@@ -11,13 +11,11 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 
 	data, err := readConfigFile(configPath)
 	if err != nil {
-		log.Printf("[WARNING] failed to read configuration file at %s, falling back to full default main config: %v", configPath, err)
-		return cfg, nil
+		return cfg, fmt.Errorf("failed to read configuration file at %s: %w", configPath, err)
 	}
 
 	if err := decodeConfig(data, cfg); err != nil {
-		log.Printf("[WARNING] failed to parse configuration file at %s, falling back to full default main config: %v", configPath, err)
-		return DefaultMainConfig(), nil
+		return DefaultMainConfig(), fmt.Errorf("failed to parse configuration file at %s: %w", configPath, err)
 	}
 
 	validateMainConfig(cfg)
