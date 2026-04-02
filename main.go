@@ -98,32 +98,37 @@ func main() {
 	//log startup information and time
 	log.Printf("%s - Server starting...", time.Now().Format(time.RFC3339))
 
-	// Start server
-ServeLoop:
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(stop)
 
 	serverErr := make(chan error, 1)
 	go func() {
 		serverErr <- server.StartServer(cfg, sharedMem)
 	}()
 
-	select {
-	case sig := <-stop:
-		if sig == syscall.SIGHUP {
-			log.Println("Received SIGHUP, reloading configuration...")
-			if err := config.Manager.Reload(cfg, sharedMem); err != nil {
-				log.Printf("[ERROR] Reload failed: %v", err)
+	for {
+		select {
+		case sig := <-stop:
+			switch sig {
+			case syscall.SIGHUP:
+				log.Println("Reloading configuration...")
+				if err := config.Manager.Reload(cfg, sharedMem); err != nil {
+					log.Printf("[ERROR] Reload failed: %v", err)
+				}
+				continue
+			case syscall.SIGINT, syscall.SIGTERM:
+				log.Println("Stopping server...")
+				close(gcStopCh)
+				log.Println("Server stopped")
+				return
 			}
-			goto ServeLoop
-		}
-		log.Println("Stopping server...")
-		close(gcStopCh)
-	case err := <-serverErr:
-		if err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+		case err := <-serverErr:
+			if err != nil {
+				log.Fatalf("Failed to start server: %v", err)
+			}
+			log.Println("Server stopped")
+			return
 		}
 	}
-
-	log.Println("Server stopped")
 }
