@@ -17,7 +17,7 @@ func init() {
 	// Register custom validation for directory paths
 	err := validate.RegisterValidation("dir", validateDir)
 	if err != nil {
-		return
+		log.Fatalf("failed to register \"dir\" validator: %v", err)
 	}
 }
 
