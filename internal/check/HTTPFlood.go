@@ -15,16 +15,25 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 		decision.Set(action.Continue)
 		return
 	}
+
+	speedCounter := sharedMem.HTTPFloodSpeedLimitCounter.Load()
+	sameURICounter := sharedMem.HTTPFloodSameURILimitCounter.Load()
+	failureCounter := sharedMem.HTTPFloodFailureLimitCounter.Load()
+	if speedCounter == nil || sameURICounter == nil || failureCounter == nil {
+		utils.LogError(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
+		decision.Set(action.Continue)
+		return
+	}
 	ipKey := reqData.RemoteIP
 
-	sharedMem.HTTPFloodSpeedLimitCounter.Load().Add(ipKey, 1)
+	speedCounter.Add(ipKey, 1)
 
 	uriKey := reqData.RemoteIP + "|" + reqData.Uri
-	sharedMem.HTTPFloodSameURILimitCounter.Load().Add(uriKey, 1)
+	sameURICounter.Add(uriKey, 1)
 
 	// Check failure limit
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
-		if sharedMem.HTTPFloodFailureLimitCounter.Load().Query(ipKey, window) > limit {
+		if failureCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
 				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
 					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second)
@@ -33,7 +42,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
 				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
-				sharedMem.HTTPFloodFailureLimitCounter.Load().Reset(ipKey)
+				failureCounter.Reset(ipKey)
 				decision.SetCode(action.Done, []byte("403"))
 				return
 			}
@@ -41,18 +50,18 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	}
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit {
-		if sharedMem.HTTPFloodSpeedLimitCounter.Load().Query(ipKey, window) > limit {
+		if speedCounter.Query(ipKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
-			sharedMem.HTTPFloodFailureLimitCounter.Load().Add(ipKey, 1)
+			failureCounter.Add(ipKey, 1)
 			decision.SetCode(action.Done, []byte("429"))
 			return
 		}
 	}
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSameURILimit {
-		if sharedMem.HTTPFloodSameURILimitCounter.Load().Query(uriKey, window) > limit {
+		if sameURICounter.Query(uriKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
-			sharedMem.HTTPFloodFailureLimitCounter.Load().Add(ipKey, 1)
+			failureCounter.Add(ipKey, 1)
 			decision.SetCode(action.Done, []byte("429"))
 			return
 		}
