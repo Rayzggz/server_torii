@@ -28,8 +28,12 @@ func TestSyslogConcurrency(t *testing.T) {
 		},
 	}
 
-	// Initialize config Manager with mock rules
+	// Install a test-local config manager and restore the prior global after the test.
+	prevManager := config.Manager
 	config.Manager = &config.ConfigManager{}
+	t.Cleanup(func() {
+		config.Manager = prevManager
+	})
 	config.Manager.Set(&config.SiteConfigSnapshot{
 		SiteRules: siteRules,
 	})
