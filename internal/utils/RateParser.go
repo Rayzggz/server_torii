@@ -49,3 +49,17 @@ func FindMaxRateTime(rateList map[int64]int64) int64 {
 	}
 	return maxTimeWindow
 }
+
+// ParseRateList converts a slice of rate strings (e.g. "100/1m")
+// into a map[seconds]limit.
+func ParseRateList(rates []string) (map[int64]int64, error) {
+	result := make(map[int64]int64, len(rates))
+	for _, s := range rates {
+		limit, seconds, err := ParseRate(s)
+		if err != nil {
+			return nil, err
+		}
+		result[seconds] = limit
+	}
+	return result, nil
+}

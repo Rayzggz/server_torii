@@ -28,7 +28,17 @@ func TestSyslogConcurrency(t *testing.T) {
 		},
 	}
 
-	analyzer := NewAdaptiveTrafficAnalyzer(siteRules, mockSharedMem)
+	// Install a test-local config manager and restore the prior global after the test.
+	prevManager := config.Manager
+	config.Manager = &config.ConfigManager{}
+	t.Cleanup(func() {
+		config.Manager = prevManager
+	})
+	config.Manager.Set(&config.SiteConfigSnapshot{
+		SiteRules: siteRules,
+	})
+
+	analyzer := NewAdaptiveTrafficAnalyzer(mockSharedMem)
 
 	// Find a free port
 	conn, err := net.ListenPacket("udp", ":0")

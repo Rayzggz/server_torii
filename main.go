@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
@@ -28,45 +27,16 @@ func main() {
 	}
 	config.GlobalConfig = cfg
 
-	// Load site-specific rules
-	siteRules, err := config.LoadSiteRules(cfg)
-	if err != nil {
-		log.Fatalf("Load site rules failed: %v", err)
-	}
-
-	//allocate shared memory
-	maxSpeedLimitTime := int64(0)
-	maxSameURILimitTime := int64(0)
-	maxFailureLimitTime := int64(0)
-	maxCaptchaFailureLimitTime := int64(0)
-	for _, rules := range siteRules {
-		speedTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit)
-		uriTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit)
-		failureTime := utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodFailureLimit)
-		if speedTime > maxSpeedLimitTime {
-			maxSpeedLimitTime = speedTime
-		}
-		if uriTime > maxSameURILimitTime {
-			maxSameURILimitTime = uriTime
-		}
-		if failureTime > maxFailureLimitTime {
-			maxFailureLimitTime = failureTime
-		}
-		captchaFailureTime := utils.FindMaxRateTime(rules.CAPTCHARule.CaptchaFailureLimit)
-		if captchaFailureTime > maxCaptchaFailureLimitTime {
-			maxCaptchaFailureLimitTime = captchaFailureTime
-		}
-	}
-
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 
 	sharedMem := &dataType.SharedMemory{
-		HTTPFloodSpeedLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSpeedLimitTime),
-		HTTPFloodSameURILimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxSameURILimitTime),
-		HTTPFloodFailureLimitCounter: dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxFailureLimitTime),
-		CaptchaFailureLimitCounter:   dataType.NewCounter(max(runtime.NumCPU()*8, 16), maxCaptchaFailureLimitTime),
-		ActionRuleEngine:             engine,
+		ActionRuleEngine: engine,
+	}
+
+	err = config.InitManager(cfg, sharedMem)
+	if err != nil {
+		log.Fatalf("Failed to initialize config manager: %v", err)
 	}
 
 	if cfg.EnableGossip {
@@ -80,10 +50,31 @@ func main() {
 
 	//GC
 	gcStopCh := make(chan struct{})
-	go dataType.StartCounterGC(sharedMem.HTTPFloodSpeedLimitCounter, time.Minute, gcStopCh)
-	go dataType.StartCounterGC(sharedMem.HTTPFloodSameURILimitCounter, time.Minute, gcStopCh)
-	go dataType.StartCounterGC(sharedMem.HTTPFloodFailureLimitCounter, time.Minute, gcStopCh)
-	go dataType.StartCounterGC(sharedMem.CaptchaFailureLimitCounter, time.Minute, gcStopCh)
+	go func() {
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if sharedMem != nil {
+					if c := sharedMem.HTTPFloodSpeedLimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.HTTPFloodSameURILimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.HTTPFloodFailureLimitCounter.Load(); c != nil {
+						c.GC()
+					}
+					if c := sharedMem.CaptchaFailureLimitCounter.Load(); c != nil {
+						c.GC()
+					}
+				}
+			case <-gcStopCh:
+				return
+			}
+		}
+	}()
 
 	// Initialize log system
 	utils.InitLogx(cfg.LogPath)
@@ -107,24 +98,37 @@ func main() {
 	//log startup information and time
 	log.Printf("%s - Server starting...", time.Now().Format(time.RFC3339))
 
-	// Start server
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(stop)
 
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg, siteRules, sharedMem)
+		serverErr <- server.StartServer(cfg, sharedMem)
 	}()
 
-	select {
-	case <-stop:
-		log.Println("Stopping server...")
-		close(gcStopCh)
-	case err := <-serverErr:
-		if err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+	for {
+		select {
+		case sig := <-stop:
+			switch sig {
+			case syscall.SIGHUP:
+				log.Println("Reloading site rules...")
+				if err := config.Manager.Reload(cfg, sharedMem); err != nil {
+					log.Printf("[ERROR] Reload failed: %v", err)
+				}
+				continue
+			case syscall.SIGINT, syscall.SIGTERM:
+				log.Println("Stopping server...")
+				close(gcStopCh)
+				log.Println("Server stopped")
+				return
+			}
+		case err := <-serverErr:
+			if err != nil {
+				log.Fatalf("Failed to start server: %v", err)
+			}
+			log.Println("Server stopped")
+			return
 		}
 	}
-
-	log.Println("Server stopped")
 }
