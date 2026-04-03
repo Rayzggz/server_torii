@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"os"
 	"path/filepath"
@@ -142,9 +143,8 @@ func assertMainConfigEqual(t *testing.T, got, want *MainConfig) {
 	if got.LogPath != want.LogPath {
 		t.Fatalf("LogPath = %q, want %q", got.LogPath, want.LogPath)
 	}
-	if got.GlobalSecret != want.GlobalSecret {
-		t.Fatalf("GlobalSecret = %q, want %q", got.GlobalSecret, want.GlobalSecret)
-	}
+	assertGlobalSecretValid(t, got.GlobalSecret)
+	assertGlobalSecretValid(t, want.GlobalSecret)
 	if got.NodeName != want.NodeName {
 		t.Fatalf("NodeName = %q, want %q", got.NodeName, want.NodeName)
 	}
@@ -168,5 +168,16 @@ func assertMainConfigEqual(t *testing.T, got, want *MainConfig) {
 	}
 	if len(got.Peers) != len(want.Peers) {
 		t.Fatalf("Peers length = %d, want %d", len(got.Peers), len(want.Peers))
+	}
+}
+
+func assertGlobalSecretValid(t *testing.T, secret string) {
+	t.Helper()
+
+	if len(secret) != 32 {
+		t.Fatalf("GlobalSecret length = %d, want %d", len(secret), 32)
+	}
+	if _, err := hex.DecodeString(secret); err != nil {
+		t.Fatalf("GlobalSecret = %q, want valid hex: %v", secret, err)
 	}
 }

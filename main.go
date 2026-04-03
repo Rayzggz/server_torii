@@ -112,7 +112,7 @@ func main() {
 		case sig := <-stop:
 			switch sig {
 			case syscall.SIGHUP:
-				log.Println("Reloading configuration...")
+				log.Println("Reloading site rules...")
 				if err := config.Manager.Reload(cfg, sharedMem); err != nil {
 					log.Printf("[ERROR] Reload failed: %v", err)
 				}

@@ -1,5 +1,10 @@
 package config
 
+import (
+	"crypto/rand"
+	"encoding/hex"
+)
+
 // Default values for MainConfig fields.
 const (
 	DefaultPort         = "25555"
@@ -28,7 +33,7 @@ func DefaultMainConfig() *MainConfig {
 		WebPath:                         DefaultWebPath,
 		ErrorPage:                       DefaultErrorPage,
 		LogPath:                         DefaultLogPath,
-		GlobalSecret:                    DefaultGlobalSecret,
+		GlobalSecret:                    generateDefaultGlobalSecret(),
 		NodeName:                        DefaultNodeName,
 		EnableGossip:                    false,
 		ConnectingHostHeaders:           append([]string{}, DefaultConnectingHostHeaders...),
@@ -37,4 +42,13 @@ func DefaultMainConfig() *MainConfig {
 		ConnectingFeatureControlHeaders: append([]string{}, DefaultConnectingFeatureControlHeaders...),
 		Sites:                           append([]AllSiteRuleSet{}, DefaultSites...),
 	}
+}
+
+func generateDefaultGlobalSecret() string {
+	secret := make([]byte, 16)
+	if _, err := rand.Read(secret); err != nil {
+		return DefaultGlobalSecret
+	}
+
+	return hex.EncodeToString(secret)
 }
