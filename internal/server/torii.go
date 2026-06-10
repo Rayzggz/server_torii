@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"crypto/hmac"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -23,6 +24,9 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 	decision.SetCode(action.Continue, []byte("403"))
 	if strings.HasPrefix(r.URL.Path, cfg.WebPath+"/checker_pages/") {
 		handleCheckerPages(w, r, reqData, ruleSet, cfg)
+		return
+	} else if reqData.Uri == cfg.WebPath+"/captcha/challenge" {
+		handleCaptchaChallenge(w, r, reqData, ruleSet)
 		return
 	} else if reqData.Uri == cfg.WebPath+"/captcha" {
 		check.CheckCaptcha(r, reqData, ruleSet, decision, sharedMem)
@@ -103,6 +107,30 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !check.IsAltchaProvider(ruleSet.CAPTCHARule) {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	challenge, err := check.GenAltchaChallenge(*ruleSet)
+	if err != nil {
+		utils.LogError(reqData, fmt.Sprintf("Error generating ALTCHA challenge: %v", err), "handleCaptchaChallenge")
+		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(challenge); err != nil {
+		utils.LogError(reqData, fmt.Sprintf("Error writing ALTCHA challenge: %v", err), "handleCaptchaChallenge")
 	}
 }
 
@@ -270,7 +298,11 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/CAPTCHA" {
-		tpl, err := template.ParseFiles(cfg.ErrorPage + "/CAPTCHA.html")
+		captchaPage := "CAPTCHA.html"
+		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
+			captchaPage = "CAPTCHA_ALTCHA.html"
+		}
+		tpl, err := template.ParseFiles(cfg.ErrorPage + "/" + captchaPage)
 		if err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error parsing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)

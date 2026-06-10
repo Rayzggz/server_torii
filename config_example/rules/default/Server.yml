@@ -8,10 +8,13 @@ URLBlock:
   enabled: true
 CAPTCHA:
   enabled: true
+  provider: "hcaptcha"
   secret_key: "0378b0f84c4310279918d71a5647ba5d"
   captcha_validate_time: 600
   captcha_challenge_session_timeout: 120
   hcaptcha_secret: ""
+  altcha_hmac_secret: ""
+  altcha_cost: 5000
   CaptchaFailureLimit:
     - "300/300s"
   failure_block_duration: 1200

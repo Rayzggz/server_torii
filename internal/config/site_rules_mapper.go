@@ -5,6 +5,11 @@ import (
 	"server_torii/internal/utils"
 )
 
+const (
+	DefaultCaptchaProvider = "hcaptcha"
+	DefaultAltchaCost      = 5000
+)
+
 // ruleSetWrapper
 type ruleSetWrapper struct {
 	IPAllowRule                 *dataType.IPAllowRule                 `yaml:"IPAllow"`
@@ -28,10 +33,13 @@ type httpFloodRuleWrapper struct {
 
 type captchaRuleWrapper struct {
 	Enabled                        bool     `yaml:"enabled"`
+	Provider                       string   `yaml:"provider"`
 	SecretKey                      string   `yaml:"secret_key" validate:"required,min=16"`
 	CaptchaValidateTime            int64    `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
 	CaptchaChallengeSessionTimeout int64    `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string   `yaml:"hcaptcha_secret" validate:"required"`
+	HCaptchaSecret                 string   `yaml:"hcaptcha_secret"`
+	AltchaHMACSecret               string   `yaml:"altcha_hmac_secret"`
+	AltchaCost                     int      `yaml:"altcha_cost"`
 	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
 	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
@@ -39,10 +47,22 @@ type captchaRuleWrapper struct {
 func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) error {
 	validateConfiguration(wrapper, "CAPTCHARule")
 	dest.Enabled = wrapper.Enabled
+	dest.Provider = wrapper.Provider
+	if dest.Provider == "" {
+		dest.Provider = DefaultCaptchaProvider
+	}
 	dest.SecretKey = wrapper.SecretKey
 	dest.CaptchaValidateTime = wrapper.CaptchaValidateTime
 	dest.CaptchaChallengeSessionTimeout = wrapper.CaptchaChallengeSessionTimeout
 	dest.HCaptchaSecret = wrapper.HCaptchaSecret
+	dest.AltchaHMACSecret = wrapper.AltchaHMACSecret
+	if dest.AltchaHMACSecret == "" {
+		dest.AltchaHMACSecret = wrapper.SecretKey
+	}
+	dest.AltchaCost = wrapper.AltchaCost
+	if dest.AltchaCost == 0 {
+		dest.AltchaCost = DefaultAltchaCost
+	}
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
 	var err error
