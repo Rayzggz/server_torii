@@ -56,7 +56,7 @@
             text-decoration: none;
         }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/altcha@3/dist/altcha.min.js" async defer></script>
+    <script src="https://cdn.jsdelivr.net/gh/altcha-org/altcha@v3.0.2/dist/main/altcha.min.js" async defer></script>
     <script>
         const toriiWebPath = "/torii";
 
@@ -74,18 +74,15 @@
                             window.location.reload();
                             break;
                         case "bad":
-                            alert("Bad CAPTCHA, please refresh the page and try again.\n"
-                                + "您未能通过人机验证，请刷新页面后重试。");
+                            alert("Bad CAPTCHA, please refresh the page and try again.");
                             window.location.reload();
                             break;
                         case "badSession":
-                            alert("Session invalid, please refresh the page and try again.\n"
-                                + "会话无效，请刷新页面后重试。");
+                            alert("Session invalid, please refresh the page and try again.");
                             window.location.reload();
                             break;
                         default:
-                            alert("Unexpected error occurred, please refresh the page and try again.\n"
-                                + "发生了意料之外的错误，请刷新页面后重试。");
+                            alert("Unexpected error occurred, please refresh the page and try again.");
                             window.location.reload();
                     }
                 }
@@ -110,8 +107,7 @@
 
             if (captchaDiv && captchaDiv.children.length > 0) {
             } else {
-                document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.<br>"
-                    + "加载人机验证失败，请检查尝试更换网络环境后重试。";
+                document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.";
             }
         }
 
@@ -122,7 +118,6 @@
 <body>
 <div class="container">
     <div class="message">Checking that you are not a robot</div>
-    <div class="message">请完成人机验证</div>
     <div class="toriiVerifyBox" id="toriiVerifyBox">
         <altcha-widget name="altcha"></altcha-widget>
     </div>
