@@ -99,7 +99,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		return
 	}
 
-	if !verifySessionIDCookie(reqData, *ruleSet) {
+	if !VerifySessionIDCookie(reqData, *ruleSet) {
 		if failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
@@ -137,7 +137,7 @@ func hasCaptchaResponse(r *http.Request, ruleSet *config.RuleSet) bool {
 
 func verifyCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
 	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
-		return verifyAltchaResponse(r, ruleSet)
+		return verifyAltchaResponse(r, reqData, ruleSet)
 	}
 	return verifyHCaptchaResponse(r, reqData, ruleSet)
 }
@@ -179,7 +179,7 @@ func verifyHCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleS
 	return hCaptchaResp.Success, nil
 }
 
-func verifyAltchaResponse(r *http.Request, ruleSet *config.RuleSet) (bool, error) {
+func verifyAltchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
 	altchaResponse := r.FormValue("altcha")
 	if altchaResponse == "" {
 		return false, nil
@@ -192,6 +192,10 @@ func verifyAltchaResponse(r *http.Request, ruleSet *config.RuleSet) (bool, error
 
 	var payload altcha.Payload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return false, nil
+	}
+
+	if !verifyAltchaSessionBinding(payload.Challenge, reqData, *ruleSet) {
 		return false, nil
 	}
 
@@ -208,7 +212,30 @@ func verifyAltchaResponse(r *http.Request, ruleSet *config.RuleSet) (bool, error
 	return result.Verified, nil
 }
 
-func GenAltchaChallenge(ruleSet config.RuleSet) (altcha.Challenge, error) {
+func verifyAltchaSessionBinding(challenge altcha.Challenge, reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+	if challenge.Parameters.Data == nil {
+		return false
+	}
+
+	actual, ok := challenge.Parameters.Data[("toriiSession")].(string)
+	if !ok || actual == "" {
+		return false
+	}
+
+	expected := altchaSessionBinding(reqData, ruleSet)
+	return hmac.Equal([]byte(actual), []byte(expected))
+}
+
+func altchaSessionBinding(reqData dataType.UserRequest, ruleSet config.RuleSet) string {
+	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac.Write([]byte(reqData.ToriiSessionID))
+	mac.Write([]byte(reqData.Host))
+	mac.Write([]byte(utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write([]byte(("ALTCHA-SESSION-BINDING")))
+	return fmt.Sprintf("%x", mac.Sum(nil))
+}
+
+func GenAltchaChallenge(ruleSet config.RuleSet, reqData dataType.UserRequest) (altcha.Challenge, error) {
 	expiresAt := time.Now().Add(time.Duration(ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout) * time.Second)
 	return altcha.CreateChallenge(altcha.CreateChallengeOptions{
 		Algorithm:           altchaAlgorithm,
@@ -217,6 +244,9 @@ func GenAltchaChallenge(ruleSet config.RuleSet) (altcha.Challenge, error) {
 		Cost:                ruleSet.CAPTCHARule.AltchaCost,
 		KeyLength:           altchaKeyLength,
 		ExpiresAt:           &expiresAt,
+		Data: map[string]interface{}{
+			"toriiSession": altchaSessionBinding(reqData, ruleSet),
+		},
 	})
 }
 
@@ -282,7 +312,7 @@ func GenSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func verifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func VerifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
 	if reqData.ToriiSessionID == "" {
 		return false
 	}

@@ -119,8 +119,12 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData data
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
+	if !check.VerifySessionIDCookie(reqData, *ruleSet) {
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
 
-	challenge, err := check.GenAltchaChallenge(*ruleSet)
+	challenge, err := check.GenAltchaChallenge(*ruleSet, reqData)
 	if err != nil {
 		utils.LogError(reqData, fmt.Sprintf("Error generating ALTCHA challenge: %v", err), "handleCaptchaChallenge")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
