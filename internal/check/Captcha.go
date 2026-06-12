@@ -3,6 +3,7 @@ package check
 import (
 	"crypto/hmac"
 	"crypto/sha512"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	altcha "github.com/altcha-org/altcha-lib-go/v2"
+)
+
+const (
+	CaptchaProviderHCaptcha = "hcaptcha"
+	CaptchaProviderAltcha   = "altcha"
+
+	altchaAlgorithm = "PBKDF2/SHA-512"
+	altchaKeyLength = 32
 )
 
 type HCaptchaResponse struct {
@@ -78,8 +89,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		return
 	}
 
-	hCaptchaResponse := r.FormValue("h-captcha-response")
-	if hCaptchaResponse == "" {
+	if !hasCaptchaResponse(r, ruleSet) {
 		if failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
@@ -89,7 +99,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		return
 	}
 
-	if !verifySessionIDCookie(reqData, *ruleSet) {
+	if !VerifySessionIDCookie(reqData, *ruleSet) {
 		if failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
@@ -99,41 +109,13 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		return
 	}
 
-	data := url.Values{}
-	data.Set("secret", ruleSet.CAPTCHARule.HCaptchaSecret)
-	data.Set("response", hCaptchaResponse)
-	data.Set("remoteip", reqData.RemoteIP)
-
-	httpClient := http.Client{Timeout: 10 * time.Second}
-	resp, err := httpClient.PostForm("https://api.hcaptcha.com/siteverify", data)
+	ok, err := verifyCaptchaResponse(r, reqData, ruleSet)
 	if err != nil {
-		utils.LogError(reqData, "", fmt.Sprintf("Error sending request to hCaptcha: %v", err))
+		utils.LogError(reqData, "", err.Error())
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			utils.LogError(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
-		}
-	}(resp.Body)
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		utils.LogError(reqData, "", fmt.Sprintf("Error reading response from hCaptcha: %v", err))
-		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
-		return
-	}
-
-	var hCaptchaResp HCaptchaResponse
-	err = json.Unmarshal(body, &hCaptchaResp)
-	if err != nil {
-		utils.LogError(reqData, "", fmt.Sprintf("Error parsing response from hCaptcha: %v", err))
-		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
-		return
-	}
-
-	if !hCaptchaResp.Success {
+	if !ok {
 		if failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
@@ -144,6 +126,146 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	}
 
 	decision.SetResponse(action.Done, []byte("200"), []byte("good"))
+}
+
+func hasCaptchaResponse(r *http.Request, ruleSet *config.RuleSet) bool {
+	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
+		return r.FormValue("altcha") != ""
+	}
+	return r.FormValue("h-captcha-response") != ""
+}
+
+func verifyCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
+	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
+		return verifyAltchaResponse(r, reqData, ruleSet)
+	}
+	return verifyHCaptchaResponse(r, reqData, ruleSet)
+}
+
+func verifyHCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
+	hCaptchaResponse := r.FormValue("h-captcha-response")
+	if hCaptchaResponse == "" {
+		return false, nil
+	}
+
+	data := url.Values{}
+	data.Set("secret", ruleSet.CAPTCHARule.HCaptchaSecret)
+	data.Set("response", hCaptchaResponse)
+	data.Set("remoteip", reqData.RemoteIP)
+
+	httpClient := http.Client{Timeout: 10 * time.Second}
+	resp, err := httpClient.PostForm("https://api.hcaptcha.com/siteverify", data)
+	if err != nil {
+		return false, fmt.Errorf("error sending request to hCaptcha: %v", err)
+	}
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+			utils.LogError(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
+		}
+	}(resp.Body)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("error reading response from hCaptcha: %v", err)
+	}
+
+	var hCaptchaResp HCaptchaResponse
+	err = json.Unmarshal(body, &hCaptchaResp)
+	if err != nil {
+		return false, fmt.Errorf("error parsing response from hCaptcha: %v", err)
+	}
+
+	return hCaptchaResp.Success, nil
+}
+
+func verifyAltchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
+	altchaResponse := r.FormValue("altcha")
+	if altchaResponse == "" {
+		return false, nil
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(altchaResponse)
+	if err != nil {
+		return false, nil
+	}
+
+	var payload altcha.Payload
+	if err := json.Unmarshal(decoded, &payload); err != nil {
+		return false, nil
+	}
+
+	if !verifyAltchaSessionBinding(payload.Challenge, reqData, *ruleSet) {
+		return false, nil
+	}
+
+	result, err := altcha.VerifySolution(altcha.VerifySolutionOptions{
+		Challenge:           payload.Challenge,
+		Solution:            payload.Solution,
+		DeriveKey:           altcha.DeriveKeyPBKDF2(),
+		HMACSignatureSecret: altchaHMACSecret(ruleSet.CAPTCHARule),
+	})
+	if err != nil {
+		return false, fmt.Errorf("error verifying ALTCHA response: %v", err)
+	}
+
+	return result.Verified, nil
+}
+
+func verifyAltchaSessionBinding(challenge altcha.Challenge, reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+	if challenge.Parameters.Data == nil {
+		return false
+	}
+
+	actual, ok := challenge.Parameters.Data[("toriiSession")].(string)
+	if !ok || actual == "" {
+		return false
+	}
+
+	expected := altchaSessionBinding(reqData, ruleSet)
+	return hmac.Equal([]byte(actual), []byte(expected))
+}
+
+func altchaSessionBinding(reqData dataType.UserRequest, ruleSet config.RuleSet) string {
+	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac.Write([]byte(reqData.ToriiSessionID))
+	mac.Write([]byte(reqData.Host))
+	mac.Write([]byte(utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write([]byte(("ALTCHA-SESSION-BINDING")))
+	return fmt.Sprintf("%x", mac.Sum(nil))
+}
+
+func GenAltchaChallenge(ruleSet config.RuleSet, reqData dataType.UserRequest) (altcha.Challenge, error) {
+	expiresAt := time.Now().Add(time.Duration(ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout) * time.Second)
+	return altcha.CreateChallenge(altcha.CreateChallengeOptions{
+		Algorithm:           altchaAlgorithm,
+		DeriveKey:           altcha.DeriveKeyPBKDF2(),
+		HMACSignatureSecret: altchaHMACSecret(ruleSet.CAPTCHARule),
+		Cost:                ruleSet.CAPTCHARule.AltchaCost,
+		KeyLength:           altchaKeyLength,
+		ExpiresAt:           &expiresAt,
+		Data: map[string]interface{}{
+			"toriiSession": altchaSessionBinding(reqData, ruleSet),
+		},
+	})
+}
+
+func IsAltchaProvider(rule *dataType.CaptchaRule) bool {
+	return captchaProvider(rule) == CaptchaProviderAltcha
+}
+
+func captchaProvider(rule *dataType.CaptchaRule) string {
+	if rule == nil || rule.Provider == "" {
+		return CaptchaProviderHCaptcha
+	}
+	return strings.ToLower(rule.Provider)
+}
+
+func altchaHMACSecret(rule *dataType.CaptchaRule) string {
+	if rule.AltchaHMACSecret != "" {
+		return rule.AltchaHMACSecret
+	}
+	return rule.SecretKey
 }
 
 func GenClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
@@ -190,7 +312,7 @@ func GenSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func verifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func VerifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
 	if reqData.ToriiSessionID == "" {
 		return false
 	}

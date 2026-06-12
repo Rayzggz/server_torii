@@ -56,12 +56,14 @@
             text-decoration: none;
         }
     </style>
-    <script src="https://js.hcaptcha.com/1/api.js" async defer></script>
+    <script src="https://cdn.jsdelivr.net/gh/altcha-org/altcha@v3.0.2/dist/main/altcha.min.js" async defer></script>
     <script>
-        function onSubmit(token) {
-            let reqBody = "h-captcha-response=" + token;
-            let httpRequest = new XMLHttpRequest();
-            httpRequest.open("POST", "/torii/captcha", true);
+        const toriiWebPath = "/torii";
+
+        function postAltcha(payload) {
+            const reqBody = "altcha=" + encodeURIComponent(payload);
+            const httpRequest = new XMLHttpRequest();
+            httpRequest.open("POST", toriiWebPath + "/captcha", true);
             httpRequest.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
             httpRequest.send(reqBody);
             httpRequest.onreadystatechange = () => {
@@ -84,11 +86,24 @@
                             window.location.reload();
                     }
                 }
+            };
+        }
+
+        function setupAltcha() {
+            const widget = document.querySelector("altcha-widget");
+            if (!widget) {
+                return;
             }
+            widget.setAttribute("challenge", toriiWebPath + "/captcha/challenge");
+            widget.addEventListener("statechange", (ev) => {
+                if (ev.detail.state === "verified" && ev.detail.payload) {
+                    postAltcha(ev.detail.payload);
+                }
+            });
         }
 
         function checkCaptchaRender() {
-            const captchaDiv = document.querySelector(".h-captcha");
+            const captchaDiv = document.querySelector("altcha-widget");
 
             if (captchaDiv && captchaDiv.children.length > 0) {
             } else {
@@ -96,6 +111,7 @@
             }
         }
 
+        window.addEventListener("load", setupAltcha);
         setTimeout(checkCaptchaRender, 5000);
     </script>
 </head>
@@ -103,7 +119,7 @@
 <div class="container">
     <div class="message">Checking that you are not a robot</div>
     <div class="toriiVerifyBox" id="toriiVerifyBox">
-        <div class="h-captcha" data-sitekey="" data-callback="onSubmit"></div>
+        <altcha-widget name="altcha"></altcha-widget>
     </div>
     <div class="footer">
         DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
