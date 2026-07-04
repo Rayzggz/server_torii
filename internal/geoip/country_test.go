@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"net/netip"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -183,6 +184,42 @@ func TestCountryDatabaseCloseOrWarnLogsError(t *testing.T) {
 	}
 	if !reader.closed {
 		t.Fatal("reader was not closed")
+	}
+}
+
+func TestGeoLite2CountryDatabaseLookup(t *testing.T) {
+	path := filepath.Join("..", "..", "config_example", "data", "GeoLite2-Country.mmdb")
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		t.Skipf("GeoLite2 test database is not present at %s", path)
+	} else if err != nil {
+		t.Fatalf("Stat GeoLite2 database: %v", err)
+	}
+
+	db := newCountryDatabase(path, openMaxMindReader)
+	if err := db.Reload(); err != nil {
+		t.Fatalf("Reload real GeoLite2 database: %v", err)
+	}
+	defer db.CloseOrWarn()
+
+	tests := []struct {
+		name    string
+		address string
+		country string
+	}{
+		{name: "Google IPv4", address: "8.8.8.8", country: "US"},
+		{name: "Google IPv6", address: "2001:4860:4860::8888", country: "US"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := db.Country(netip.MustParseAddr(tt.address))
+			if err != nil {
+				t.Fatalf("Country(%s) returned error: %v", tt.address, err)
+			}
+			if got != tt.country {
+				t.Fatalf("Country(%s) = %q, want %q", tt.address, got, tt.country)
+			}
+		})
 	}
 }
 
