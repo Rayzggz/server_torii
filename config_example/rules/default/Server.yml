@@ -8,8 +8,10 @@ URLBlock:
   enabled: true
 CountryRule:
   enabled: false
+  CAPTCHA_NOT: false
   CAPTCHA:
     - "US"
+  BLOCK_NOT: true
   BLOCK:
     - "GB"
 CAPTCHA:

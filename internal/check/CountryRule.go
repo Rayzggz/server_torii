@@ -31,13 +31,13 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 	}
 	country = strings.ToUpper(country)
 
-	if _, blocked := ruleSet.CountryRule.BlockCountries[country]; blocked {
+	if matchesCountryRule(ruleSet.CountryRule.BlockCountries, ruleSet.CountryRule.BlockNot, country) {
 		utils.LogInfo(reqData, "", "CountryRule BLOCK")
 		decision.SetCode(action.Done, []byte("403"))
 		return
 	}
 
-	if _, challenged := ruleSet.CountryRule.CAPTCHACountries[country]; challenged {
+	if matchesCountryRule(ruleSet.CountryRule.CAPTCHACountries, ruleSet.CountryRule.CAPTCHANot, country) {
 		utils.LogInfo(reqData, "", "CountryRule CAPTCHA")
 		reqData.FeatureControl |= dataType.FeatureCaptcha
 		Captcha(reqData, ruleSet, decision, sharedMem)
@@ -45,4 +45,9 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 	}
 
 	decision.Set(action.Continue)
+}
+
+func matchesCountryRule(countries map[string]struct{}, inverted bool, country string) bool {
+	_, listed := countries[country]
+	return listed != inverted
 }

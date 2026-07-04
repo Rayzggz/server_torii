@@ -54,6 +54,91 @@ func TestCountryRuleCaptcha(t *testing.T) {
 	}
 }
 
+func TestCountryRuleInvertedBlock(t *testing.T) {
+	tests := []struct {
+		name     string
+		country  string
+		wantDone bool
+		wantCode string
+	}{
+		{name: "listed country continues", country: "US", wantCode: "200"},
+		{name: "unlisted country blocks", country: "CN", wantDone: true, wantCode: "403"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ruleSet := countryTestRuleSet()
+			ruleSet.CountryRule.BlockNot = true
+			ruleSet.CountryRule.BlockCountries["US"] = struct{}{}
+			decision := action.NewDecision()
+
+			CountryRule(dataType.UserRequest{
+				RemoteIP:       "8.8.8.8",
+				FeatureControl: dataType.FeatureCountryRule,
+			}, ruleSet, decision, &dataType.SharedMemory{
+				CountryResolver: &fakeCountryResolver{country: tt.country},
+			})
+
+			if gotDone := decision.State == action.Done; gotDone != tt.wantDone ||
+				string(decision.HTTPCode) != tt.wantCode {
+				t.Fatalf("decision = %#v, want done %t and code %s", decision, tt.wantDone, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestCountryRuleInvertedCaptcha(t *testing.T) {
+	tests := []struct {
+		name     string
+		country  string
+		wantDone bool
+		wantCode string
+	}{
+		{name: "listed country continues", country: "US", wantCode: "200"},
+		{name: "unlisted country challenges", country: "DE", wantDone: true, wantCode: "CAPTCHA"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ruleSet := countryTestRuleSet()
+			ruleSet.CountryRule.CAPTCHANot = true
+			ruleSet.CountryRule.CAPTCHACountries["US"] = struct{}{}
+			sharedMem := &dataType.SharedMemory{
+				CountryResolver: &fakeCountryResolver{country: tt.country},
+			}
+			sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+			decision := action.NewDecision()
+
+			CountryRule(dataType.UserRequest{
+				RemoteIP:       "8.8.8.8",
+				FeatureControl: dataType.FeatureCountryRule,
+			}, ruleSet, decision, sharedMem)
+
+			if gotDone := decision.State == action.Done; gotDone != tt.wantDone ||
+				string(decision.HTTPCode) != tt.wantCode {
+				t.Fatalf("decision = %#v, want done %t and code %s", decision, tt.wantDone, tt.wantCode)
+			}
+		})
+	}
+}
+
+func TestCountryRuleInvertedEmptyListMatchesResolvedCountry(t *testing.T) {
+	ruleSet := countryTestRuleSet()
+	ruleSet.CountryRule.BlockNot = true
+	decision := action.NewDecision()
+
+	CountryRule(dataType.UserRequest{
+		RemoteIP:       "8.8.8.8",
+		FeatureControl: dataType.FeatureCountryRule,
+	}, ruleSet, decision, &dataType.SharedMemory{
+		CountryResolver: &fakeCountryResolver{country: "CN"},
+	})
+
+	if decision.State != action.Done || string(decision.HTTPCode) != "403" {
+		t.Fatalf("decision = %#v, want blocking 403", decision)
+	}
+}
+
 func TestCountryRuleFailOpenCases(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -70,6 +155,35 @@ func TestCountryRuleFailOpenCases(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ruleSet := countryTestRuleSet()
 			ruleSet.CountryRule.BlockCountries["CN"] = struct{}{}
+			decision := action.NewDecision()
+
+			CountryRule(dataType.UserRequest{
+				RemoteIP:       tt.remoteIP,
+				FeatureControl: dataType.FeatureCountryRule,
+			}, ruleSet, decision, &dataType.SharedMemory{CountryResolver: tt.resolver})
+
+			if decision.State != action.Continue || string(decision.HTTPCode) != "200" {
+				t.Fatalf("decision = %#v, want fail-open continue", decision)
+			}
+		})
+	}
+}
+
+func TestCountryRuleInvertedFailOpenCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		remoteIP string
+		resolver *fakeCountryResolver
+	}{
+		{name: "lookup error", remoteIP: "8.8.8.8", resolver: &fakeCountryResolver{err: errors.New("lookup failed")}},
+		{name: "empty lookup", remoteIP: "8.8.8.8", resolver: &fakeCountryResolver{}},
+		{name: "invalid IP", remoteIP: "not-an-ip", resolver: &fakeCountryResolver{country: "CN"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ruleSet := countryTestRuleSet()
+			ruleSet.CountryRule.BlockNot = true
 			decision := action.NewDecision()
 
 			CountryRule(dataType.UserRequest{

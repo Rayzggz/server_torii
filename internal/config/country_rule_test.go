@@ -19,6 +19,9 @@ func TestMapCountryRuleNormalizesAndDeduplicates(t *testing.T) {
 	if !dest.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
 	}
+	if dest.CAPTCHANot || dest.BlockNot {
+		t.Fatal("CountryRule NOT flags = true, want false defaults")
+	}
 	if len(dest.CAPTCHACountries) != 2 {
 		t.Fatalf("CAPTCHACountries length = %d, want 2", len(dest.CAPTCHACountries))
 	}
@@ -33,6 +36,40 @@ func TestMapCountryRuleNormalizesAndDeduplicates(t *testing.T) {
 	}
 }
 
+func TestMapCountryRuleMapsNotFlagsForComplementaryActions(t *testing.T) {
+	tests := []struct {
+		name       string
+		captchaNot bool
+		blockNot   bool
+	}{
+		{name: "inverted block", blockNot: true},
+		{name: "inverted CAPTCHA", captchaNot: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dest := &dataType.CountryRule{}
+			err := mapCountryRule(&countryRuleWrapper{
+				Enabled:          true,
+				CAPTCHANot:       tt.captchaNot,
+				BlockNot:         tt.blockNot,
+				CAPTCHACountries: []string{"us"},
+				BlockCountries:   []string{"US"},
+			}, dest)
+			if err != nil {
+				t.Fatalf("mapCountryRule returned unexpected error: %v", err)
+			}
+
+			if dest.CAPTCHANot != tt.captchaNot {
+				t.Fatalf("CountryRule.CAPTCHANot = %t, want %t", dest.CAPTCHANot, tt.captchaNot)
+			}
+			if dest.BlockNot != tt.blockNot {
+				t.Fatalf("CountryRule.BlockNot = %t, want %t", dest.BlockNot, tt.blockNot)
+			}
+		})
+	}
+}
+
 func TestMapCountryRuleRejectsInvalidCode(t *testing.T) {
 	err := mapCountryRule(&countryRuleWrapper{
 		CAPTCHACountries: []string{"USA"},
@@ -43,11 +80,61 @@ func TestMapCountryRuleRejectsInvalidCode(t *testing.T) {
 }
 
 func TestMapCountryRuleRejectsOverlappingActions(t *testing.T) {
-	err := mapCountryRule(&countryRuleWrapper{
-		CAPTCHACountries: []string{"us"},
-		BlockCountries:   []string{"US"},
-	}, &dataType.CountryRule{})
-	if err == nil {
-		t.Fatal("mapCountryRule error = nil, want overlapping-action error")
+	tests := []struct {
+		name    string
+		wrapper countryRuleWrapper
+	}{
+		{
+			name: "normal and normal",
+			wrapper: countryRuleWrapper{
+				CAPTCHACountries: []string{"us"},
+				BlockCountries:   []string{"US"},
+			},
+		},
+		{
+			name: "normal block and inverted CAPTCHA",
+			wrapper: countryRuleWrapper{
+				CAPTCHANot:       true,
+				CAPTCHACountries: []string{"CN"},
+				BlockCountries:   []string{"US"},
+			},
+		},
+		{
+			name: "inverted block and normal CAPTCHA",
+			wrapper: countryRuleWrapper{
+				BlockNot:         true,
+				CAPTCHACountries: []string{"CN"},
+				BlockCountries:   []string{"US"},
+			},
+		},
+		{
+			name: "inverted and inverted",
+			wrapper: countryRuleWrapper{
+				CAPTCHANot:       true,
+				BlockNot:         true,
+				CAPTCHACountries: []string{"US"},
+				BlockCountries:   []string{"CN"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := mapCountryRule(&tt.wrapper, &dataType.CountryRule{})
+			if err == nil {
+				t.Fatal("mapCountryRule error = nil, want overlapping-action error")
+			}
+		})
+	}
+}
+
+func TestMapCountryRuleAllowsInvertedEmptyAction(t *testing.T) {
+	dest := &dataType.CountryRule{}
+	err := mapCountryRule(&countryRuleWrapper{BlockNot: true}, dest)
+	if err != nil {
+		t.Fatalf("mapCountryRule returned unexpected error: %v", err)
+	}
+	if !dest.BlockNot {
+		t.Fatal("CountryRule.BlockNot = false, want true")
 	}
 }

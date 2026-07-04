@@ -49,12 +49,16 @@ type captchaRuleWrapper struct {
 
 type countryRuleWrapper struct {
 	Enabled          bool     `yaml:"enabled"`
+	CAPTCHANot       bool     `yaml:"CAPTCHA_NOT"`
+	BlockNot         bool     `yaml:"BLOCK_NOT"`
 	CAPTCHACountries []string `yaml:"CAPTCHA"`
 	BlockCountries   []string `yaml:"BLOCK"`
 }
 
 func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) error {
 	dest.Enabled = wrapper.Enabled
+	dest.CAPTCHANot = wrapper.CAPTCHANot
+	dest.BlockNot = wrapper.BlockNot
 	dest.CAPTCHACountries = make(map[string]struct{}, len(wrapper.CAPTCHACountries))
 	dest.BlockCountries = make(map[string]struct{}, len(wrapper.BlockCountries))
 
@@ -71,13 +75,28 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) err
 		if err != nil {
 			return fmt.Errorf("invalid CountryRule BLOCK country: %w", err)
 		}
-		if _, exists := dest.CAPTCHACountries[normalized]; exists {
-			return fmt.Errorf("country code %q cannot appear in both CountryRule CAPTCHA and BLOCK", normalized)
-		}
 		dest.BlockCountries[normalized] = struct{}{}
 	}
 
+	return validateCountryRulePredicates(dest)
+}
+
+func validateCountryRulePredicates(rule *dataType.CountryRule) error {
+	for first := byte('A'); first <= 'Z'; first++ {
+		for second := byte('A'); second <= 'Z'; second++ {
+			country := string([]byte{first, second})
+			if countryRuleMatches(rule.BlockCountries, rule.BlockNot, country) &&
+				countryRuleMatches(rule.CAPTCHACountries, rule.CAPTCHANot, country) {
+				return fmt.Errorf("country code %q matches both CountryRule CAPTCHA and BLOCK", country)
+			}
+		}
+	}
 	return nil
+}
+
+func countryRuleMatches(countries map[string]struct{}, inverted bool, country string) bool {
+	_, listed := countries[country]
+	return listed != inverted
 }
 
 func normalizeCountryCode(code string) (string, error) {

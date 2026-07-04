@@ -28,11 +28,13 @@ URLBlock:
   enabled: true
 CountryRule:
   enabled: true
+  CAPTCHA_NOT: false
   CAPTCHA:
     - "us"
     - "US"
+  BLOCK_NOT: true
   BLOCK:
-    - "cn"
+    - "us"
 CAPTCHA:
   enabled: true
   secret_key: "1234567890abcdef"
@@ -133,8 +135,14 @@ sites:
 	if _, ok := rules.CountryRule.CAPTCHACountries["US"]; !ok {
 		t.Fatal("CountryRule CAPTCHA countries do not contain normalized US")
 	}
-	if _, ok := rules.CountryRule.BlockCountries["CN"]; !ok {
-		t.Fatal("CountryRule BLOCK countries do not contain normalized CN")
+	if rules.CountryRule.CAPTCHANot {
+		t.Fatal("CountryRule.CAPTCHANot = true, want false")
+	}
+	if !rules.CountryRule.BlockNot {
+		t.Fatal("CountryRule.BlockNot = false, want true")
+	}
+	if _, ok := rules.CountryRule.BlockCountries["US"]; !ok {
+		t.Fatal("CountryRule BLOCK countries do not contain normalized US")
 	}
 	if !rules.CAPTCHARule.Enabled {
 		t.Fatal("CAPTCHARule.Enabled = false, want true")

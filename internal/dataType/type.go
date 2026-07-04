@@ -133,6 +133,8 @@ type URLBlockRule struct {
 
 type CountryRule struct {
 	Enabled          bool
+	CAPTCHANot       bool
+	BlockNot         bool
 	CAPTCHACountries map[string]struct{}
 	BlockCountries   map[string]struct{}
 }
