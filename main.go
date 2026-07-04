@@ -9,6 +9,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/geoip"
 	"server_torii/internal/server"
 	"server_torii/internal/utils"
 	"syscall"
@@ -30,8 +31,14 @@ func main() {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 
+	countryDatabase := geoip.NewCountryDatabase(
+		filepath.Join(cfg.ConfigDir, "data", "GeoLite2-Country.mmdb"),
+	)
+	defer countryDatabase.CloseOrWarn()
+
 	sharedMem := &dataType.SharedMemory{
 		ActionRuleEngine: engine,
+		CountryResolver:  countryDatabase,
 	}
 
 	err = config.InitManager(cfg, sharedMem)
@@ -113,6 +120,7 @@ func main() {
 			switch sig {
 			case syscall.SIGHUP:
 				log.Println("Reloading site rules...")
+				countryDatabase.ReloadOrWarn()
 				if err := config.Manager.Reload(cfg, sharedMem); err != nil {
 					log.Printf("[ERROR] Reload failed: %v", err)
 				}

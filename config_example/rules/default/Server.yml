@@ -6,6 +6,12 @@ URLAllow:
   enabled: true
 URLBlock:
   enabled: true
+CountryRule:
+  enabled: false
+  CAPTCHA:
+    - "US"
+  BLOCK:
+    - "GB"
 CAPTCHA:
   enabled: true
   provider: "hcaptcha"

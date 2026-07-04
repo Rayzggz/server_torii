@@ -83,7 +83,7 @@ func getHeader(r *http.Request, headerName string) string {
 
 // processFeatureControl processes the feature control header and combines it with config rules
 // Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
-// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration
+// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule
 func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
 	// Define feature list in order (position 0 to N)
 	configStates := []bool{
@@ -95,6 +95,7 @@ func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *con
 		ruleSet.HTTPFloodRule.Enabled,         // position 5
 		ruleSet.CAPTCHARule.Enabled,           // position 6
 		ruleSet.ExternalMigrationRule.Enabled, // position 7
+		ruleSet.CountryRule.Enabled,           // position 8
 		// Future features can be added here
 	}
 

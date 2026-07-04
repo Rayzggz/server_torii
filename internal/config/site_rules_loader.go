@@ -25,6 +25,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		HTTPFloodRule:               &dataType.HTTPFloodRule{},
 		ExternalMigrationRule:       &dataType.ExternalMigrationRule{},
 		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{},
+		CountryRule:                 &dataType.CountryRule{},
 	}
 
 	// Load IP Allow List
@@ -105,6 +106,11 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	}
 	if wrapper.AdaptiveTrafficAnalyzerRule != nil {
 		mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule)
+	}
+	if wrapper.CountryRule != nil {
+		if err := mapCountryRule(wrapper.CountryRule, rs.CountryRule); err != nil {
+			return err
+		}
 	}
 
 	if err := mapHTTPFloodRule(&wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {

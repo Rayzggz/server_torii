@@ -18,6 +18,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs := make([]CheckFunc, 0)
 	checkFuncs = append(checkFuncs, check.IPAllowList)
 	checkFuncs = append(checkFuncs, check.IPBlockList)
+	checkFuncs = append(checkFuncs, check.CountryRule)
 	checkFuncs = append(checkFuncs, check.URLAllowList)
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.VerifyBot)

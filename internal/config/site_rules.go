@@ -16,6 +16,7 @@ type RuleSet struct {
 	HTTPFloodRule               *dataType.HTTPFloodRule
 	ExternalMigrationRule       *dataType.ExternalMigrationRule
 	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule
+	CountryRule                 *dataType.CountryRule
 }
 
 // GetSiteRules returns the rules for a specific host.

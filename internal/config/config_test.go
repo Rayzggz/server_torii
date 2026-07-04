@@ -61,6 +61,9 @@ func TestLoadMainConfig_ValidPartialConfigOverlaysDefaults(t *testing.T) {
 	if cfg.NodeName != "custom-node" {
 		t.Fatalf("NodeName = %q, want %q", cfg.NodeName, "custom-node")
 	}
+	if cfg.ConfigDir != tempDir {
+		t.Fatalf("ConfigDir = %q, want %q", cfg.ConfigDir, tempDir)
+	}
 	if cfg.ErrorPage != DefaultErrorPage {
 		t.Fatalf("ErrorPage = %q, want default %q", cfg.ErrorPage, DefaultErrorPage)
 	}

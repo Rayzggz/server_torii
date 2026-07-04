@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strings"
 )
 
 const (
@@ -21,6 +23,7 @@ type ruleSetWrapper struct {
 	HTTPFloodRule               httpFloodRuleWrapper                  `yaml:"HTTPFlood"`
 	ExternalMigrationRule       *dataType.ExternalMigrationRule       `yaml:"ExternalMigration"`
 	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
+	CountryRule                 *countryRuleWrapper                   `yaml:"CountryRule"`
 }
 
 type httpFloodRuleWrapper struct {
@@ -42,6 +45,49 @@ type captchaRuleWrapper struct {
 	AltchaCost                     int      `yaml:"altcha_cost"`
 	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
 	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
+}
+
+type countryRuleWrapper struct {
+	Enabled          bool     `yaml:"enabled"`
+	CAPTCHACountries []string `yaml:"CAPTCHA"`
+	BlockCountries   []string `yaml:"BLOCK"`
+}
+
+func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) error {
+	dest.Enabled = wrapper.Enabled
+	dest.CAPTCHACountries = make(map[string]struct{}, len(wrapper.CAPTCHACountries))
+	dest.BlockCountries = make(map[string]struct{}, len(wrapper.BlockCountries))
+
+	for _, code := range wrapper.CAPTCHACountries {
+		normalized, err := normalizeCountryCode(code)
+		if err != nil {
+			return fmt.Errorf("invalid CountryRule CAPTCHA country: %w", err)
+		}
+		dest.CAPTCHACountries[normalized] = struct{}{}
+	}
+
+	for _, code := range wrapper.BlockCountries {
+		normalized, err := normalizeCountryCode(code)
+		if err != nil {
+			return fmt.Errorf("invalid CountryRule BLOCK country: %w", err)
+		}
+		if _, exists := dest.CAPTCHACountries[normalized]; exists {
+			return fmt.Errorf("country code %q cannot appear in both CountryRule CAPTCHA and BLOCK", normalized)
+		}
+		dest.BlockCountries[normalized] = struct{}{}
+	}
+
+	return nil
+}
+
+func normalizeCountryCode(code string) (string, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+	if len(normalized) != 2 ||
+		normalized[0] < 'A' || normalized[0] > 'Z' ||
+		normalized[1] < 'A' || normalized[1] > 'Z' {
+		return "", fmt.Errorf("%q must contain exactly two ASCII letters", code)
+	}
+	return normalized, nil
 }
 
 func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) error {
