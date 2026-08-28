@@ -35,6 +35,14 @@ type HCaptchaResponse struct {
 	ErrorCodes  []string `json:"error-codes"`
 }
 
+type captchaVerificationResult uint8
+
+const (
+	captchaVerificationInvalid captchaVerificationResult = iota
+	captchaVerificationValid
+	captchaVerificationSessionMismatch
+)
+
 func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
 	// Check if Captcha feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureCaptcha) == 0 {
@@ -109,19 +117,23 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		return
 	}
 
-	ok, err := verifyCaptchaResponse(r, reqData, ruleSet)
+	verificationResult, err := verifyCaptchaResponse(r, reqData, ruleSet)
 	if err != nil {
 		utils.LogError(reqData, "", err.Error())
 		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
 		return
 	}
-	if !ok {
+	if verificationResult != captchaVerificationValid {
 		if failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
 			utils.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}
-		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		response := []byte("bad")
+		if verificationResult == captchaVerificationSessionMismatch {
+			response = []byte("badSession")
+		}
+		decision.SetResponse(action.Done, []byte("200"), response)
 		return
 	}
 
@@ -135,11 +147,19 @@ func hasCaptchaResponse(r *http.Request, ruleSet *config.RuleSet) bool {
 	return r.FormValue("h-captcha-response") != ""
 }
 
-func verifyCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
+func verifyCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (captchaVerificationResult, error) {
 	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
 		return verifyAltchaResponse(r, reqData, ruleSet)
 	}
-	return verifyHCaptchaResponse(r, reqData, ruleSet)
+
+	ok, err := verifyHCaptchaResponse(r, reqData, ruleSet)
+	if err != nil {
+		return captchaVerificationInvalid, err
+	}
+	if ok {
+		return captchaVerificationValid, nil
+	}
+	return captchaVerificationInvalid, nil
 }
 
 func verifyHCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
@@ -179,24 +199,25 @@ func verifyHCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleS
 	return hCaptchaResp.Success, nil
 }
 
-func verifyAltchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (bool, error) {
+func verifyAltchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet) (captchaVerificationResult, error) {
 	altchaResponse := r.FormValue("altcha")
 	if altchaResponse == "" {
-		return false, nil
+		return captchaVerificationInvalid, nil
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(altchaResponse)
 	if err != nil {
-		return false, nil
+		return captchaVerificationInvalid, nil
 	}
 
 	var payload altcha.Payload
 	if err := json.Unmarshal(decoded, &payload); err != nil {
-		return false, nil
+		return captchaVerificationInvalid, nil
 	}
 
-	if !verifyAltchaSessionBinding(payload.Challenge, reqData, *ruleSet) {
-		return false, nil
+	actualSessionBinding, ok := altchaChallengeSessionBinding(payload.Challenge)
+	if !ok {
+		return captchaVerificationInvalid, nil
 	}
 
 	result, err := altcha.VerifySolution(altcha.VerifySolutionOptions{
@@ -206,24 +227,31 @@ func verifyAltchaResponse(r *http.Request, reqData dataType.UserRequest, ruleSet
 		HMACSignatureSecret: altchaHMACSecret(ruleSet.CAPTCHARule),
 	})
 	if err != nil {
-		return false, fmt.Errorf("error verifying ALTCHA response: %v", err)
+		return captchaVerificationInvalid, fmt.Errorf("error verifying ALTCHA response: %v", err)
+	}
+	if !result.Verified {
+		return captchaVerificationInvalid, nil
 	}
 
-	return result.Verified, nil
+	expectedSessionBinding := altchaSessionBinding(reqData, *ruleSet)
+	if !hmac.Equal([]byte(actualSessionBinding), []byte(expectedSessionBinding)) {
+		return captchaVerificationSessionMismatch, nil
+	}
+
+	return captchaVerificationValid, nil
 }
 
-func verifyAltchaSessionBinding(challenge altcha.Challenge, reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func altchaChallengeSessionBinding(challenge altcha.Challenge) (string, bool) {
 	if challenge.Parameters.Data == nil {
-		return false
+		return "", false
 	}
 
 	actual, ok := challenge.Parameters.Data[("toriiSession")].(string)
 	if !ok || actual == "" {
-		return false
+		return "", false
 	}
 
-	expected := altchaSessionBinding(reqData, ruleSet)
-	return hmac.Equal([]byte(actual), []byte(expected))
+	return actual, true
 }
 
 func altchaSessionBinding(reqData dataType.UserRequest, ruleSet config.RuleSet) string {
@@ -306,6 +334,10 @@ func verifyClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 }
 
 func GenSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+	if VerifySessionIDCookie(reqData, ruleSet) {
+		return []byte(reqData.ToriiSessionID)
+	}
+
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
 	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
