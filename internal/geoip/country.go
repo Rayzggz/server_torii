@@ -123,7 +123,20 @@ func openMaxMindReader(path string) (countryReader, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateCountryDatabaseType(db.Metadata.DatabaseType); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	return &maxMindReader{db: db}, nil
+}
+
+func validateCountryDatabaseType(databaseType string) error {
+	switch databaseType {
+	case "GeoLite2-Country", "GeoIP2-Country", "GeoLite2-City", "GeoIP2-City":
+		return nil
+	default:
+		return fmt.Errorf("incompatible MaxMind database type %q; supported types: GeoLite2-Country, GeoIP2-Country, GeoLite2-City, GeoIP2-City", databaseType)
+	}
 }
 
 func (r *maxMindReader) Country(addr netip.Addr) (string, error) {
