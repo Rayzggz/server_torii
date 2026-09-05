@@ -13,6 +13,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// decodeServerRules keeps YAML decoding at the configuration loading boundary.
+func decodeServerRules(data []byte) (ruleSetWrapper, error) {
+	var wrapper ruleSetWrapper
+	err := yaml.Unmarshal(data, &wrapper)
+	return wrapper, err
+}
+
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
@@ -25,7 +32,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		HTTPFloodRule:               &dataType.HTTPFloodRule{},
 		ExternalMigrationRule:       &dataType.ExternalMigrationRule{},
 		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{},
-		CountryRule:                 &dataType.CountryRule{},
+		CountryRule:                 &dataType.CountryRule{DefaultAction: dataType.CountryContinue, UnknownAction: dataType.CountryContinue, Countries: make(map[string]dataType.CountryAction)},
 	}
 
 	// Load IP Allow List
@@ -70,8 +77,8 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		}
 	}
 
-	var wrapper ruleSetWrapper
-	if err := yaml.Unmarshal(yamlData, &wrapper); err != nil {
+	wrapper, err := decodeServerRules(yamlData)
+	if err != nil {
 		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
@@ -110,6 +117,15 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	if wrapper.CountryRule != nil {
 		if err := mapCountryRule(wrapper.CountryRule, rs.CountryRule); err != nil {
 			return err
+		}
+	}
+
+	if countryRequiresCaptcha(rs.CountryRule) {
+		if wrapper.CAPTCHARule == nil {
+			return fmt.Errorf("CountryRule captcha action requires CAPTCHA configuration")
+		}
+		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
+			return fmt.Errorf("CountryRule requires valid CAPTCHA configuration: %w", err)
 		}
 	}
 

@@ -131,12 +131,19 @@ type URLBlockRule struct {
 	List    *URLRuleList
 }
 
+type CountryAction string
+
+const (
+	CountryContinue CountryAction = "continue"
+	CountryBlock    CountryAction = "block"
+	CountryCaptcha  CountryAction = "captcha"
+)
+
 type CountryRule struct {
-	Enabled          bool
-	CAPTCHANot       bool
-	BlockNot         bool
-	CAPTCHACountries map[string]struct{}
-	BlockCountries   map[string]struct{}
+	Enabled       bool
+	DefaultAction CountryAction
+	UnknownAction CountryAction
+	Countries     map[string]CountryAction
 }
 
 type CountryResolver interface {

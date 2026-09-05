@@ -5,6 +5,8 @@ import (
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -48,55 +50,77 @@ type captchaRuleWrapper struct {
 }
 
 type countryRuleWrapper struct {
-	Enabled          bool     `yaml:"enabled"`
-	CAPTCHANot       bool     `yaml:"CAPTCHA_NOT"`
-	BlockNot         bool     `yaml:"BLOCK_NOT"`
-	CAPTCHACountries []string `yaml:"CAPTCHA"`
-	BlockCountries   []string `yaml:"BLOCK"`
+	Enabled       bool                 `yaml:"enabled"`
+	DefaultAction yaml.Node            `yaml:"default_action"`
+	UnknownAction yaml.Node            `yaml:"unknown_action"`
+	Countries     map[string]string    `yaml:"countries"`
+	UnknownFields map[string]yaml.Node `yaml:",inline"`
+}
+
+// A zero node means omitted; an explicit empty or null action is invalid.
+func countryActionOrDefault(node yaml.Node) (dataType.CountryAction, error) {
+	if node.Kind == 0 {
+		return dataType.CountryContinue, nil
+	}
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return "", fmt.Errorf("country action must be a string")
+	}
+	return parseCountryAction(node.Value)
+}
+
+func parseCountryAction(value string) (dataType.CountryAction, error) {
+	action := dataType.CountryAction(value)
+	switch action {
+	case dataType.CountryContinue, dataType.CountryBlock, dataType.CountryCaptcha:
+		return action, nil
+	default:
+		return "", fmt.Errorf("invalid country action %q: expected continue, block, or captcha", value)
+	}
 }
 
 func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) error {
+	for field := range wrapper.UnknownFields {
+		return fmt.Errorf("CountryRule: unknown field %q", field)
+	}
+	var err error
 	dest.Enabled = wrapper.Enabled
-	dest.CAPTCHANot = wrapper.CAPTCHANot
-	dest.BlockNot = wrapper.BlockNot
-	dest.CAPTCHACountries = make(map[string]struct{}, len(wrapper.CAPTCHACountries))
-	dest.BlockCountries = make(map[string]struct{}, len(wrapper.BlockCountries))
-
-	for _, code := range wrapper.CAPTCHACountries {
+	if dest.DefaultAction, err = countryActionOrDefault(wrapper.DefaultAction); err != nil {
+		return fmt.Errorf("CountryRule default_action: %w", err)
+	}
+	if dest.UnknownAction, err = countryActionOrDefault(wrapper.UnknownAction); err != nil {
+		return fmt.Errorf("CountryRule unknown_action: %w", err)
+	}
+	dest.Countries = make(map[string]dataType.CountryAction, len(wrapper.Countries))
+	for code, value := range wrapper.Countries {
 		normalized, err := normalizeCountryCode(code)
 		if err != nil {
-			return fmt.Errorf("invalid CountryRule CAPTCHA country: %w", err)
+			return fmt.Errorf("CountryRule countries: %w", err)
 		}
-		dest.CAPTCHACountries[normalized] = struct{}{}
-	}
-
-	for _, code := range wrapper.BlockCountries {
-		normalized, err := normalizeCountryCode(code)
+		if _, exists := dest.Countries[normalized]; exists {
+			return fmt.Errorf("CountryRule duplicate normalized country %q", normalized)
+		}
+		action, err := parseCountryAction(value)
 		if err != nil {
-			return fmt.Errorf("invalid CountryRule BLOCK country: %w", err)
+			return fmt.Errorf("CountryRule country %s: %w", normalized, err)
 		}
-		dest.BlockCountries[normalized] = struct{}{}
-	}
-
-	return validateCountryRulePredicates(dest)
-}
-
-func validateCountryRulePredicates(rule *dataType.CountryRule) error {
-	for first := byte('A'); first <= 'Z'; first++ {
-		for second := byte('A'); second <= 'Z'; second++ {
-			country := string([]byte{first, second})
-			if countryRuleMatches(rule.BlockCountries, rule.BlockNot, country) &&
-				countryRuleMatches(rule.CAPTCHACountries, rule.CAPTCHANot, country) {
-				return fmt.Errorf("country code %q matches both CountryRule CAPTCHA and BLOCK", country)
-			}
-		}
+		dest.Countries[normalized] = action
 	}
 	return nil
 }
 
-func countryRuleMatches(countries map[string]struct{}, inverted bool, country string) bool {
-	_, listed := countries[country]
-	return listed != inverted
+func countryRequiresCaptcha(rule *dataType.CountryRule) bool {
+	if rule == nil {
+		return false
+	}
+	if rule.DefaultAction == dataType.CountryCaptcha || rule.UnknownAction == dataType.CountryCaptcha {
+		return true
+	}
+	for _, action := range rule.Countries {
+		if action == dataType.CountryCaptcha {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeCountryCode(code string) (string, error) {

@@ -28,13 +28,9 @@ URLBlock:
   enabled: true
 CountryRule:
   enabled: true
-  CAPTCHA_NOT: false
-  CAPTCHA:
-    - "us"
-    - "US"
-  BLOCK_NOT: true
-  BLOCK:
-    - "us"
+  default_action: block
+  countries:
+    us: captcha
 CAPTCHA:
   enabled: true
   secret_key: "1234567890abcdef"
@@ -129,20 +125,8 @@ sites:
 	if !rules.CountryRule.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
 	}
-	if len(rules.CountryRule.CAPTCHACountries) != 1 {
-		t.Fatalf("CountryRule CAPTCHA countries = %v, want one deduplicated entry", rules.CountryRule.CAPTCHACountries)
-	}
-	if _, ok := rules.CountryRule.CAPTCHACountries["US"]; !ok {
-		t.Fatal("CountryRule CAPTCHA countries do not contain normalized US")
-	}
-	if rules.CountryRule.CAPTCHANot {
-		t.Fatal("CountryRule.CAPTCHANot = true, want false")
-	}
-	if !rules.CountryRule.BlockNot {
-		t.Fatal("CountryRule.BlockNot = false, want true")
-	}
-	if _, ok := rules.CountryRule.BlockCountries["US"]; !ok {
-		t.Fatal("CountryRule BLOCK countries do not contain normalized US")
+	if rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+		t.Fatalf("unexpected country policy: %#v", rules.CountryRule)
 	}
 	if !rules.CAPTCHARule.Enabled {
 		t.Fatal("CAPTCHARule.Enabled = false, want true")

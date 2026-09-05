@@ -80,7 +80,7 @@ func TestCountryDatabaseReloadAndRetainLastReader(t *testing.T) {
 	}
 }
 
-func TestCountryDatabaseFailOpenWithoutReader(t *testing.T) {
+func TestCountryDatabaseUnresolvedWithoutReader(t *testing.T) {
 	db := newCountryDatabase("missing.mmdb", func(string) (countryReader, error) {
 		return nil, errors.New("missing")
 	})
@@ -88,11 +88,11 @@ func TestCountryDatabaseFailOpenWithoutReader(t *testing.T) {
 		t.Fatal("Reload error = nil, want missing database error")
 	}
 	if got, err := db.Country(netip.MustParseAddr("8.8.8.8")); err != nil || got != "" {
-		t.Fatalf("Country = %q, %v; want empty fail-open result", got, err)
+		t.Fatalf("Country = %q, %v; want empty unresolved result", got, err)
 	}
 }
 
-func TestNewCountryDatabaseLogsFailOpenWarning(t *testing.T) {
+func TestNewCountryDatabaseLogsUnknownPolicyWarning(t *testing.T) {
 	var output bytes.Buffer
 	restoreLog := captureLogOutput(&output)
 	defer restoreLog()
@@ -104,8 +104,8 @@ func TestNewCountryDatabaseLogsFailOpenWarning(t *testing.T) {
 	message := output.String()
 	if !strings.Contains(message, "[WARNING]") ||
 		!strings.Contains(message, path) ||
-		!strings.Contains(message, "fail open") {
-		t.Fatalf("warning log = %q, want path and fail-open warning", message)
+		!strings.Contains(message, "unknown_action") {
+		t.Fatalf("warning log = %q, want path and unknown-policy warning", message)
 	}
 }
 

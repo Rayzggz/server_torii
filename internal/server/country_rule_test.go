@@ -31,8 +31,8 @@ func TestCheckMainIPAllowBypassesCountryRule(t *testing.T) {
 	ruleSet := &config.RuleSet{
 		IPAllowRule: &dataType.IPAllowRule{Enabled: true, Trie: trie},
 		CountryRule: &dataType.CountryRule{
-			Enabled:        true,
-			BlockCountries: map[string]struct{}{"US": {}},
+			Enabled:   true,
+			Countries: map[string]dataType.CountryAction{"US": dataType.CountryBlock},
 		},
 	}
 	reqData := dataType.UserRequest{
@@ -88,9 +88,8 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 	ruleSet := featureControlRuleSet()
 	ruleSet.CountryRule = &dataType.CountryRule{
-		Enabled:          true,
-		CAPTCHACountries: map[string]struct{}{"US": {}},
-		BlockCountries:   map[string]struct{}{"CN": {}},
+		Enabled:   true,
+		Countries: map[string]dataType.CountryAction{"US": dataType.CountryCaptcha, "CN": dataType.CountryBlock},
 	}
 	ruleSet.CAPTCHARule = &dataType.CaptchaRule{
 		SecretKey:                      "1234567890abcdef",

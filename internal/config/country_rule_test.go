@@ -1,140 +1,107 @@
 package config
 
 import (
+	"path/filepath"
 	"server_torii/internal/dataType"
+	"strings"
 	"testing"
 )
 
-func TestMapCountryRuleNormalizesAndDeduplicates(t *testing.T) {
-	dest := &dataType.CountryRule{}
-	err := mapCountryRule(&countryRuleWrapper{
-		Enabled:          true,
-		CAPTCHACountries: []string{" us ", "US", "ca"},
-		BlockCountries:   []string{"cn", "CN", "RU"},
-	}, dest)
-	if err != nil {
-		t.Fatalf("mapCountryRule returned unexpected error: %v", err)
-	}
-
-	if !dest.Enabled {
-		t.Fatal("CountryRule.Enabled = false, want true")
-	}
-	if dest.CAPTCHANot || dest.BlockNot {
-		t.Fatal("CountryRule NOT flags = true, want false defaults")
-	}
-	if len(dest.CAPTCHACountries) != 2 {
-		t.Fatalf("CAPTCHACountries length = %d, want 2", len(dest.CAPTCHACountries))
-	}
-	if _, ok := dest.CAPTCHACountries["US"]; !ok {
-		t.Fatal("CAPTCHACountries does not contain normalized US code")
-	}
-	if _, ok := dest.CAPTCHACountries["CA"]; !ok {
-		t.Fatal("CAPTCHACountries does not contain normalized CA code")
-	}
-	if len(dest.BlockCountries) != 2 {
-		t.Fatalf("BlockCountries length = %d, want 2", len(dest.BlockCountries))
-	}
-}
-
-func TestMapCountryRuleMapsNotFlagsForComplementaryActions(t *testing.T) {
+func TestCountryRuleSchema(t *testing.T) {
 	tests := []struct {
-		name       string
-		captchaNot bool
-		blockNot   bool
+		name, input string
+		invalid     bool
 	}{
-		{name: "inverted block", blockNot: true},
-		{name: "inverted CAPTCHA", captchaNot: true},
+		{"defaults", "{}", false},
+		{"normalized", "countries: { ' us ': captcha, GB: continue }", false},
+		{"actions", "default_action: block\nunknown_action: captcha", false},
+		{"duplicate normalized", "countries: { us: block, US: continue }", true},
+		{"duplicate exact", "countries: { US: block, US: continue }", true},
+		{"invalid code", "countries: { USA: block }", true},
+		{"invalid action", "countries: { US: allow }", true},
+		{"uppercase action", "default_action: BLOCK", true},
+		{"empty default", "default_action: ''", true},
+		{"null default", "default_action: null", true},
+		{"empty unknown", "unknown_action: ''", true},
+		{"invalid unknown", "unknown_action: allow", true},
+		{"empty country action", "countries: { US: '' }", true},
+		{"unknown field", "enabled: false\ndefault_acton: block", true},
 	}
-
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dest := &dataType.CountryRule{}
-			err := mapCountryRule(&countryRuleWrapper{
-				Enabled:          true,
-				CAPTCHANot:       tt.captchaNot,
-				BlockNot:         tt.blockNot,
-				CAPTCHACountries: []string{"us"},
-				BlockCountries:   []string{"US"},
-			}, dest)
-			if err != nil {
-				t.Fatalf("mapCountryRule returned unexpected error: %v", err)
-			}
-
-			if dest.CAPTCHANot != tt.captchaNot {
-				t.Fatalf("CountryRule.CAPTCHANot = %t, want %t", dest.CAPTCHANot, tt.captchaNot)
-			}
-			if dest.BlockNot != tt.blockNot {
-				t.Fatalf("CountryRule.BlockNot = %t, want %t", dest.BlockNot, tt.blockNot)
-			}
-		})
-	}
-}
-
-func TestMapCountryRuleRejectsInvalidCode(t *testing.T) {
-	err := mapCountryRule(&countryRuleWrapper{
-		CAPTCHACountries: []string{"USA"},
-	}, &dataType.CountryRule{})
-	if err == nil {
-		t.Fatal("mapCountryRule error = nil, want invalid country-code error")
-	}
-}
-
-func TestMapCountryRuleRejectsOverlappingActions(t *testing.T) {
-	tests := []struct {
-		name    string
-		wrapper countryRuleWrapper
-	}{
-		{
-			name: "normal and normal",
-			wrapper: countryRuleWrapper{
-				CAPTCHACountries: []string{"us"},
-				BlockCountries:   []string{"US"},
-			},
-		},
-		{
-			name: "normal block and inverted CAPTCHA",
-			wrapper: countryRuleWrapper{
-				CAPTCHANot:       true,
-				CAPTCHACountries: []string{"CN"},
-				BlockCountries:   []string{"US"},
-			},
-		},
-		{
-			name: "inverted block and normal CAPTCHA",
-			wrapper: countryRuleWrapper{
-				BlockNot:         true,
-				CAPTCHACountries: []string{"CN"},
-				BlockCountries:   []string{"US"},
-			},
-		},
-		{
-			name: "inverted and inverted",
-			wrapper: countryRuleWrapper{
-				CAPTCHANot:       true,
-				BlockNot:         true,
-				CAPTCHACountries: []string{"US"},
-				BlockCountries:   []string{"CN"},
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := mapCountryRule(&tt.wrapper, &dataType.CountryRule{})
+			wrapper, err := decodeServerRules([]byte("CountryRule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
+			rule := &dataType.CountryRule{}
 			if err == nil {
-				t.Fatal("mapCountryRule error = nil, want overlapping-action error")
+				err = mapCountryRule(wrapper.CountryRule, rule)
+			}
+			if (err != nil) != tt.invalid {
+				t.Fatalf("error = %v, invalid = %t", err, tt.invalid)
+			}
+			if tt.name == "defaults" && (rule.DefaultAction != dataType.CountryContinue || rule.UnknownAction != dataType.CountryContinue || len(rule.Countries) != 0) {
+				t.Fatalf("wrong defaults: %#v", rule)
+			}
+			if tt.name == "normalized" && rule.Countries["US"] != dataType.CountryCaptcha {
+				t.Fatalf("wrong normalization: %#v", rule)
 			}
 		})
 	}
 }
 
-func TestMapCountryRuleAllowsInvertedEmptyAction(t *testing.T) {
-	dest := &dataType.CountryRule{}
-	err := mapCountryRule(&countryRuleWrapper{BlockNot: true}, dest)
-	if err != nil {
-		t.Fatalf("mapCountryRule returned unexpected error: %v", err)
+func TestCountryCaptchaConfiguration(t *testing.T) {
+	for _, policy := range []string{"default_action: captcha", "unknown_action: captcha", "countries: { US: captcha }"} {
+		for _, config := range []struct {
+			name, yaml string
+			invalid    bool
+		}{
+			{"missing", "", true},
+			{"invalid", "CAPTCHA: { enabled: false }", true},
+			{"valid disabled", `CAPTCHA:
+  enabled: false
+  secret_key: "1234567890abcdef"
+  captcha_validate_time: 60
+  captcha_challenge_session_timeout: 120
+  CaptchaFailureLimit: ["3/1m"]
+  failure_block_duration: 60
+`, false},
+		} {
+			t.Run(policy+"/"+config.name, func(t *testing.T) {
+				file := filepath.Join(t.TempDir(), "Server.yml")
+				writeFile(t, file, "CountryRule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
+				rules := &RuleSet{CountryRule: &dataType.CountryRule{}, CAPTCHARule: &dataType.CaptchaRule{}, HTTPFloodRule: &dataType.HTTPFloodRule{}}
+				err := loadServerRules(file, rules)
+				if (err != nil) != config.invalid {
+					t.Fatalf("error = %v, invalid = %t", err, config.invalid)
+				}
+			})
+		}
 	}
-	if !dest.BlockNot {
-		t.Fatal("CountryRule.BlockNot = false, want true")
+}
+
+func TestExampleCountryRulesLoad(t *testing.T) {
+	rules, err := LoadRules(filepath.Join("..", "..", "config_example", "rules", "default"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+		t.Fatalf("unexpected example: %#v", rules.CountryRule)
+	}
+}
+
+func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	writeRuleFiles(t, dir, map[string]string{"IP_AllowList.conf": "", "IP_BlockList.conf": "", "URL_AllowList.conf": "", "URL_BlockList.conf": "", "Server.yml": "CountryRule: { default_action: block }"})
+	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: dir}}}
+	manager := &ConfigManager{}
+	shared := &dataType.SharedMemory{}
+	if err := manager.Reload(cfg, shared); err != nil {
+		t.Fatal(err)
+	}
+	before := manager.Get()
+	writeFile(t, filepath.Join(dir, "Server.yml"), "CountryRule: { default_action: invalid }")
+	if err := manager.Reload(cfg, shared); err == nil {
+		t.Fatal("invalid reload succeeded")
+	}
+	if manager.Get() != before {
+		t.Fatal("invalid reload replaced snapshot")
 	}
 }

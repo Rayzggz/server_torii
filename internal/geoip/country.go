@@ -26,7 +26,7 @@ type CountryDatabase struct {
 }
 
 // NewCountryDatabase creates a database wrapper and attempts its initial load.
-// A load failure is logged and leaves country lookups in fail-open mode.
+// A load failure is logged and leaves country lookups subject to the site unknown policy.
 func NewCountryDatabase(path string) *CountryDatabase {
 	database := newCountryDatabase(path, openMaxMindReader)
 	database.ReloadOrWarn()
@@ -59,7 +59,7 @@ func (d *CountryDatabase) Reload() error {
 }
 
 // ReloadOrWarn reloads the database and logs a warning on failure. A failed
-// reload retains the last valid reader; without one, lookups remain fail-open.
+// reload retains the last valid reader; without one, lookups use the site unknown policy.
 func (d *CountryDatabase) ReloadOrWarn() {
 	if err := d.Reload(); err != nil {
 		d.mu.RLock()
@@ -70,7 +70,7 @@ func (d *CountryDatabase) ReloadOrWarn() {
 			log.Printf("[WARNING] MaxMind country database reload failed; retaining the previous reader: %v", err)
 			return
 		}
-		log.Printf("[WARNING] MaxMind country database unavailable; CountryRule will fail open: %v", err)
+		log.Printf("[WARNING] MaxMind country database unavailable; CountryRule will use each site's unknown_action: %v", err)
 	}
 }
 
