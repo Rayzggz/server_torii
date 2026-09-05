@@ -1,8 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
+	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -21,6 +25,7 @@ type ruleSetWrapper struct {
 	HTTPFloodRule               httpFloodRuleWrapper                  `yaml:"HTTPFlood"`
 	ExternalMigrationRule       *dataType.ExternalMigrationRule       `yaml:"ExternalMigration"`
 	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
+	CountryRule                 *countryRuleWrapper                   `yaml:"CountryRule"`
 }
 
 type httpFloodRuleWrapper struct {
@@ -42,6 +47,90 @@ type captchaRuleWrapper struct {
 	AltchaCost                     int      `yaml:"altcha_cost"`
 	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
 	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
+}
+
+type countryRuleWrapper struct {
+	Enabled       bool                 `yaml:"enabled"`
+	DefaultAction yaml.Node            `yaml:"default_action"`
+	UnknownAction yaml.Node            `yaml:"unknown_action"`
+	Countries     map[string]string    `yaml:"countries"`
+	UnknownFields map[string]yaml.Node `yaml:",inline"`
+}
+
+// A zero node means omitted; an explicit empty or null action is invalid.
+func countryActionOrDefault(node yaml.Node) (dataType.CountryAction, error) {
+	if node.Kind == 0 {
+		return dataType.CountryContinue, nil
+	}
+	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
+		return "", fmt.Errorf("country action must be a string")
+	}
+	return parseCountryAction(node.Value)
+}
+
+func parseCountryAction(value string) (dataType.CountryAction, error) {
+	action := dataType.CountryAction(value)
+	switch action {
+	case dataType.CountryContinue, dataType.CountryBlock, dataType.CountryCaptcha:
+		return action, nil
+	default:
+		return "", fmt.Errorf("invalid country action %q: expected continue, block, or captcha", value)
+	}
+}
+
+func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) error {
+	for field := range wrapper.UnknownFields {
+		return fmt.Errorf("CountryRule: unknown field %q", field)
+	}
+	var err error
+	dest.Enabled = wrapper.Enabled
+	if dest.DefaultAction, err = countryActionOrDefault(wrapper.DefaultAction); err != nil {
+		return fmt.Errorf("CountryRule default_action: %w", err)
+	}
+	if dest.UnknownAction, err = countryActionOrDefault(wrapper.UnknownAction); err != nil {
+		return fmt.Errorf("CountryRule unknown_action: %w", err)
+	}
+	dest.Countries = make(map[string]dataType.CountryAction, len(wrapper.Countries))
+	for code, value := range wrapper.Countries {
+		normalized, err := normalizeCountryCode(code)
+		if err != nil {
+			return fmt.Errorf("CountryRule countries: %w", err)
+		}
+		if _, exists := dest.Countries[normalized]; exists {
+			return fmt.Errorf("CountryRule duplicate normalized country %q", normalized)
+		}
+		action, err := parseCountryAction(value)
+		if err != nil {
+			return fmt.Errorf("CountryRule country %s: %w", normalized, err)
+		}
+		dest.Countries[normalized] = action
+	}
+	return nil
+}
+
+func countryRequiresCaptcha(rule *dataType.CountryRule) bool {
+	if rule == nil {
+		return false
+	}
+	if rule.DefaultAction == dataType.CountryCaptcha || rule.UnknownAction == dataType.CountryCaptcha {
+		return true
+	}
+	for _, action := range rule.Countries {
+		if action == dataType.CountryCaptcha {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeCountryCode(code string) (string, error) {
+	normalized := strings.ToUpper(strings.TrimSpace(code))
+	if len(normalized) != 2 ||
+		normalized[0] < 'A' || normalized[0] > 'Z' ||
+		normalized[1] < 'A' || normalized[1] > 'Z' {
+		return "", fmt.Errorf("%q must contain exactly two ASCII letters", code)
+	}
+	return normalized, nil
 }
 
 func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) error {

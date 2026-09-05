@@ -2,6 +2,7 @@ package dataType
 
 import (
 	"net/http"
+	"net/netip"
 	"sync/atomic"
 )
 
@@ -17,7 +18,8 @@ const (
 	FeatureBitHTTPFlood         = 5 // bit 5
 	FeatureBitCaptcha           = 6 // bit 6
 	FeatureBitExternalMigration = 7 // bit 7
-	// Bits 8-15 reserved for future features
+	FeatureBitCountryRule       = 8 // bit 8
+	// Bits 9-15 reserved for future features
 )
 
 // Feature Control Values
@@ -30,6 +32,7 @@ const (
 	FeatureHTTPFlood         = 1 << FeatureBitHTTPFlood         // 0000000000100000
 	FeatureCaptcha           = 1 << FeatureBitCaptcha           // 0000000001000000
 	FeatureExternalMigration = 1 << FeatureBitExternalMigration // 0000000010000000
+	FeatureCountryRule       = 1 << FeatureBitCountryRule       // 0000000100000000
 )
 
 type UserRequest struct {
@@ -128,6 +131,25 @@ type URLBlockRule struct {
 	List    *URLRuleList
 }
 
+type CountryAction string
+
+const (
+	CountryContinue CountryAction = "continue"
+	CountryBlock    CountryAction = "block"
+	CountryCaptcha  CountryAction = "captcha"
+)
+
+type CountryRule struct {
+	Enabled       bool
+	DefaultAction CountryAction
+	UnknownAction CountryAction
+	Countries     map[string]CountryAction
+}
+
+type CountryResolver interface {
+	Country(netip.Addr) (string, error)
+}
+
 type GossipHandler interface {
 	HandleGossip(w http.ResponseWriter, r *http.Request)
 }
@@ -143,4 +165,5 @@ type SharedMemory struct {
 
 	ActionRuleEngine        interface{}
 	AdaptiveTrafficAnalyzer interface{}
+	CountryResolver         CountryResolver
 }

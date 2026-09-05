@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 var GlobalConfig *MainConfig
 
@@ -8,6 +11,7 @@ var GlobalConfig *MainConfig
 func LoadMainConfig(basePath string) (*MainConfig, error) {
 	configPath := resolveConfigPath(basePath)
 	cfg := DefaultMainConfig()
+	cfg.ConfigDir = filepath.Dir(configPath)
 
 	data, err := readConfigFile(configPath)
 	if err != nil {
@@ -15,7 +19,9 @@ func LoadMainConfig(basePath string) (*MainConfig, error) {
 	}
 
 	if err := decodeConfig(data, cfg); err != nil {
-		return DefaultMainConfig(), fmt.Errorf("failed to parse configuration file at %s: %w", configPath, err)
+		fallback := DefaultMainConfig()
+		fallback.ConfigDir = filepath.Dir(configPath)
+		return fallback, fmt.Errorf("failed to parse configuration file at %s: %w", configPath, err)
 	}
 
 	validateMainConfig(cfg)

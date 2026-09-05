@@ -26,6 +26,11 @@ URLAllow:
   enabled: true
 URLBlock:
   enabled: true
+CountryRule:
+  enabled: true
+  default_action: block
+  countries:
+    us: captcha
 CAPTCHA:
   enabled: true
   secret_key: "1234567890abcdef"
@@ -117,6 +122,12 @@ sites:
 	if !rules.URLBlockRule.List.Match("/admin") {
 		t.Fatal("URL block list did not match configured rule")
 	}
+	if !rules.CountryRule.Enabled {
+		t.Fatal("CountryRule.Enabled = false, want true")
+	}
+	if rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+		t.Fatalf("unexpected country policy: %#v", rules.CountryRule)
+	}
 	if !rules.CAPTCHARule.Enabled {
 		t.Fatal("CAPTCHARule.Enabled = false, want true")
 	}
@@ -204,6 +215,9 @@ HTTPFlood:
 	}
 	if reloadedRules.IPAllowRule.Enabled {
 		t.Fatal("IPAllowRule.Enabled = true after reload, want false")
+	}
+	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
+		t.Fatal("CountryRule should remain present and disabled when omitted")
 	}
 	if got := sharedMem.HTTPFloodSpeedLimitCounter.Load().GetSegSize(); got != 240 {
 		t.Fatalf("HTTPFloodSpeedLimitCounter segSize after reload = %d, want 240", got)
