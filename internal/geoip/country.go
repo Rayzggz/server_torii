@@ -51,10 +51,11 @@ func (d *CountryDatabase) Reload() error {
 	d.mu.Lock()
 	previous := d.reader
 	d.reader = next
+	d.mu.Unlock()
+
 	if previous != nil {
 		_ = previous.Close()
 	}
-	d.mu.Unlock()
 	return nil
 }
 

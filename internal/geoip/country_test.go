@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeReader struct {
@@ -77,6 +78,85 @@ func TestCountryDatabaseReloadAndRetainLastReader(t *testing.T) {
 	}
 	if !second.closed {
 		t.Fatal("active reader was not closed")
+	}
+}
+
+type blockingCloseReader struct {
+	fakeReader
+	closeStarted chan struct{}
+	closeRelease chan struct{}
+}
+
+func (r *blockingCloseReader) Close() error {
+	close(r.closeStarted)
+	<-r.closeRelease
+	return r.fakeReader.Close()
+}
+
+func TestCountryDatabaseLookupDuringReloadCleanup(t *testing.T) {
+	previous := &blockingCloseReader{
+		fakeReader:   fakeReader{country: "us"},
+		closeStarted: make(chan struct{}),
+		closeRelease: make(chan struct{}),
+	}
+	next := &fakeReader{country: "ca"}
+	db := newCountryDatabase("test.mmdb", func(string) (countryReader, error) {
+		return next, nil
+	})
+	db.reader = previous
+	released := false
+	defer func() {
+		if !released {
+			close(previous.closeRelease)
+		}
+	}()
+
+	reloadDone := make(chan error, 1)
+	go func() { reloadDone <- db.Reload() }()
+	select {
+	case <-previous.closeStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Reload did not start closing the previous reader")
+	}
+
+	type lookupResult struct {
+		country string
+		err     error
+	}
+	lookupDone := make(chan lookupResult, 1)
+	go func() {
+		country, err := db.Country(netip.MustParseAddr("8.8.8.8"))
+		lookupDone <- lookupResult{country, err}
+	}()
+	select {
+	case result := <-lookupDone:
+		if result.err != nil || result.country != "CA" {
+			t.Fatalf("Country = %q, %v; want CA, nil", result.country, result.err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Country blocked while the previous reader was closing")
+	}
+	select {
+	case err := <-reloadDone:
+		t.Fatalf("Reload returned before cleanup was released: %v", err)
+	default:
+	}
+
+	close(previous.closeRelease)
+	released = true
+	select {
+	case err := <-reloadDone:
+		if err != nil {
+			t.Fatalf("Reload returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Reload did not complete after cleanup was released")
+	}
+	if !previous.closed {
+		t.Fatal("previous reader was not closed")
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
 	}
 }
 
