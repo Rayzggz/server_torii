@@ -2,6 +2,8 @@ IPAllow:
   enabled: true
 IPBlock:
   enabled: true
+IPCAPTCHA:
+  enabled: false
 URLAllow:
   enabled: true
 URLBlock:

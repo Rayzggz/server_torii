@@ -23,6 +23,7 @@ func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
+		IPCAPTCHARule:               &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}},
 		IPAllowRule:                 &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
 		IPBlockRule:                 &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
 		URLAllowRule:                &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
@@ -80,6 +81,25 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	wrapper, err := decodeServerRules(yamlData)
 	if err != nil {
 		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
+	}
+
+	rs.IPCAPTCHARule = &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}}
+	if wrapper.IPCAPTCHARule != nil {
+		rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
+	}
+	ipCaptchaFile := filepath.Join(filepath.Dir(YAMLFile), "IP_CAPTCHAList.conf")
+	if err := loadIPRules(ipCaptchaFile, rs.IPCAPTCHARule.Trie); err != nil {
+		if !os.IsNotExist(err) || rs.IPCAPTCHARule.Enabled {
+			return fmt.Errorf("IPCAPTCHA list: %w", err)
+		}
+	}
+	if rs.IPCAPTCHARule.Enabled || !rs.IPCAPTCHARule.Trie.IsEmpty() {
+		if wrapper.CAPTCHARule == nil {
+			return fmt.Errorf("IPCAPTCHA requires CAPTCHA configuration")
+		}
+		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
+			return fmt.Errorf("IPCAPTCHA requires valid CAPTCHA configuration: %w", err)
+		}
 	}
 
 	if wrapper.IPAllowRule != nil {

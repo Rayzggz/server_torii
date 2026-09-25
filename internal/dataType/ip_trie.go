@@ -7,6 +7,11 @@ type TrieNode struct {
 	isEnd    bool
 }
 
+// IsEmpty reports whether the trie contains any supported IP rules.
+func (node *TrieNode) IsEmpty() bool {
+	return node == nil || (!node.isEnd && node.children[0] == nil && node.children[1] == nil)
+}
+
 // Insert IP or CIDR rule into trie, prefixLength represents the prefix length
 func (node *TrieNode) Insert(ipNet *net.IPNet) {
 	ones, _ := ipNet.Mask.Size()

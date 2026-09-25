@@ -19,6 +19,7 @@ const (
 	FeatureBitCaptcha           = 6 // bit 6
 	FeatureBitExternalMigration = 7 // bit 7
 	FeatureBitCountryRule       = 8 // bit 8
+	FeatureBitIPCAPTCHA         = 9 // bit 9
 	// Bits 9-15 reserved for future features
 )
 
@@ -33,6 +34,7 @@ const (
 	FeatureCaptcha           = 1 << FeatureBitCaptcha           // 0000000001000000
 	FeatureExternalMigration = 1 << FeatureBitExternalMigration // 0000000010000000
 	FeatureCountryRule       = 1 << FeatureBitCountryRule       // 0000000100000000
+	FeatureIPCAPTCHA         = 1 << FeatureBitIPCAPTCHA         // 0000001000000000
 )
 
 type UserRequest struct {
@@ -114,6 +116,11 @@ type ExternalMigrationRule struct {
 type IPAllowRule struct {
 	Enabled bool `yaml:"enabled"`
 	Trie    *TrieNode
+}
+
+type IPCAPTCHARule struct {
+	Enabled bool      `yaml:"enabled"`
+	Trie    *TrieNode `yaml:"-"`
 }
 
 type IPBlockRule struct {

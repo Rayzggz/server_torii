@@ -83,19 +83,20 @@ func getHeader(r *http.Request, headerName string) string {
 
 // processFeatureControl processes the feature control header and combines it with config rules
 // Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
-// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule
+// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule, 9=IPCAPTCHA
 func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
 	// Define feature list in order (position 0 to N)
 	configStates := []bool{
-		ruleSet.IPAllowRule.Enabled,           // position 0
-		ruleSet.IPBlockRule.Enabled,           // position 1
-		ruleSet.URLAllowRule.Enabled,          // position 2
-		ruleSet.URLBlockRule.Enabled,          // position 3
-		ruleSet.VerifyBotRule.Enabled,         // position 4
-		ruleSet.HTTPFloodRule.Enabled,         // position 5
-		ruleSet.CAPTCHARule.Enabled,           // position 6
-		ruleSet.ExternalMigrationRule.Enabled, // position 7
-		ruleSet.CountryRule.Enabled,           // position 8
+		ruleSet.IPAllowRule.Enabled,                                   // position 0
+		ruleSet.IPBlockRule.Enabled,                                   // position 1
+		ruleSet.URLAllowRule.Enabled,                                  // position 2
+		ruleSet.URLBlockRule.Enabled,                                  // position 3
+		ruleSet.VerifyBotRule.Enabled,                                 // position 4
+		ruleSet.HTTPFloodRule.Enabled,                                 // position 5
+		ruleSet.CAPTCHARule.Enabled,                                   // position 6
+		ruleSet.ExternalMigrationRule.Enabled,                         // position 7
+		ruleSet.CountryRule.Enabled,                                   // position 8
+		ruleSet.IPCAPTCHARule != nil && ruleSet.IPCAPTCHARule.Enabled, // position 9
 		// Future features can be added here
 	}
 
