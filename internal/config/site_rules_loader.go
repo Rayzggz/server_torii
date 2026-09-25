@@ -23,11 +23,12 @@ func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPCAPTCHARule:               &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}},
 		IPAllowRule:                 &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
 		IPBlockRule:                 &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
+		IPCAPTCHARule:               &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}},
 		URLAllowRule:                &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
 		URLBlockRule:                &dataType.URLBlockRule{List: &dataType.URLRuleList{}},
+		URLCAPTCHARule:              &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}},
 		CAPTCHARule:                 &dataType.CaptchaRule{},
 		VerifyBotRule:               &dataType.VerifyBotRule{},
 		HTTPFloodRule:               &dataType.HTTPFloodRule{},
@@ -60,9 +61,19 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
+	// Load optional entries before validating the CAPTCHA configuration dependency.
+	urlCaptchaFile := filepath.Join(rulePath, "URL_CAPTCHAList.conf")
+	urlCaptchaErr := loadURLRules(urlCaptchaFile, rs.URLCAPTCHARule.List)
+	if urlCaptchaErr != nil && !os.IsNotExist(urlCaptchaErr) {
+		return nil, fmt.Errorf("URLCAPTCHA list: %w", urlCaptchaErr)
+	}
+
 	YAMLFile := filepath.Join(rulePath, "Server.yml")
 	if err := loadServerRules(YAMLFile, &rs); err != nil {
 		return nil, err
+	}
+	if urlCaptchaErr != nil && rs.URLCAPTCHARule.Enabled {
+		return nil, fmt.Errorf("URLCAPTCHA list: %w", urlCaptchaErr)
 	}
 
 	return &rs, nil
@@ -113,6 +124,20 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	if wrapper.URLAllowRule != nil {
 		validateConfiguration(wrapper.URLAllowRule, "URLAllowRule")
 		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
+	}
+	if rs.URLCAPTCHARule == nil {
+		rs.URLCAPTCHARule = &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}}
+	}
+	if wrapper.URLCAPTCHARule != nil {
+		rs.URLCAPTCHARule.Enabled = wrapper.URLCAPTCHARule.Enabled
+	}
+	if rs.URLCAPTCHARule.Enabled || (rs.URLCAPTCHARule.List != nil && rs.URLCAPTCHARule.List.Head != nil) {
+		if wrapper.CAPTCHARule == nil {
+			return fmt.Errorf("URLCAPTCHA requires CAPTCHA configuration")
+		}
+		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
+			return fmt.Errorf("URLCAPTCHA requires valid CAPTCHA configuration: %w", err)
+		}
 	}
 	if wrapper.URLBlockRule != nil {
 		validateConfiguration(wrapper.URLBlockRule, "URLBlockRule")

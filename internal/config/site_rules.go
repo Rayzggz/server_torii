@@ -12,6 +12,7 @@ type RuleSet struct {
 	URLAllowRule                *dataType.URLAllowRule
 	URLBlockRule                *dataType.URLBlockRule
 	IPCAPTCHARule               *dataType.IPCAPTCHARule
+	URLCAPTCHARule              *dataType.URLCAPTCHARule
 	CAPTCHARule                 *dataType.CaptchaRule
 	VerifyBotRule               *dataType.VerifyBotRule
 	HTTPFloodRule               *dataType.HTTPFloodRule

@@ -8,6 +8,8 @@ URLAllow:
   enabled: true
 URLBlock:
   enabled: true
+URLCAPTCHA:
+  enabled: false
 CountryRule:
   enabled: false
   default_action: block

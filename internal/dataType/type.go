@@ -10,17 +10,18 @@ const ServerToriiVersion string = "2.0.0-beta"
 
 // Feature Control Bit Positions (0-based from right)
 const (
-	FeatureBitIPAllow           = 0 // bit 0
-	FeatureBitIPBlock           = 1 // bit 1
-	FeatureBitURLAllow          = 2 // bit 2
-	FeatureBitURLBlock          = 3 // bit 3
-	FeatureBitVerifyBot         = 4 // bit 4
-	FeatureBitHTTPFlood         = 5 // bit 5
-	FeatureBitCaptcha           = 6 // bit 6
-	FeatureBitExternalMigration = 7 // bit 7
-	FeatureBitCountryRule       = 8 // bit 8
-	FeatureBitIPCAPTCHA         = 9 // bit 9
-	// Bits 9-15 reserved for future features
+	FeatureBitIPAllow           = 0  // bit 0
+	FeatureBitIPBlock           = 1  // bit 1
+	FeatureBitURLAllow          = 2  // bit 2
+	FeatureBitURLBlock          = 3  // bit 3
+	FeatureBitVerifyBot         = 4  // bit 4
+	FeatureBitHTTPFlood         = 5  // bit 5
+	FeatureBitCaptcha           = 6  // bit 6
+	FeatureBitExternalMigration = 7  // bit 7
+	FeatureBitCountryRule       = 8  // bit 8
+	FeatureBitIPCAPTCHA         = 9  // bit 9
+	FeatureBitURLCAPTCHA        = 10 // bit 10
+	// Bits 11-15 reserved for future features
 )
 
 // Feature Control Values
@@ -35,6 +36,7 @@ const (
 	FeatureExternalMigration = 1 << FeatureBitExternalMigration // 0000000010000000
 	FeatureCountryRule       = 1 << FeatureBitCountryRule       // 0000000100000000
 	FeatureIPCAPTCHA         = 1 << FeatureBitIPCAPTCHA         // 0000001000000000
+	FeatureURLCAPTCHA        = 1 << FeatureBitURLCAPTCHA
 )
 
 type UserRequest struct {
@@ -131,6 +133,11 @@ type IPBlockRule struct {
 type URLAllowRule struct {
 	Enabled bool `yaml:"enabled"`
 	List    *URLRuleList
+}
+
+type URLCAPTCHARule struct {
+	Enabled bool         `yaml:"enabled"`
+	List    *URLRuleList `yaml:"-"`
 }
 
 type URLBlockRule struct {

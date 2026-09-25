@@ -21,6 +21,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 	checkFuncs = append(checkFuncs, check.URLAllowList)
 	checkFuncs = append(checkFuncs, check.URLBlockList)
 	checkFuncs = append(checkFuncs, check.IPCAPTCHA)
+	checkFuncs = append(checkFuncs, check.URLCAPTCHA)
 	checkFuncs = append(checkFuncs, check.CountryRule)
 	checkFuncs = append(checkFuncs, check.VerifyBot)
 	checkFuncs = append(checkFuncs, check.ActionRule)

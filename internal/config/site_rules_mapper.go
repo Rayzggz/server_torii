@@ -21,6 +21,7 @@ type ruleSetWrapper struct {
 	URLAllowRule                *dataType.URLAllowRule                `yaml:"URLAllow"`
 	URLBlockRule                *dataType.URLBlockRule                `yaml:"URLBlock"`
 	IPCAPTCHARule               *dataType.IPCAPTCHARule               `yaml:"IPCAPTCHA"`
+	URLCAPTCHARule              *dataType.URLCAPTCHARule              `yaml:"URLCAPTCHA"`
 	CAPTCHARule                 *captchaRuleWrapper                   `yaml:"CAPTCHA"`
 	VerifyBotRule               *dataType.VerifyBotRule               `yaml:"VerifyBot"`
 	HTTPFloodRule               httpFloodRuleWrapper                  `yaml:"HTTPFlood"`
