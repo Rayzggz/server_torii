@@ -49,6 +49,13 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
+	// Load IP CAPTCHA List (optional when disabled).
+	ipCaptchaFile := filepath.Join(rulePath, "IP_CAPTCHAList.conf")
+	ipCaptchaErr := loadIPRules(ipCaptchaFile, rs.IPCAPTCHARule.Trie)
+	if ipCaptchaErr != nil && !os.IsNotExist(ipCaptchaErr) {
+		return nil, fmt.Errorf("IPCAPTCHA list: %w", ipCaptchaErr)
+	}
+
 	// Load URL Allow List
 	urlAllowFile := filepath.Join(rulePath, "URL_AllowList.conf")
 	if err := loadURLRules(urlAllowFile, rs.URLAllowRule.List); err != nil {
@@ -61,7 +68,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, err
 	}
 
-	// Load optional entries before validating the CAPTCHA configuration dependency.
+	// Load URL CAPTCHA List (optional when disabled).
 	urlCaptchaFile := filepath.Join(rulePath, "URL_CAPTCHAList.conf")
 	urlCaptchaErr := loadURLRules(urlCaptchaFile, rs.URLCAPTCHARule.List)
 	if urlCaptchaErr != nil && !os.IsNotExist(urlCaptchaErr) {
@@ -71,6 +78,9 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	YAMLFile := filepath.Join(rulePath, "Server.yml")
 	if err := loadServerRules(YAMLFile, &rs); err != nil {
 		return nil, err
+	}
+	if ipCaptchaErr != nil && rs.IPCAPTCHARule.Enabled {
+		return nil, fmt.Errorf("IPCAPTCHA list: %w", ipCaptchaErr)
 	}
 	if urlCaptchaErr != nil && rs.URLCAPTCHARule.Enabled {
 		return nil, fmt.Errorf("URLCAPTCHA list: %w", urlCaptchaErr)
@@ -94,23 +104,11 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
-	rs.IPCAPTCHARule = &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}}
-	if wrapper.IPCAPTCHARule != nil {
-		rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
+	if rs.IPCAPTCHARule == nil {
+		rs.IPCAPTCHARule = &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}}
 	}
-	ipCaptchaFile := filepath.Join(filepath.Dir(YAMLFile), "IP_CAPTCHAList.conf")
-	if err := loadIPRules(ipCaptchaFile, rs.IPCAPTCHARule.Trie); err != nil {
-		if !os.IsNotExist(err) || rs.IPCAPTCHARule.Enabled {
-			return fmt.Errorf("IPCAPTCHA list: %w", err)
-		}
-	}
-	if rs.IPCAPTCHARule.Enabled || !rs.IPCAPTCHARule.Trie.IsEmpty() {
-		if wrapper.CAPTCHARule == nil {
-			return fmt.Errorf("IPCAPTCHA requires CAPTCHA configuration")
-		}
-		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
-			return fmt.Errorf("IPCAPTCHA requires valid CAPTCHA configuration: %w", err)
-		}
+	if rs.URLCAPTCHARule == nil {
+		rs.URLCAPTCHARule = &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}}
 	}
 
 	if wrapper.IPAllowRule != nil {
@@ -121,27 +119,22 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		validateConfiguration(wrapper.IPBlockRule, "IPBlockRule")
 		rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
 	}
+	if wrapper.IPCAPTCHARule != nil {
+		rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
+	}
 	if wrapper.URLAllowRule != nil {
 		validateConfiguration(wrapper.URLAllowRule, "URLAllowRule")
 		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
 	}
-	if rs.URLCAPTCHARule == nil {
-		rs.URLCAPTCHARule = &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}}
-	}
 	if wrapper.URLCAPTCHARule != nil {
 		rs.URLCAPTCHARule.Enabled = wrapper.URLCAPTCHARule.Enabled
-	}
-	if rs.URLCAPTCHARule.Enabled || (rs.URLCAPTCHARule.List != nil && rs.URLCAPTCHARule.List.Head != nil) {
-		if wrapper.CAPTCHARule == nil {
-			return fmt.Errorf("URLCAPTCHA requires CAPTCHA configuration")
-		}
-		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
-			return fmt.Errorf("URLCAPTCHA requires valid CAPTCHA configuration: %w", err)
-		}
 	}
 	if wrapper.URLBlockRule != nil {
 		validateConfiguration(wrapper.URLBlockRule, "URLBlockRule")
 		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
+	}
+	if err := validateListCaptchaDependencies(wrapper.CAPTCHARule, rs); err != nil {
+		return err
 	}
 	if wrapper.CAPTCHARule != nil {
 		if err := mapCaptchaRule(wrapper.CAPTCHARule, rs.CAPTCHARule); err != nil {
@@ -176,6 +169,28 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 
 	if err := mapHTTPFloodRule(&wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {
 		return err
+	}
+	return nil
+}
+
+// validateListCaptchaDependencies keeps dependency checks separate from rule mapping.
+func validateListCaptchaDependencies(captcha *captchaRuleWrapper, rs *RuleSet) error {
+	for _, dependency := range []struct {
+		name     string
+		required bool
+	}{
+		{"IPCAPTCHA", rs.IPCAPTCHARule.Enabled || !rs.IPCAPTCHARule.Trie.IsEmpty()},
+		{"URLCAPTCHA", rs.URLCAPTCHARule.Enabled || (rs.URLCAPTCHARule.List != nil && rs.URLCAPTCHARule.List.Head != nil)},
+	} {
+		if !dependency.required {
+			continue
+		}
+		if captcha == nil {
+			return fmt.Errorf("%s requires CAPTCHA configuration", dependency.name)
+		}
+		if err := validate.Struct(captcha); err != nil {
+			return fmt.Errorf("%s requires valid CAPTCHA configuration: %w", dependency.name, err)
+		}
 	}
 	return nil
 }
