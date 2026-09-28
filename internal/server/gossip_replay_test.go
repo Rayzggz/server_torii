@@ -22,7 +22,7 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 		GlobalSecret: "secret123",
 		NodeName:     "TestNode",
 		Peers: []config.Peer{
-			{Name: "KnownPeer", Address: "http://known.com"},
+			{Name: "KnownPeer", Address: "http://127.0.0.1:1"},
 		},
 	}
 
@@ -79,9 +79,13 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			localCfg := *cfg
+			if tt.shouldSee {
+				localCfg.Peers = []config.Peer{{Name: "KnownPeer", Address: newGossipTestPeer(t, 1)}}
+			}
 			engine := action.NewActionRuleEngine(time.Minute)
 			t.Cleanup(engine.Stop)
-			gm := NewGossipManager(cfg, engine)
+			gm := NewGossipManager(&localCfg, engine)
 			// Override start time/random dependencies if needed, but here simple logic suffices.
 
 			id := uuid.New().String()

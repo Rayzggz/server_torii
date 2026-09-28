@@ -1,51 +1,129 @@
-#!/bin/bash
-# Integration test for Gossip Protocol
-# Location: scripts/test/gossip/integration/test.sh
+#!/usr/bin/env bash
+# Run on Linux/WSL with Go, curl, OpenSSL and uuidgen installed.
+set -euo pipefail
 
-set -e
-
-# ================= Configuration =================
 BASE_PORT=25000
 NUM_NODES=5
 WORK_DIR="$(cd "$(dirname "$0")" && pwd)"
-TEMP_DIR="$WORK_DIR/test_data"
-BIN_PATH="$WORK_DIR/server_torii_test"
-SECRET="test_secret_key_0123456789012345678901234567890" # 32+ chars
+PROJECT_ROOT="$(cd "$WORK_DIR/../../../.." && pwd)"
+SECRET="test_secret_key_0123456789012345678901234567890"
 WEB_PATH="/torii"
+NODE_PIDS=()
 
-# ANSI Colors
-GREEN='\033[0;32m'
-RED='\033[0;31m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
+log() { printf '[%s] %s\n' "$(date +'%H:%M:%S')" "$*"; }
+pass() { log "PASS: $*"; }
+fail() { log "FAIL: $*" >&2; exit 1; }
 
-# ================= Helpers =================
-log() { echo -e "${CYAN}[$(date +'%H:%M:%S')]${NC} $1"; }
-pass() { echo -e "${GREEN}✓ PASS: $1${NC}"; }
-fail() { echo -e "${RED}✗ FAIL: $1${NC}"; exit 1; }
-warn() { echo -e "${YELLOW}! WARN: $1${NC}"; }
+for tool in go curl openssl uuidgen awk sed grep tail mktemp; do
+    command -v "$tool" >/dev/null || fail "Missing dependency: $tool"
+done
+TEMP_DIR="$(mktemp -d "$WORK_DIR/test_data.XXXXXX")"
+BIN_PATH="$TEMP_DIR/server_torii_test"
 
 cleanup() {
-    log "Shutting down nodes..."
-    pkill -f "$BIN_PATH" || true
-    rm -rf "$TEMP_DIR"
-    rm -f "$BIN_PATH"
-    log "Cleanup complete."
+    local status=$? pid file
+    trap - EXIT
+    for pid in "${NODE_PIDS[@]}"; do kill "$pid" 2>/dev/null || true; done
+    for pid in "${NODE_PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
+    if (( status != 0 )); then
+        for file in "$TEMP_DIR"/node*/log/{startup,server_torii}.log; do
+            if [[ -f "$file" ]]; then
+                log "Last lines of $file"
+                tail -n 30 "$file" || true
+            fi
+        done
+        log "Failure diagnostics retained at $TEMP_DIR"
+    else
+        # TEMP_DIR is the unique directory created by mktemp above.
+        rm -rf -- "$TEMP_DIR"
+    fi
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Transport errors must never count as an allowed request.
+request() {
+    HTTP_CODE=""
+    HTTP_BODY=""
+    HTTP_ACTION=""
+    if ! HTTP_CODE=$(curl --silent --show-error --noproxy '*' \
+        --connect-timeout 1 --max-time 2 \
+        -D "$TEMP_DIR/response.headers" -o "$TEMP_DIR/response.body" \
+        -w '%{http_code}' "$@"); then
+        return 1
+    fi
+    HTTP_BODY=$(cat "$TEMP_DIR/response.body")
+    HTTP_ACTION=$(awk 'tolower($1) == "torii-action:" {gsub(/\r/, "", $2); print $2}' "$TEMP_DIR/response.headers")
 }
 
-trap cleanup EXIT
+checker() {
+    local node=$1 ip=$2 features=${3:-0000000000000000}
+    request -A 'Mozilla/5.0' -H "Torii-Real-IP: $ip" \
+        -H "Torii-Feature-Control: $features" \
+        "http://127.0.0.1:$((BASE_PORT + node))$WEB_PATH/checker"
+}
 
-# ================= Setup =================
+read_state() {
+    local node=$1 ip=$2
+    checker "$node" "$ip" || fail "Node $node request failed for $ip"
+    if [[ "$HTTP_CODE" == 200 && "$HTTP_BODY" == 'Server Torii Access Passed' ]]; then
+        STATE=allowed
+    elif [[ "$HTTP_CODE" == 445 && "$HTTP_ACTION" == 403 && "$HTTP_BODY" == 'Server Torii Auth Required' ]]; then
+        STATE=blocked
+    else
+        fail "Node $node unexpected response: HTTP $HTTP_CODE action=$HTTP_ACTION body=$HTTP_BODY"
+    fi
+}
 
-log "Compiling server..."
-# Switch to project root
-PROJECT_ROOT="$WORK_DIR/../../../../"
+assert_state() {
+    read_state "$1" "$2"
+    [[ "$STATE" == "$3" ]] || fail "Node $1: $2 is $STATE, expected $3"
+}
+
+wait_nodes_state() {
+    local ip=$1 expected=$2 timeout=$3 deadline node pending
+    shift 3
+    deadline=$((SECONDS + timeout))
+    while true; do
+        pending=0
+        for node in "$@"; do
+            read_state "$node" "$ip"
+            [[ "$STATE" == "$expected" ]] || pending=$((pending + 1))
+        done
+        if (( pending == 0 )); then
+            pass "Nodes $* report $ip as $expected"
+            return
+        fi
+        (( SECONDS < deadline )) || fail "$pending nodes did not report $ip as $expected within ${timeout}s"
+        sleep 0.2
+    done
+}
+
+# Inputs are test-controlled IPs, UUIDs and node names.
+make_payload() {
+    local ip=$1 expiration=$2 id=$3 origin=$4 timestamp=$5 content
+    printf -v content '{"rule_type":"IP","value":"%s","action":"BLOCK","expires_at":%s}' "$ip" "$expiration"
+    content=$(printf '%s' "$content" | sed 's/"/\\"/g')
+    printf -v PAYLOAD '{"id":"%s","type":"ACTION_RULE","content":"%s","origin_node":"%s","timestamp":%s,"seq":1}' \
+        "$id" "$content" "$origin" "$timestamp"
+    SIG=$(printf '%s' "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
+}
+
+post_gossip() {
+    request -X POST "http://127.0.0.1:$((BASE_PORT + 1))$WEB_PATH/gossip" \
+        -H 'Content-Type: application/json' -H "X-Torii-Signature: $SIG" \
+        --data-binary "$PAYLOAD" || fail 'Gossip request failed'
+}
+
+assert_ack() {
+    [[ "$HTTP_CODE" == 200 && "$HTTP_BODY" == ACK ]] || fail "Expected gossip ACK, got HTTP $HTTP_CODE: $HTTP_BODY"
+}
+
+log 'Compiling server...'
 cd "$PROJECT_ROOT"
-go build -o "$BIN_PATH" main.go || fail "Compilation failed"
-
-log "Preparing configuration for $NUM_NODES nodes..."
-mkdir -p "$TEMP_DIR"
+go build -o "$BIN_PATH" .
 
 for i in $(seq 1 $NUM_NODES); do
     NODE_LOG_DIR="$TEMP_DIR/node$i/log"
@@ -101,9 +179,10 @@ EOF
 port: "$PORT"
 web_path: "$WEB_PATH"
 error_page: "$NODE_CONF_DIR/error_page"
-log_path: "$NODE_LOG_DIR/"
+log_path: "$NODE_LOG_DIR"
 global_secret: "$SECRET"
 node_name: "Node_$i"
+enable_gossip: true
 connecting_host_headers: ["Torii-Real-Host"]
 connecting_ip_headers: ["Torii-Real-IP"]
 connecting_uri_headers: ["Torii-Original-URI"]
@@ -125,283 +204,100 @@ EOF
     done
 done
 
-# ================= Start Nodes =================
 log "Starting $NUM_NODES nodes..."
-for i in $(seq 1 $NUM_NODES); do
-    CONF="$TEMP_DIR/node$i/config/torii.yml"
-    # Run in background
-    nohup "$BIN_PATH" -config "$CONF" > "$TEMP_DIR/node$i/log/server_torii.log" 2>&1 &
+for ((i=1; i<=NUM_NODES; i++)); do
+    "$BIN_PATH" -config "$TEMP_DIR/node$i/config/torii.yml" > "$TEMP_DIR/node$i/log/startup.log" 2>&1 &
+    NODE_PIDS+=("$!")
 done
 
-log "Waiting 5 seconds for nodes to initialize..."
-sleep 5
-
-# ================= Tests =================
-
-# Function to check if an IP is blocked on a specific node
-# Returns 0 if blocked, 1 if allowed
-check_is_blocked() {
-    local node_idx=$1
-    local test_ip=$2
-    local port=$((BASE_PORT + node_idx))
-    local url="http://127.0.0.1:$port$WEB_PATH/checker"
-    
-    # We check HTTP status code. 
-    # CheckMain returns 200 for Pass, 445 for Block/Captcha/Etc.
-    # Set User-Agent to standard browser to avoid VerifyBot issues
-    code=$(curl -s --max-time 2 -o /dev/null -w "%{http_code}" -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -H "Torii-Real-IP: $test_ip" "$url")
-    
-    if [ "$code" == "445" ]; then
-        return 0
-    fi
-    # Log if unexpected
-    if [ "$code" != "200" ]; then
-         warn "Node $node_idx returned $code for IP $test_ip"
-         return 1
-    fi
-    return 1
-}
-
-# 1. Basic Propagation
-log "=== Test 1: Basic Propagation ==="
-ATTACKER_IP="203.0.113.1"
-TARGET_URL="http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/checker"
-
-# Verify initially allowed
-if check_is_blocked 1 "$ATTACKER_IP"; then 
-    fail "Node 1 should allow initially (Got 445 Blocked)"
-fi
-if check_is_blocked 5 "$ATTACKER_IP"; then 
-    fail "Node 5 should allow initially"
-fi
-
-log "Triggering block on Node 1 (Flood)..."
-# Send enough requests to trigger 5/10s limit
-pids=""
-for k in {1..15}; do
-    curl -s --max-time 2 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -H "Torii-Real-IP: $ATTACKER_IP" "$TARGET_URL" > /dev/null &
-    pids="$pids $!"
-done
-wait $pids
-
-log "Waiting for block detection and gossip propagation (5s)..."
-sleep 5
-
-if check_is_blocked 1 "$ATTACKER_IP"; then
-    pass "Node 1 blocked the IP locally"
-else
-    log "Node 1 didn't block yet, sending more..."
-    pids=""
-    for k in {1..15}; do
-        curl -s --max-time 2 -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" -H "Torii-Real-IP: $ATTACKER_IP" "$TARGET_URL" > /dev/null &
-        pids="$pids $!"
+deadline=$((SECONDS + 20))
+for ((i=1; i<=NUM_NODES; i++)); do
+    while true; do
+        kill -0 "${NODE_PIDS[i-1]}" 2>/dev/null || fail "Node $i exited during startup"
+        if checker "$i" '203.0.113.254' 2>/dev/null; then
+            [[ "$HTTP_CODE" == 200 && "$HTTP_BODY" == 'Server Torii Access Passed' ]] || fail "Node $i readiness returned HTTP $HTTP_CODE: $HTTP_BODY"
+            break
+        fi
+        (( SECONDS < deadline )) || fail 'Nodes did not become ready within 20s'
+        sleep 0.2
     done
-    wait $pids
-    sleep 3
-    if check_is_blocked 1 "$ATTACKER_IP"; then
-         pass "Node 1 blocked the IP locally (Retry)"
-    else
-         fail "Node 1 failed to block IP after flood"
-    fi
-fi
+    [[ -s "$TEMP_DIR/node$i/log/server_torii.log" ]] || fail "Node $i main log is missing from its log directory"
+done
+pass 'Nodes ready; main logs exist at the configured paths'
 
-# Check propagation
-propagated=0
-for i in 2 3 4 5; do
-    if check_is_blocked $i "$ATTACKER_IP"; then
-        pass "Node $i received block via Gossip"
-        propagated=$((propagated+1))
-    else
-        warn "Node $i did not receive block yet"
+log 'Test 1: Basic propagation'
+ATTACKER_IP='203.0.113.1'
+for ((i=1; i<=NUM_NODES; i++)); do assert_state "$i" "$ATTACKER_IP" allowed; done
+# Only bit 5 (HTTPFlood) is enabled for triggering. Checks use zero bits.
+for ((k=0; k<20; k++)); do
+    checker 1 "$ATTACKER_IP" '0000010000000000' || fail 'Flood trigger request failed'
+    if [[ "$HTTP_CODE" == 445 && "$HTTP_ACTION" == 403 && "$HTTP_BODY" == 'Server Torii Auth Required' ]]; then break; fi
+    if [[ "$HTTP_CODE" == 200 && "$HTTP_BODY" == 'Server Torii Access Passed' ]]; then continue; fi
+    [[ "$HTTP_CODE" == 445 && "$HTTP_ACTION" == 429 && "$HTTP_BODY" == 'Server Torii Auth Required' ]] || fail "Unexpected flood response: HTTP $HTTP_CODE action=$HTTP_ACTION body=$HTTP_BODY"
+done
+assert_state 1 "$ATTACKER_IP" blocked
+wait_nodes_state "$ATTACKER_IP" blocked 15 1 2 3 4 5
+
+log 'Test 2: TTL expiration'
+TTL_IP='203.0.113.2'
+EXPIRATION=$(( $(date +%s) + 15 ))
+make_payload "$TTL_IP" "$EXPIRATION" "$(uuidgen -r)" Node_2 "$(date +%s)"
+post_gossip
+assert_ack
+# Node_2 is the claimed origin, not a real producer of this injected rule.
+# Its peers exclude itself, so it correctly rejects messages returning to it.
+wait_nodes_state "$TTL_IP" blocked 10 1 3 4 5
+remaining=$((EXPIRATION + 1 - $(date +%s)))
+if (( remaining > 0 )); then sleep "$remaining"; fi
+wait_nodes_state "$TTL_IP" allowed 3 1 3 4 5
+
+log 'Test 3: Idempotency'
+IDEM_IP='203.0.113.3'
+make_payload "$IDEM_IP" "$(( $(date +%s) + 120 ))" "$(uuidgen -r)" Node_2 "$(date +%s)"
+for ((k=0; k<5; k++)); do post_gossip; assert_ack; done
+wait_nodes_state "$IDEM_IP" blocked 15 1 3 4 5
+count=$(grep -Fc "[GOSSIP] Received ActionRule for IP:$IDEM_IP from " "$TEMP_DIR/node1/log/server_torii.log" || true)
+[[ "$count" == 1 ]] || fail "Duplicate message processed $count times, expected exactly once"
+pass 'Duplicate message applied exactly once'
+
+log 'Tests 4-6: Invalid signature, unknown node and empty ID'
+for case_name in signature unknown_node empty_id; do
+    id=$(uuidgen -r)
+    origin=Node_2
+    expected_body=Forbidden
+    case "$case_name" in
+        signature) ip='203.0.113.4' ;;
+        unknown_node) ip='203.0.113.5'; origin=UnknownAttacker; expected_body='Forbidden: Unknown OriginNode' ;;
+        empty_id) ip='203.0.113.6'; id=''; expected_body='Forbidden: Empty Message ID' ;;
+    esac
+    make_payload "$ip" "$(( $(date +%s) + 120 ))" "$id" "$origin" "$(date +%s)"
+    if [[ "$case_name" == signature ]]; then
+        # Change one hex character while preserving valid SHA-512 length.
+        if [[ "${SIG:0:1}" == 0 ]]; then SIG="1${SIG:1}"; else SIG="0${SIG:1}"; fi
     fi
+    post_gossip
+    [[ "$HTTP_CODE" == 403 && "$HTTP_BODY" == "$expected_body" ]] || fail "$case_name: expected 403 $expected_body, got $HTTP_CODE $HTTP_BODY"
+    for ((i=1; i<=NUM_NODES; i++)); do assert_state "$i" "$ip" allowed; done
+    pass "$case_name rejected without applying block"
 done
 
-if [ "$propagated" -eq 4 ]; then
-    pass "All nodes synchronized."
-else
-    warn "Only $propagated/4 nodes synced."
-fi
+log 'Test 7: Reject private IP'
+make_payload '192.168.1.100' "$(( $(date +%s) + 120 ))" "$(uuidgen -r)" Node_2 "$(date +%s)"
+post_gossip
+assert_ack
+for ((i=1; i<=NUM_NODES; i++)); do assert_state "$i" '192.168.1.100' allowed; done
 
+log 'Test 8: Old timestamp'
+make_payload '203.0.113.10' "$(( $(date +%s) + 120 ))" "$(uuidgen -r)" Node_2 "$(( $(date +%s) - 660 ))"
+post_gossip
+assert_ack
+for ((i=1; i<=NUM_NODES; i++)); do assert_state "$i" '203.0.113.10' allowed; done
 
-# 2. TTL Expiration
-log "=== Test 2: TTL Expiration and Manual Gossip Injection ==="
+log 'Test 9: Oversized request'
+dd if=/dev/zero of="$TEMP_DIR/large_payload.json" bs=1048576 count=11 2>/dev/null
+request -X POST "http://127.0.0.1:$((BASE_PORT + 1))$WEB_PATH/gossip" \
+    -H 'Content-Type: application/json' -H 'Expect: 100-continue' \
+    --data-binary "@$TEMP_DIR/large_payload.json" || fail 'Oversized request failed without an HTTP response'
+[[ "$HTTP_CODE" == 413 ]] || fail "Expected 413 for oversized request, got $HTTP_CODE"
 
-SHORT_TTL_IP="203.0.113.2"
-TTL_SEC=5
-EXPIRATION=$(( $(date +%s) + TTL_SEC ))
-MSG_ID=$(uuidgen)
-# Construct ActionRule message
-# TYPE IS ACTION_RULE
-ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$SHORT_TTL_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
-# Escape quotes for main payload wrapper
-ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
-
-# Calculate HMAC
-SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
-
-log "Injecting Gossip Message with TTL=${TTL_SEC}s to Node 1..."
-
-inj_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-     -H "Content-Type: application/json" \
-     -H "X-Torii-Signature: $SIG" \
-     -d "$PAYLOAD")
-
-if [ "$inj_code" != "200" ]; then
-    warn "Injection failed with HTTP $inj_code"
-    warn "Node 1 Log:"
-    tail -n 20 "$TEMP_DIR/node1/log/server_torii.log"
-fi
-
-sleep 1
-if check_is_blocked 1 "$SHORT_TTL_IP"; then
-    pass "Node 1 accepted manual gossip block"
-else
-    warn "Node 1 rejected manual gossip block (Check failed)"
-    fail "Test 2 Failed"
-fi
-
-# Check propagation
-sleep 1
-if check_is_blocked 3 "$SHORT_TTL_IP"; then
-    pass "Node 3 received short TTL block"
-else
-    warn "Node 3 missed short TTL block"
-fi
-
-log "Waiting for TTL to expire (${TTL_SEC}s)..."
-sleep $((TTL_SEC + 3))
-
-if ! check_is_blocked 1 "$SHORT_TTL_IP"; then
-    pass "Node 1 unblocked after TTL"
-else
-    fail "Node 1 still blocking after TTL"
-fi
-
-if ! check_is_blocked 3 "$SHORT_TTL_IP"; then
-    pass "Node 3 unblocked after TTL"
-else
-    fail "Node 3 still blocking after TTL"
-fi
-
-# 3. Idempotency / Deduplication
-log "=== Test 3: Idempotency ==="
-# Send same message multiple times
-IDEM_IP="203.0.113.3"
-EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID="b33f9a26-7b09-47d7-9c7f-5fabb1f70ae3"
-ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$IDEM_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
-ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
-SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
-
-log "Sending duplicate messages to Node 1..."
-for k in {1..5}; do
-    curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-         -H "Content-Type: application/json" \
-         -H "X-Torii-Signature: $SIG" \
-         -d "$PAYLOAD" > /dev/null
-done
-
-if check_is_blocked 1 "$IDEM_IP"; then
-    pass "Node 1 processed message (at least once)"
-else
-    fail "Node 1 failed to process message"
-fi
-
-# 4. Security: Invalid Signature
-log "=== Test 4: Security (Invalid HMAC) ==="
-SEC_IP="203.0.113.4"
-EXPIRATION=$(( $(date +%s) + 60 ))
-ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$SEC_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
-ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
-PAYLOAD="{\"id\":\"bad-sec-id\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"bad_actor\",\"timestamp\":$(date +%s),\"seq\":1}"
-BAD_SIG="deadbeefdeadbeef"
-
-resp_code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-     -H "Content-Type: application/json" \
-     -H "X-Torii-Signature: $BAD_SIG" \
-     -d "$PAYLOAD")
-
-if [ "$resp_code" == "403" ]; then
-    pass "Node 1 rejected invalid signature (403)"
-else
-    fail "Node 1 did not reject invalid signature (Got $resp_code)"
-fi
-
-
-	if check_is_blocked 1 "$SEC_IP"; then
-    fail "Node 1 applied block from invalid message!"
-else
-    pass "Node 1 did not apply block"
-fi
-
-# 5. Invalid IP (Private Network)
-log "=== Test 5: Reject Private/Invalid IPs ==="
-INVALID_IP="192.168.1.100"
-EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID=$(uuidgen)
-ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$INVALID_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
-ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$(date +%s),\"seq\":1}"
-SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
-
-curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-     -H "Content-Type: application/json" \
-     -H "X-Torii-Signature: $SIG" \
-     -d "$PAYLOAD" > /dev/null
-
-sleep 1
-if check_is_blocked 1 "$INVALID_IP"; then
-    fail "Node 1 blocked a private IP (Should be rejected)"
-else
-    pass "Node 1 correctly ignored private IP block"
-fi
-
-# 6. Replay Attack (Old Timestamp)
-log "=== Test 6: Replay Attack (Old Timestamp) ==="
-REPLAY_IP="203.0.113.10"
-# 11 minutes ago (GossipMaxAge is 10m)
-OLD_TS=$(( $(date +%s) - 660 ))
-EXPIRATION=$(( $(date +%s) + 60 ))
-MSG_ID=$(uuidgen)
-ACTION_CONTENT="{\"rule_type\":\"IP\",\"value\":\"$REPLAY_IP\",\"action\":\"BLOCK\",\"expires_at\":$EXPIRATION}"
-ACTION_CONTENT_ESCAPED=$(echo "$ACTION_CONTENT" | sed 's/"/\\"/g')
-PAYLOAD="{\"id\":\"$MSG_ID\",\"type\":\"ACTION_RULE\",\"content\":\"$ACTION_CONTENT_ESCAPED\",\"origin_node\":\"Node_2\",\"timestamp\":$OLD_TS,\"seq\":1}"
-SIG=$(echo -n "$PAYLOAD" | openssl dgst -sha512 -hmac "$SECRET" | awk '{print $NF}')
-
-curl -s -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-     -H "Content-Type: application/json" \
-     -H "X-Torii-Signature: $SIG" \
-     -d "$PAYLOAD" > /dev/null
-
-sleep 1
-if check_is_blocked 1 "$REPLAY_IP"; then
-    fail "Node 1 blocked based on old timestamp message"
-else
-    pass "Node 1 ignored old message"
-fi
-
-# 7. Oversized Request
-log "=== Test 7: Oversized Request Rejection ==="
-# Create >10MB dummy data
-OVERSIZE_FILE="$TEMP_DIR/large_payload.json"
-# 11MB file
-dd if=/dev/zero of="$OVERSIZE_FILE" bs=1M count=11 2>/dev/null
-
-code=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$((BASE_PORT+1))$WEB_PATH/gossip" \
-     -H "Content-Type: application/json" \
-     --data-binary "@$OVERSIZE_FILE")
-
-# Expect 413 (Entity Too Large) or connection cut (000/empty depending on client behavior with closed conn)
-# MaxBytesReader usually returns 413 provided the handler writes it before reading ends/error handling.
-if [ "$code" == "413" ]; then
-    pass "Node 1 rejected oversized request (413)"
-else
-    # Some servers might close connection immediately or curl might return differently
-    warn "Node 1 returned code $code for oversized request (Expected 413)"
-fi
-rm -f "$OVERSIZE_FILE"
-
-
-log "Integration Tests Completed Successfully."
+pass 'Integration tests completed successfully'

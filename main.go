@@ -89,7 +89,7 @@ func main() {
 	log.Printf("Ready to start server on port %s", cfg.Port)
 
 	//set default log file
-	defaultLogPath := filepath.Join(cfg.LogPath + "server_torii.log")
+	defaultLogPath := filepath.Join(cfg.LogPath, "server_torii.log")
 	logFile, err := os.OpenFile(defaultLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
 	if err != nil {
 		log.Fatalf("Failed to open log file: %v", err)

@@ -20,16 +20,18 @@ import (
 
 func TestGossipSecurityFixes(t *testing.T) {
 	// Helper to create a fresh setup for each test
-	setup := func() (*GossipManager, *action.ActionRuleEngine, *config.MainConfig) {
+	setup := func(t *testing.T) (*GossipManager, *action.ActionRuleEngine, *config.MainConfig) {
+		t.Helper()
 		cfg := &config.MainConfig{
 			NodeName:     "test-node",
 			WebPath:      "/torii",
 			GlobalSecret: "test-secret-key-1234",
 			Peers: []config.Peer{
-				{Name: "valid-peer", Address: "http://localhost:8081"},
+				{Name: "valid-peer", Address: "http://127.0.0.1:1"},
 			},
 		}
 		bl := action.NewActionRuleEngine(time.Minute)
+		t.Cleanup(bl.Stop)
 		gm := NewGossipManager(cfg, bl)
 		return gm, bl, cfg
 	}
@@ -48,8 +50,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 	}
 
 	t.Run("RejectEmptyMessageID", func(t *testing.T) {
-		gm, bl, cfg := setup()
-		t.Cleanup(bl.Stop)
+		gm, _, cfg := setup(t)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
@@ -72,8 +73,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 	})
 
 	t.Run("RejectInvalidUUID", func(t *testing.T) {
-		gm, bl, cfg := setup()
-		t.Cleanup(bl.Stop)
+		gm, _, cfg := setup(t)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
@@ -96,7 +96,8 @@ func TestGossipSecurityFixes(t *testing.T) {
 	})
 
 	t.Run("AcceptValidUUID", func(t *testing.T) {
-		gm, _, cfg := setup()
+		gm, _, cfg := setup(t)
+		cfg.Peers[0].Address = newGossipTestPeer(t, 1)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
@@ -117,7 +118,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	// Testing internal processing logic directly for SYNC limit as it logs and drops, doesn't return HTTP error
 	t.Run("DropOversizedSyncSnapshot", func(t *testing.T) {
-		gm, bl, _ := setup()
+		gm, bl, _ := setup(t)
 
 		// Create a large snapshot
 		var snapshot []dataType.ActionRulePayload
@@ -150,7 +151,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 	})
 
 	t.Run("RejectInvalidSignatureLength", func(t *testing.T) {
-		gm, _, _ := setup()
+		gm, _, _ := setup(t)
 		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := dataType.GossipMessage{
 			Type:       dataType.GossipTypeActionRule,
@@ -178,7 +179,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 	})
 
 	t.Run("RejectNonV4UUID", func(t *testing.T) {
-		gm, _, cfg := setup()
+		gm, _, cfg := setup(t)
 
 		// Create a V1 UUID
 		v1UUID, _ := uuid.NewUUID()

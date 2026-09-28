@@ -55,6 +55,7 @@ func TestGossipManager_RNG_Seeding(t *testing.T) {
 }
 
 func TestGossipManager_RNG_Locking(t *testing.T) {
+	peerURL := newGossipTestPeer(t, 6)
 	// Basic test to ensure no data race when using the RNG.
 	// The -race detector will catch this if we run with it,
 	// but here we just ensure it runs.
@@ -63,7 +64,7 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 		Peers:    make([]config.Peer, 10),
 	}
 	for i := 0; i < 10; i++ {
-		cfg.Peers[i] = config.Peer{Name: "p", Address: "http://localhost:8080"}
+		cfg.Peers[i] = config.Peer{Name: "p", Address: peerURL}
 	}
 	bl := action.NewActionRuleEngine(time.Minute)
 	defer bl.Stop()
