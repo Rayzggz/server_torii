@@ -1,0 +1,4 @@
+# Pinned expectations for the repository's GeoLite2 database, never live HTTP targets.
+8.8.8.8	US	CAPTCHA
+139.130.4.5	AU	200
+81.2.69.142	GB	403

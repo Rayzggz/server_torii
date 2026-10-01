@@ -1,5 +1,4 @@
-.PHONY: all build clean install uninstall
-
+.PHONY: all build clean install uninstall test-e2e
 
 all: build
 
@@ -7,6 +6,9 @@ all: build
 build:
 	go mod tidy
 	go build -o server_torii .
+
+test-e2e:
+	bash tests/e2e/test.sh
 
 clean:
 	rm -f server_torii

@@ -1,0 +1,60 @@
+# TEST ONLY: deliberately low thresholds and public test secrets.
+IPAllow: {enabled: true}
+IPBlock: {enabled: true}
+IPCAPTCHA: {enabled: true}
+URLAllow: {enabled: true}
+URLBlock: {enabled: true}
+URLCAPTCHA: {enabled: true}
+CountryRule:
+  enabled: false
+  default_action: block
+  unknown_action: continue
+  countries: {US: captcha, AU: continue}
+CAPTCHA:
+  enabled: false
+  provider: altcha
+  secret_key: "e2e-only-captcha-secret-never-use-in-production"
+  captcha_validate_time: 5
+  captcha_challenge_session_timeout: 120
+  altcha_hmac_secret: "e2e-only-altcha-secret-never-use-in-production"
+  altcha_cost: 1
+  CaptchaFailureLimit: ["20/30s"]
+  failure_block_duration: 300
+HTTPFlood:
+  enabled: false
+  HTTPFloodSpeedLimit: ["5/10s"]
+  HTTPFloodSameURILimit: ["3/10s"]
+  HTTPFloodFailureLimit: ["3/30s"]
+  failure_block_duration: 300
+VerifyBot:
+  enabled: false
+  verify_google_bot: true
+  verify_bing_bot: true
+  verify_baidu_bot: true
+  verify_yandex_bot: true
+  verify_sogou_bot: true
+  verify_apple_bot: true
+ExternalMigration:
+  enabled: false
+  redirect_url: "https://mitigation.invalid/verify"
+  secret_key: "e2e-only-external-secret-never-use-in-production"
+  session_timeout: 5
+AdaptiveTrafficAnalyzer:
+  enabled: false
+  tag: disabled
+  analysis_interval: 2
+  non_200_analysis:
+    enabled: false
+    block_duration: 300
+    fail_count_threshold: 5
+    fail_rate_count_threshold: 5
+    fail_rate_threshold: 0
+    uri_rate_top_n: 0
+    uri_rate_threshold: 0
+  uri_analysis:
+    enabled: false
+    block_duration: 300
+    fail_rate_threshold: 0.8
+    fail_rate_count_threshold: 5
+    request_count_sensitivity: 0
+    request_count_threshold: 5

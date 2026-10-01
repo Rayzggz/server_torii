@@ -1,0 +1,1 @@
+{"allowed":{"status":200,"body":"Server Torii Access Passed"},"challenged":{"status":445,"body":"Server Torii Auth Required"},"captcha_success":"good","captcha_invalid":"bad","captcha_session_invalid":"badSession"}

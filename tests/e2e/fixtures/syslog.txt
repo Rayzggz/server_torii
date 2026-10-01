@@ -1,0 +1,1 @@
+<190>Jan 01 00:00:00 localhost @TAG@: @IP@ - - [01/Jan/2026:00:00:00 +0000] "GET @URI@ HTTP/1.1" @STATUS@ 0 "-" "e2e"
