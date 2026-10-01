@@ -14,8 +14,8 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Retained diagnostics from failed gossip integration runs
-scripts/test/gossip/integration/test_data.*/
+# Retained diagnostics from failed gossip end-to-end runs
+tests/e2e/gossip/test_data.*/
 
 # Go workspace file
 go.work

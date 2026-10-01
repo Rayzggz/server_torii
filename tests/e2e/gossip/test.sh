@@ -5,7 +5,7 @@ set -euo pipefail
 BASE_PORT=25000
 NUM_NODES=5
 WORK_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$WORK_DIR/../../../.." && pwd)"
+PROJECT_ROOT="$(cd "$WORK_DIR/../../.." && pwd)"
 SECRET="test_secret_key_0123456789012345678901234567890"
 WEB_PATH="/torii"
 NODE_PIDS=()
@@ -300,4 +300,4 @@ request -X POST "http://127.0.0.1:$((BASE_PORT + 1))$WEB_PATH/gossip" \
     --data-binary "@$TEMP_DIR/large_payload.json" || fail 'Oversized request failed without an HTTP response'
 [[ "$HTTP_CODE" == 413 ]] || fail "Expected 413 for oversized request, got $HTTP_CODE"
 
-pass 'Integration tests completed successfully'
+pass 'End-to-end tests completed successfully'
