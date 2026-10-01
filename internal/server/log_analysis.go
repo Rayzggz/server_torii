@@ -52,10 +52,24 @@ type Analyzer interface {
 }
 
 type AdaptiveTrafficAnalyzer struct {
-	buffer    *LogBuffer
-	analyzers []Analyzer
-	sharedMem *dataType.SharedMemory
-	stopCh    chan struct{}
+	buffer      *LogBuffer
+	analyzers   []Analyzer
+	sharedMem   *dataType.SharedMemory
+	stopCh      chan struct{}
+	startOnce   sync.Once
+	stopOnce    sync.Once
+	workers     sync.WaitGroup
+	lifecycleMu sync.Mutex
+	processMu   sync.Mutex
+	windows     map[string]*analysisWindow
+}
+
+type analysisWindow struct {
+	tag      string
+	interval time.Duration
+	start    time.Time
+	next     time.Time
+	logs     []LogEntry
 }
 
 func NewAdaptiveTrafficAnalyzer(sharedMem *dataType.SharedMemory) *AdaptiveTrafficAnalyzer {
@@ -64,47 +78,43 @@ func NewAdaptiveTrafficAnalyzer(sharedMem *dataType.SharedMemory) *AdaptiveTraff
 		analyzers: []Analyzer{&Non200Analyzer{}, &UriAnalyzer{}}, // Register default analyzers
 		sharedMem: sharedMem,
 		stopCh:    make(chan struct{}),
+		windows:   make(map[string]*analysisWindow),
 	}
 }
 
 func (ata *AdaptiveTrafficAnalyzer) Start() {
-	snap := config.Manager.Get()
-	var minInterval int64
-	if snap != nil {
-		for _, rules := range snap.SiteRules {
-			if rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled {
-				interval := rules.AdaptiveTrafficAnalyzerRule.AnalysisInterval
-				if interval <= 0 {
-					interval = 60
-				}
-				if minInterval == 0 || interval < minInterval {
-					minInterval = interval
+	ata.lifecycleMu.Lock()
+	defer ata.lifecycleMu.Unlock()
+	select {
+	case <-ata.stopCh:
+		return
+	default:
+	}
+	ata.startOnce.Do(func() {
+		ata.ProcessBatch() // Establish windows at startup, even without traffic.
+		ticker := time.NewTicker(time.Second)
+		ata.workers.Add(1)
+		go func() {
+			defer ata.workers.Done()
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ticker.C:
+					ata.ProcessBatch()
+				case <-ata.stopCh:
+					return
 				}
 			}
-		}
-	}
-
-	if minInterval == 0 {
-		minInterval = 60 // Default 1 minute
-	}
-
-	ticker := time.NewTicker(time.Duration(minInterval) * time.Second)
-	go func() {
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				ata.ProcessBatch()
-			case <-ata.stopCh:
-				return
-			}
-		}
-	}()
-	log.Printf("AdaptiveTrafficAnalyzer started with interval %ds", minInterval)
+		}()
+		log.Print("AdaptiveTrafficAnalyzer started with per-site intervals")
+	})
 }
 
 func (ata *AdaptiveTrafficAnalyzer) Stop() {
-	close(ata.stopCh)
+	ata.lifecycleMu.Lock()
+	ata.stopOnce.Do(func() { close(ata.stopCh) })
+	ata.lifecycleMu.Unlock()
+	ata.workers.Wait()
 }
 
 func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
@@ -112,56 +122,86 @@ func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
 }
 
 func (ata *AdaptiveTrafficAnalyzer) ProcessBatch() {
+	ata.processBatchAt(time.Now())
+}
+
+// processBatchAt uses collection time, rather than timestamps supplied by logs.
+func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
+	ata.processMu.Lock()
+	defer ata.processMu.Unlock()
+	select {
+	case <-ata.stopCh:
+		return
+	default:
+	}
 	logs := ata.buffer.Swap()
-	if len(logs) == 0 {
-		return
+	var snap *config.SiteConfigSnapshot
+	if config.Manager != nil {
+		snap = config.Manager.Get()
 	}
-
-	snap := config.Manager.Get()
 	if snap == nil {
+		clear(ata.windows)
 		return
 	}
-
-	tagRules := make(map[string]*config.RuleSet)
-	for _, rules := range snap.SiteRules {
-		if rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled {
-			tag := rules.AdaptiveTrafficAnalyzerRule.Tag
-			if tag != "" {
-				tagRules[tag] = rules
-			}
-		}
-	}
-
-	// Optimization: Group logs by Tag first
 	logsByTag := make(map[string][]LogEntry)
 	for _, l := range logs {
 		logsByTag[l.Tag] = append(logsByTag[l.Tag], l)
 	}
-
-	for tag, tagLogs := range logsByTag {
-		ruleSet, ok := tagRules[tag]
-		if !ok || ruleSet == nil {
-			continue // If log belongs to no known tag, discard
+	for site := range ata.windows {
+		rules := snap.SiteRules[site]
+		if rules == nil || rules.AdaptiveTrafficAnalyzerRule == nil ||
+			!rules.AdaptiveTrafficAnalyzerRule.Enabled || rules.AdaptiveTrafficAnalyzerRule.Tag == "" {
+			delete(ata.windows, site)
 		}
-
-		if ruleSet.AdaptiveTrafficAnalyzerRule == nil || !ruleSet.AdaptiveTrafficAnalyzerRule.Enabled {
+	}
+	for site, rules := range snap.SiteRules {
+		if rules == nil || rules.AdaptiveTrafficAnalyzerRule == nil {
 			continue
 		}
-
-		for _, analyzer := range ata.analyzers {
-			analyzer.Analyze(tagLogs, ruleSet, ata.sharedMem)
+		rule := rules.AdaptiveTrafficAnalyzerRule
+		if !rule.Enabled || rule.Tag == "" {
+			continue
 		}
+		interval := time.Duration(rule.AnalysisInterval) * time.Second
+		if interval <= 0 {
+			interval = 60 * time.Second
+		}
+		window := ata.windows[site]
+		if window == nil || window.tag != rule.Tag {
+			window = &analysisWindow{tag: rule.Tag, start: now}
+			ata.windows[site] = window
+		}
+		if window.interval != interval {
+			window.interval = interval
+			window.next = window.start.Add(interval)
+		}
+		window.logs = append(window.logs, logsByTag[rule.Tag]...)
+		if now.Before(window.next) {
+			continue
+		}
+		if len(window.logs) > 0 {
+			for _, analyzer := range ata.analyzers {
+				analyzer.Analyze(window.logs, rules, ata.sharedMem)
+			}
+		}
+		window.logs = nil
+		// Skip missed boundaries without analyzing the same batch repeatedly.
+		window.start = window.next.Add((now.Sub(window.next) / interval) * interval)
+		window.next = window.start.Add(interval)
 	}
 }
 
 // findRuleByTag looks up the RuleSet that matches the given tag from the current snapshot
 func (ata *AdaptiveTrafficAnalyzer) findRuleByTag(tag string) *config.RuleSet {
+	if config.Manager == nil {
+		return nil
+	}
 	snap := config.Manager.Get()
 	if snap == nil {
 		return nil
 	}
 	for _, rules := range snap.SiteRules {
-		if rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled && rules.AdaptiveTrafficAnalyzerRule.Tag == tag {
+		if rules != nil && rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled && rules.AdaptiveTrafficAnalyzerRule.Tag == tag {
 			return rules
 		}
 	}
