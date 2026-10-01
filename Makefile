@@ -1,4 +1,4 @@
-.PHONY: all build clean install uninstall test-e2e
+.PHONY: all build clean install uninstall test-e2e upgrade
 
 all: build
 
@@ -39,4 +39,10 @@ uninstall:
 	systemctl daemon-reload
 
 reinstall: uninstall install
+
+# Build while the old process serves traffic, then restart.
+# Run from the same directory used for `make install`, with systemd permissions.
+upgrade: build
+	systemctl restart server_torii.service
+	systemctl --no-pager status server_torii.service
 
