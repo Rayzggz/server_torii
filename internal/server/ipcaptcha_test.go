@@ -35,7 +35,7 @@ func TestIPCaptchaFeatureControl(t *testing.T) {
 }
 
 func TestIPCaptchaRequestFlow(t *testing.T) {
-	for _, scenario := range []string{"challenge", "clearance", "nonmatch", "disabled", "absent", "ip allow", "url allow", "ip block", "url block", "dynamic block", "country block", "later flood"} {
+	for _, scenario := range []string{"challenge", "clearance", "nonmatch", "disabled", "absent", "ip allow", "url allow", "ip block", "url block", "dynamic block", "clearance dynamic block", "country block", "clearance country block", "later flood"} {
 		t.Run(scenario, func(t *testing.T) {
 			rules := featureControlRuleSet()
 			trie := &dataType.TrieNode{}
@@ -74,16 +74,25 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 				rules.URLBlockRule.List.Append(&dataType.URLRule{Pattern: "/test"})
 				req.FeatureControl |= dataType.FeatureURLBlock
 				wantStatus, wantAction = 445, "403"
-			case "dynamic block":
+			// IPCAPTCHA precedes country and dynamic action checks; valid clearance lets them run.
+			case "dynamic block", "clearance dynamic block":
 				engine := action.NewActionRuleEngine(time.Minute)
 				t.Cleanup(engine.Stop)
 				engine.AddIPRule(req.RemoteIP, action.ActionBlock, time.Minute)
 				shared.ActionRuleEngine = engine
-				wantStatus, wantAction = 445, "403"
-			case "country block":
+				wantStatus, wantAction = 445, "CAPTCHA"
+				if scenario == "clearance dynamic block" {
+					req.ToriiClearance = string(check.GenClearance(req, *rules))
+					wantAction = "403"
+				}
+			case "country block", "clearance country block":
 				rules.CountryRule.UnknownAction = dataType.CountryBlock
 				req.FeatureControl |= dataType.FeatureCountryRule
-				wantStatus, wantAction = 445, "403"
+				wantStatus, wantAction = 445, "CAPTCHA"
+				if scenario == "clearance country block" {
+					req.ToriiClearance = string(check.GenClearance(req, *rules))
+					wantAction = "403"
+				}
 			case "later flood":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 				req.FeatureControl |= dataType.FeatureHTTPFlood
