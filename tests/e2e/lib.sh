@@ -48,7 +48,7 @@ cleanup() {
             log "$file"; tail -n 8 "$file" || true
         done
     fi
-    if (( status != 0 )) || [[ "$KEEP_ARTIFACTS" == 1 ]]; then
+    if [[ "$KEEP_ARTIFACTS" == 1 ]]; then
         log "Artifacts: $RUN"
     else
         # RUN is exclusively the directory returned by mktemp in preflight.

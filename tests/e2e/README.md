@@ -65,7 +65,7 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 
 `NUM_NODES` defaults to `10` (allowed: 3–32). `BASE_PORT` defaults to `25000`;
 nodes use TCP **and UDP** ports `BASE_PORT+1` through `BASE_PORT+NUM_NODES`.
-Those ports must be free. `KEEP_ARTIFACTS=1` retains successful-run artifacts.
+Those ports must be free. `KEEP_ARTIFACTS=1` retains artifacts for debugging.
 `TMPDIR` selects the temporary directory parent; use a normal local path without
 quotes or newlines. The last node deliberately starts without a GeoIP database.
 
@@ -96,8 +96,9 @@ enforcement. IPv4-mapped IPv6 clients are tested against the IPv4 rules.
 
 The suite prints its artifact directory at startup. It contains per-node
 configuration/logs, recorded response headers/bodies, cookie jars, the crawler
-range list, and process IDs. Failed and interrupted runs retain that directory.
-Successful runs remove it unless retention was requested. EXIT/INT/TERM handlers
+range list, and process IDs. All runs (successful, failed, or interrupted) remove
+that directory unless `KEEP_ARTIFACTS=1` was explicitly set. Failed runs print
+diagnostic log tails before cleanup. EXIT/INT/TERM handlers
 terminate and reap only child PIDs owned by the run, with bounded shutdown.
 Because Torii listens on all interfaces, use the suite on a development machine;
 the harness sends requests only to loopback.
@@ -112,7 +113,8 @@ bash tests/e2e/test.sh
 bash tests/e2e/test.sh  # verify a fresh run has no leftover state
 ```
 
-To check interruption cleanup, interrupt a running suite with Ctrl+C and verify
-the PIDs in its retained `pids` file are no longer alive. To check occupied-port
+To check interruption cleanup, run with `KEEP_ARTIFACTS=1`, interrupt the suite
+with Ctrl+C, and verify the PIDs in its retained `pids` file are no longer alive.
+Without that option, verify that the artifact directory is removed. To check occupied-port
 handling, start one suite and invoke another with the same `BASE_PORT`: the
 second must fail before starting nodes and must leave the first running.
