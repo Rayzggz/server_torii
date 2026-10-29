@@ -21,6 +21,10 @@ func TestCanonicalizeURI(t *testing.T) {
 		{"/data/VGhpcyBpcyBhIHRlc3Q=", "/data/:token"}, // 20 chars base64 (20 chars: VGhpcyBpcyBhIHRlc3Q=)
 		{"/mixed/123/abc", "/mixed/:id/abc"},
 		{"/short/abc", "/short/abc"}, // Too short for token
+		{"/threads/15046/post-958928", "/threads/:id/post-:id"},
+		{"/threads/15046/page-753?x=1", "/threads/:id/page-:id"},
+		{"/threads/title.123/", "/threads/title.:id"},
+		{"/api/v2/items", "/api/v2/items"},
 		{"", "/"},
 	}
 	for _, tt := range tests {

@@ -25,6 +25,13 @@ func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision 
 	case action.ActionCaptcha:
 		reqData.FeatureControl |= dataType.FeatureCaptcha
 		Captcha(reqData, ruleSet, decision, sharedMem)
+	case action.ActionCaptchaUnverified:
+		if ev, ok := dataType.BrowserEvidenceOf(sharedMem); ok && ev.HasBrowserEvidence(reqData.RemoteIP) {
+			decision.Set(action.Continue)
+			return
+		}
+		reqData.FeatureControl |= dataType.FeatureCaptcha
+		Captcha(reqData, ruleSet, decision, sharedMem)
 	default:
 		decision.Set(action.Continue)
 	}

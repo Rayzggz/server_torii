@@ -555,7 +555,9 @@ func validateActionRule(payload dataType.ActionRulePayload, now time.Time) error
 		return fmt.Errorf("invalid rule type: %s", payload.RuleType)
 	}
 
-	if payload.Action != string(action.ActionBlock) && payload.Action != string(action.ActionCaptcha) {
+	switch action.ActionType(payload.Action) {
+	case action.ActionBlock, action.ActionCaptcha, action.ActionCaptchaUnverified:
+	default:
 		return fmt.Errorf("invalid action: %s", payload.Action)
 	}
 

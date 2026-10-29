@@ -54,19 +54,32 @@ ExternalMigration:
 AdaptiveTrafficAnalyzer:
   enabled: true
   tag: "default_site"
-  analysis_interval: 300
-  non_200_analysis:
-    enabled: true
+  analysis_interval: 10
+  window_buckets: 30
+  browser_evidence: # decides which clients look like browsers; used by both detections and captcha_unverified
+    ttl: 21600
+    distinct_pages: 3
+    asset_extensions: [] # empty uses the built-in static asset list
+  uri_detection:
+    action: captcha_unverified # observe | captcha_unverified | captcha | block; captcha_unverified challenges only clients without browser evidence
     block_duration: 600
-    fail_count_threshold: 300
-    fail_rate_count_threshold: 60
+    min_requests: 100
+    min_distinct_ips: 50
+    sustain: 60
+    ratio_threshold: 5
+    fallback_share: 0.8
+    baseline:
+      half_life: 21600
+      warmup: 3600
+      min_reference_requests: 200
+  ip_detection:
+    enabled: true
+    action: observe # observe | captcha | block
+    block_duration: 600
+    max_block_duration: 86400
+    score_threshold: 50
+    hot_uri_min_hits: 3
+    min_failures: 30
     fail_rate_threshold: 0.6
-    uri_rate_top_n: 1
-    uri_rate_threshold: 0.8
-  uri_analysis:
-    enabled: true
-    block_duration: 600
-    fail_rate_threshold: 0.8
-    fail_rate_count_threshold: 100
-    request_count_sensitivity: 8
-    request_count_threshold: 5000
+    scan_paths_threshold: 30
+    max_broadcast_per_tick: 200

@@ -69,6 +69,9 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			}
 			return
 		} else if bytes.Compare(decision.ResponseData, []byte("good")) == 0 {
+			if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok && ruleSet.CAPTCHARule != nil {
+				marker.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
+			}
 			w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenClearance(reqData, *ruleSet))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(decision.ResponseData)

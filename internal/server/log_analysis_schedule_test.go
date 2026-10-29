@@ -18,14 +18,14 @@ type recordingAnalyzer struct {
 	calls []recordedAnalysis
 }
 
-type analyzerFunc func([]LogEntry, *config.RuleSet, *dataType.SharedMemory)
+type analyzerFunc func(*analysisContext)
 
-func (f analyzerFunc) Analyze(logs []LogEntry, rule *config.RuleSet, shared *dataType.SharedMemory) {
-	f(logs, rule, shared)
+func (f analyzerFunc) Analyze(ctx *analysisContext) {
+	f(ctx)
 }
 
-func (r *recordingAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, _ *dataType.SharedMemory) {
-	r.calls = append(r.calls, recordedAnalysis{rule, append([]LogEntry(nil), logs...)})
+func (r *recordingAnalyzer) Analyze(ctx *analysisContext) {
+	r.calls = append(r.calls, recordedAnalysis{ctx.Rule, append([]LogEntry(nil), ctx.Logs...)})
 }
 
 func scheduledRule(tag string, interval int64) *config.RuleSet {
@@ -102,7 +102,7 @@ func TestAnalysisReloadIntervalsAndRules(t *testing.T) {
 			a.AddLog(LogEntry{Tag: "tag", IP: "retained"})
 			a.processBatchAt(start.Add(time.Second))
 			updated := scheduledRule("tag", tc.updated)
-			updated.AdaptiveTrafficAnalyzerRule.Non200Analysis.FailCountThreshold = 123
+			updated.AdaptiveTrafficAnalyzerRule.IPDetection.ScoreThreshold = 123
 			config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 			a.processBatchAt(start.Add(time.Duration(tc.reload) * time.Second))
 			if tc.reload < tc.due {
@@ -187,16 +187,16 @@ func TestAnalysisSharedTagAndMissedWindows(t *testing.T) {
 func TestAnalysisFallbackAndMissingSnapshot(t *testing.T) {
 	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("tag", 0)})
 	a.AddLog(LogEntry{Tag: "tag"})
-	a.processBatchAt(start.Add(59 * time.Second))
+	a.processBatchAt(start.Add(9 * time.Second))
 	if len(recorder.calls) != 0 {
 		t.Fatal("fallback ran early")
 	}
-	a.processBatchAt(start.Add(60 * time.Second))
+	a.processBatchAt(start.Add(10 * time.Second))
 	if len(recorder.calls) != 1 {
-		t.Fatal("fallback did not run at 60 seconds")
+		t.Fatal("fallback did not run at 10 seconds")
 	}
 	config.Manager.Set(nil)
-	a.processBatchAt(start.Add(61 * time.Second))
+	a.processBatchAt(start.Add(11 * time.Second))
 	if len(a.windows) != 0 {
 		t.Fatal("missing snapshot retained state")
 	}
@@ -248,7 +248,7 @@ func TestAnalysisBatchUsesOneSnapshot(t *testing.T) {
 	old := scheduledRule("tag", 10)
 	updated := scheduledRule("tag", 10)
 	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": old})
-	a.analyzers = []Analyzer{analyzerFunc(func(_ []LogEntry, _ *config.RuleSet, _ *dataType.SharedMemory) {
+	a.analyzers = []Analyzer{analyzerFunc(func(_ *analysisContext) {
 		config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 	}), recorder}
 	a.AddLog(LogEntry{Tag: "tag"})

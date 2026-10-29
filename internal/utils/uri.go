@@ -11,6 +11,8 @@ var (
 	reUUID   = regexp.MustCompile(`^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$`)
 	reHex32  = regexp.MustCompile(`^[a-fA-F0-9]{32}$`)
 	reBase64 = regexp.MustCompile(`^[a-zA-Z0-9+\-_=]{20,}$`)
+	// reNumSuffix matches a word joined to a number, such as post-123 or page-4.
+	reNumSuffix = regexp.MustCompile(`^(.*[-_.])\d+$`)
 )
 
 // CanonicalizeURI normalizes a URI by removing query/fragments,
@@ -43,6 +45,8 @@ func CanonicalizeURI(uri string) string {
 			segments[i] = ":id"
 		} else if reUUID.MatchString(seg) || reHex32.MatchString(seg) || reBase64.MatchString(seg) {
 			segments[i] = ":token"
+		} else if m := reNumSuffix.FindStringSubmatch(seg); m != nil {
+			segments[i] = m[1] + ":id"
 		}
 	}
 
