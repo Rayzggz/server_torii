@@ -14,6 +14,8 @@ const (
 	ActionNone    ActionType = "NONE"
 	ActionBlock   ActionType = "BLOCK"
 	ActionCaptcha ActionType = "CAPTCHA"
+	// ActionCaptchaUnverified challenges only clients the traffic analyzer has not seen behave like a browser.
+	ActionCaptchaUnverified ActionType = "CAPTCHA_UNVERIFIED"
 )
 
 // actionRule represents a temporary rule with an expiration time.
@@ -65,6 +67,14 @@ func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Dura
 		Action:    action,
 		ExpiresAt: newExpiresAt,
 	}
+}
+
+// HasIPRule reports whether an unexpired rule exists for the IP.
+func (e *ActionRuleEngine) HasIPRule(ip string) bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	rule, ok := e.ipRules[ip]
+	return ok && rule.ExpiresAt.After(time.Now())
 }
 
 // AddUARule adds a rule for a specific User-Agent.

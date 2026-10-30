@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"net/netip"
 	"sync/atomic"
+	"time"
 )
 
 const ServerToriiVersion string = "2.0.0-beta"
@@ -81,31 +82,64 @@ type HTTPFloodRule struct {
 	FailureBlockDuration  int64
 }
 
+type AnalyzerAction string
+
+const (
+	AnalyzerObserve AnalyzerAction = "observe"
+	// AnalyzerCaptchaUnverified challenges only clients without browser evidence.
+	AnalyzerCaptchaUnverified AnalyzerAction = "captcha_unverified"
+	AnalyzerCaptcha           AnalyzerAction = "captcha"
+	AnalyzerBlock             AnalyzerAction = "block"
+)
+
 type AdaptiveTrafficAnalyzerRule struct {
-	Enabled          bool               `yaml:"enabled"`
-	Tag              string             `yaml:"tag" validate:"required"`
-	AnalysisInterval int64              `yaml:"analysis_interval" validate:"min=1"`
-	Non200Analysis   Non200AnalysisRule `yaml:"non_200_analysis"`
-	UriAnalysis      UriAnalysisRule    `yaml:"uri_analysis"`
+	Enabled          bool                `yaml:"enabled"`
+	Tag              string              `yaml:"tag" validate:"required"`
+	AnalysisInterval int64               `yaml:"analysis_interval" validate:"min=0"`
+	WindowBuckets    int                 `yaml:"window_buckets" validate:"min=0"`
+	BrowserEvidence  BrowserEvidenceRule `yaml:"browser_evidence"`
+	URIDetection     URIDetectionRule    `yaml:"uri_detection"`
+	IPDetection      IPDetectionRule     `yaml:"ip_detection"`
 }
 
-type Non200AnalysisRule struct {
-	Enabled                bool    `yaml:"enabled"`
-	BlockDuration          int64   `yaml:"block_duration"`
-	FailCountThreshold     int64   `yaml:"fail_count_threshold"`
-	FailRateCountThreshold int64   `yaml:"fail_rate_count_threshold"`
-	FailRateThreshold      float64 `yaml:"fail_rate_threshold"`
-	UriRateTopN            int     `yaml:"uri_rate_top_n"`
-	UriRateThreshold       float64 `yaml:"uri_rate_threshold"`
+// BrowserEvidenceRule decides which clients look like browsers; URI detection, IP detection
+// and the captcha_unverified action all use it.
+type BrowserEvidenceRule struct {
+	TTL             int64    `yaml:"ttl" validate:"min=0"`
+	DistinctPages   int      `yaml:"distinct_pages" validate:"min=0"`
+	AssetExtensions []string `yaml:"asset_extensions"`
 }
 
-type UriAnalysisRule struct {
-	Enabled                 bool    `yaml:"enabled"`
-	BlockDuration           int64   `yaml:"block_duration"`
-	FailRateThreshold       float64 `yaml:"fail_rate_threshold"`
-	FailRateCountThreshold  int64   `yaml:"fail_rate_count_threshold"`
-	RequestCountSensitivity float64 `yaml:"request_count_sensitivity"`
-	RequestCountThreshold   int64   `yaml:"request_count_threshold"`
+// BaselineRule controls the reference rate learned from browser-like clients.
+type BaselineRule struct {
+	HalfLife             int64 `yaml:"half_life" validate:"min=0"`
+	Warmup               int64 `yaml:"warmup" validate:"min=0"`
+	MinReferenceRequests int64 `yaml:"min_reference_requests" validate:"min=0"`
+}
+
+type IPDetectionRule struct {
+	Enabled             bool           `yaml:"enabled"`
+	Action              AnalyzerAction `yaml:"action" validate:"omitempty,oneof=observe captcha_unverified captcha block"`
+	BlockDuration       int64          `yaml:"block_duration" validate:"min=0"`
+	MaxBlockDuration    int64          `yaml:"max_block_duration" validate:"min=0"`
+	ScoreThreshold      int            `yaml:"score_threshold" validate:"min=0"`
+	HotURIMinHits       int64          `yaml:"hot_uri_min_hits" validate:"min=0"`
+	MinFailures         int64          `yaml:"min_failures" validate:"min=0"`
+	FailRateThreshold   float64        `yaml:"fail_rate_threshold" validate:"min=0,max=1"`
+	ScanPathsThreshold  int            `yaml:"scan_paths_threshold" validate:"min=0"`
+	MaxBroadcastPerTick int            `yaml:"max_broadcast_per_tick" validate:"min=0"`
+}
+
+// URIDetectionRule finds hot URIs and sets the action applied to them.
+type URIDetectionRule struct {
+	Action         AnalyzerAction `yaml:"action" validate:"omitempty,oneof=observe captcha_unverified captcha block"`
+	BlockDuration  int64          `yaml:"block_duration" validate:"min=0"`
+	MinRequests    int64          `yaml:"min_requests" validate:"min=0"`
+	MinDistinctIPs int            `yaml:"min_distinct_ips" validate:"min=0"`
+	Sustain        int64          `yaml:"sustain" validate:"min=0"`
+	RatioThreshold float64        `yaml:"ratio_threshold" validate:"min=0"`
+	FallbackShare  float64        `yaml:"fallback_share" validate:"min=0,max=1"`
+	Baseline       BaselineRule   `yaml:"baseline"`
 }
 
 type ExternalMigrationRule struct {
@@ -162,6 +196,35 @@ type CountryRule struct {
 
 type CountryResolver interface {
 	Country(netip.Addr) (string, error)
+}
+
+// TrafficMarker lets request handlers report clients the traffic analyzer must not punish.
+type TrafficMarker interface {
+	MarkVerified(ip string, ttl time.Duration)
+	MarkNeutral(ip string, ttl time.Duration)
+}
+
+// TrafficMarkerOf returns the analyzer as a TrafficMarker when one is running.
+func TrafficMarkerOf(sharedMem *SharedMemory) (TrafficMarker, bool) {
+	if sharedMem == nil {
+		return nil, false
+	}
+	marker, ok := sharedMem.AdaptiveTrafficAnalyzer.(TrafficMarker)
+	return marker, ok
+}
+
+// BrowserEvidence reports whether the traffic analyzer has recently seen an IP behave like a browser.
+type BrowserEvidence interface {
+	HasBrowserEvidence(ip string) bool
+}
+
+// BrowserEvidenceOf returns the analyzer as a BrowserEvidence when one is running.
+func BrowserEvidenceOf(sharedMem *SharedMemory) (BrowserEvidence, bool) {
+	if sharedMem == nil {
+		return nil, false
+	}
+	ev, ok := sharedMem.AdaptiveTrafficAnalyzer.(BrowserEvidence)
+	return ev, ok
 }
 
 type GossipHandler interface {

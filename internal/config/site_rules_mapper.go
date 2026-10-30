@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"server_torii/internal/dataType"
 	"server_torii/internal/utils"
 	"strings"
@@ -163,24 +164,16 @@ func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) err
 
 func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRule, dest *dataType.AdaptiveTrafficAnalyzerRule) {
 	validateConfiguration(wrapper, "AdaptiveTrafficAnalyzerRule")
-	dest.Enabled = wrapper.Enabled
-	dest.Tag = wrapper.Tag
-	dest.AnalysisInterval = wrapper.AnalysisInterval
-
-	dest.Non200Analysis.Enabled = wrapper.Non200Analysis.Enabled
-	dest.Non200Analysis.BlockDuration = wrapper.Non200Analysis.BlockDuration
-	dest.Non200Analysis.FailCountThreshold = wrapper.Non200Analysis.FailCountThreshold
-	dest.Non200Analysis.FailRateCountThreshold = wrapper.Non200Analysis.FailRateCountThreshold
-	dest.Non200Analysis.FailRateThreshold = wrapper.Non200Analysis.FailRateThreshold
-	dest.Non200Analysis.UriRateTopN = wrapper.Non200Analysis.UriRateTopN
-	dest.Non200Analysis.UriRateThreshold = wrapper.Non200Analysis.UriRateThreshold
-
-	dest.UriAnalysis.Enabled = wrapper.UriAnalysis.Enabled
-	dest.UriAnalysis.BlockDuration = wrapper.UriAnalysis.BlockDuration
-	dest.UriAnalysis.FailRateThreshold = wrapper.UriAnalysis.FailRateThreshold
-	dest.UriAnalysis.FailRateCountThreshold = wrapper.UriAnalysis.FailRateCountThreshold
-	dest.UriAnalysis.RequestCountSensitivity = wrapper.UriAnalysis.RequestCountSensitivity
-	dest.UriAnalysis.RequestCountThreshold = wrapper.UriAnalysis.RequestCountThreshold
+	*dest = *wrapper
+	for name, a := range map[string]dataType.AnalyzerAction{
+		"ip_detection.action":  wrapper.IPDetection.Action,
+		"uri_detection.action": wrapper.URIDetection.Action,
+	} {
+		if _, ok := NormalizeAnalyzerAction(a); !ok {
+			log.Printf("[WARNING] AdaptiveTrafficAnalyzer %s %q is invalid, falling back to observe", name, a)
+		}
+	}
+	NormalizeAdaptiveTrafficAnalyzerRule(dest)
 }
 
 func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *dataType.HTTPFloodRule) error {

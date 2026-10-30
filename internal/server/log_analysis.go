@@ -2,11 +2,8 @@ package server
 
 import (
 	"log"
-	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
-	"sort"
 	"sync"
 	"time"
 )
@@ -48,7 +45,19 @@ func (lb *LogBuffer) Swap() []LogEntry {
 
 // Analyzer interface for specific traffic analysis logic
 type Analyzer interface {
-	Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *dataType.SharedMemory)
+	Analyze(ctx *analysisContext)
+}
+
+// analysisContext carries one site's due window to an Analyzer.
+type analysisContext struct {
+	Logs      []LogEntry
+	Rule      *config.RuleSet
+	State     *siteState
+	SharedMem *dataType.SharedMemory
+	Marks     *ipExpiry // exempt clients
+	Evidence  *ipExpiry // browser-like clients
+	Now       time.Time
+	Interval  time.Duration
 }
 
 type AdaptiveTrafficAnalyzer struct {
@@ -62,6 +71,16 @@ type AdaptiveTrafficAnalyzer struct {
 	lifecycleMu sync.Mutex
 	processMu   sync.Mutex
 	windows     map[string]*analysisWindow
+	marks       *ipExpiry
+	evidence    *ipExpiry
+	ingest      sync.Map // *dataType.AdaptiveTrafficAnalyzerRule -> *ingestSettings
+	lastSweep   time.Time
+}
+
+// ingestSettings is the part of a rule needed to record browser evidence as logs arrive.
+type ingestSettings struct {
+	assets map[string]struct{}
+	ttl    time.Duration
 }
 
 type analysisWindow struct {
@@ -70,15 +89,18 @@ type analysisWindow struct {
 	start    time.Time
 	next     time.Time
 	logs     []LogEntry
+	state    *siteState
 }
 
 func NewAdaptiveTrafficAnalyzer(sharedMem *dataType.SharedMemory) *AdaptiveTrafficAnalyzer {
 	return &AdaptiveTrafficAnalyzer{
 		buffer:    NewLogBuffer(),
-		analyzers: []Analyzer{&Non200Analyzer{}, &UriAnalyzer{}}, // Register default analyzers
+		analyzers: []Analyzer{&trafficDetector{}},
 		sharedMem: sharedMem,
 		stopCh:    make(chan struct{}),
 		windows:   make(map[string]*analysisWindow),
+		marks:     newIPExpiry(maxMarkedClients),
+		evidence:  newIPExpiry(maxEvidenceEntries),
 	}
 }
 
@@ -118,7 +140,53 @@ func (ata *AdaptiveTrafficAnalyzer) Stop() {
 }
 
 func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
+	ata.recordEvidence(entry, time.Now())
 	ata.buffer.Add(entry)
+}
+
+// recordEvidence marks browser evidence as soon as a log arrives, so a page view followed
+// quickly by a click onto a challenged URI is not challenged while waiting for the next analysis.
+func (ata *AdaptiveTrafficAnalyzer) recordEvidence(entry LogEntry, now time.Time) {
+	if entry.IP == "" || entry.Status >= 400 {
+		return
+	}
+	rules := ata.findRuleByTag(entry.Tag)
+	if rules == nil {
+		return
+	}
+	settings := ata.ingestSettingsFor(rules.AdaptiveTrafficAnalyzerRule)
+	if entry.Status == 304 || isAsset(stripQuery(entry.URI), settings.assets) {
+		ata.evidence.set(entry.IP, now.Add(settings.ttl))
+	}
+}
+
+func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *dataType.AdaptiveTrafficAnalyzerRule) *ingestSettings {
+	if cached, ok := ata.ingest.Load(rule); ok {
+		return cached.(*ingestSettings)
+	}
+	normalized := *rule
+	config.NormalizeAdaptiveTrafficAnalyzerRule(&normalized)
+	settings := &ingestSettings{
+		assets: toSet(normalized.BrowserEvidence.AssetExtensions),
+		ttl:    time.Duration(normalized.BrowserEvidence.TTL) * time.Second,
+	}
+	ata.ingest.Store(rule, settings)
+	return settings
+}
+
+// HasBrowserEvidence reports whether the IP recently loaded assets, revalidated a page, or browsed several pages.
+func (ata *AdaptiveTrafficAnalyzer) HasBrowserEvidence(ip string) bool {
+	return ata.evidence.active(ip, time.Now())
+}
+
+// MarkVerified exempts an IP that solved a CAPTCHA.
+func (ata *AdaptiveTrafficAnalyzer) MarkVerified(ip string, ttl time.Duration) {
+	ata.marks.set(ip, time.Now().Add(ttl))
+}
+
+// MarkNeutral exempts an IP that is trusted for another reason, such as a verified crawler.
+func (ata *AdaptiveTrafficAnalyzer) MarkNeutral(ip string, ttl time.Duration) {
+	ata.marks.set(ip, time.Now().Add(ttl))
 }
 
 func (ata *AdaptiveTrafficAnalyzer) ProcessBatch() {
@@ -135,6 +203,12 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 	default:
 	}
 	logs := ata.buffer.Swap()
+	if now.Sub(ata.lastSweep) >= sweepInterval {
+		ata.marks.sweep(now)
+		ata.evidence.sweep(now)
+		ata.ingest.Clear() // drop settings of replaced rules
+		ata.lastSweep = now
+	}
 	var snap *config.SiteConfigSnapshot
 	if config.Manager != nil {
 		snap = config.Manager.Get()
@@ -164,11 +238,11 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 		}
 		interval := time.Duration(rule.AnalysisInterval) * time.Second
 		if interval <= 0 {
-			interval = 60 * time.Second
+			interval = config.DefaultATAAnalysisInterval * time.Second
 		}
 		window := ata.windows[site]
 		if window == nil || window.tag != rule.Tag {
-			window = &analysisWindow{tag: rule.Tag, start: now}
+			window = &analysisWindow{tag: rule.Tag, start: now, state: newSiteState(now)}
 			ata.windows[site] = window
 		}
 		if window.interval != interval {
@@ -180,8 +254,18 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 			continue
 		}
 		if len(window.logs) > 0 {
+			ctx := &analysisContext{
+				Logs:      window.logs,
+				Rule:      rules,
+				State:     window.state,
+				SharedMem: ata.sharedMem,
+				Marks:     ata.marks,
+				Evidence:  ata.evidence,
+				Now:       now,
+				Interval:  interval,
+			}
 			for _, analyzer := range ata.analyzers {
-				analyzer.Analyze(window.logs, rules, ata.sharedMem)
+				analyzer.Analyze(ctx)
 			}
 		}
 		window.logs = nil
@@ -208,250 +292,48 @@ func (ata *AdaptiveTrafficAnalyzer) findRuleByTag(tag string) *config.RuleSet {
 	return nil
 }
 
-// Non200Analyzer implements Analyzer for non-200 status codes
-type Non200Analyzer struct{}
-
-type ipStats struct {
-	TotalRequests int64
-	FailRequests  int64
-	UriStats      map[string]*uriStat
+// ipExpiry holds IPs until an expiry time, bounded to limit entries.
+type ipExpiry struct {
+	mu      sync.RWMutex
+	entries map[string]time.Time
+	limit   int
 }
 
-type uriStat struct {
-	Total int64
-	Fail  int64
+func newIPExpiry(limit int) *ipExpiry {
+	return &ipExpiry{entries: make(map[string]time.Time), limit: limit}
 }
 
-func (n *Non200Analyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *dataType.SharedMemory) {
-	non200Rule := rule.AdaptiveTrafficAnalyzerRule.Non200Analysis
-	if !non200Rule.Enabled {
+// set extends the IP's expiry to until; it never shortens an existing one.
+func (m *ipExpiry) set(ip string, until time.Time) {
+	if m == nil || ip == "" {
 		return
 	}
-
-	stats := make(map[string]*ipStats)
-	globalUriCounts := make(map[string]int64)
-
-	// 1. Aggregate Stats
-	for _, l := range logs {
-		if l.URI != "" {
-			globalUriCounts[l.URI]++
-		}
-		if l.IP == "" {
-			continue
-		}
-		s, exists := stats[l.IP]
-		if !exists {
-			s = &ipStats{UriStats: make(map[string]*uriStat)}
-			stats[l.IP] = s
-		}
-
-		s.TotalRequests++
-		if l.Status != 200 {
-			s.FailRequests++
-		}
-
-		// URI Stats
-		if l.URI != "" {
-			uStats, uExists := s.UriStats[l.URI]
-			if !uExists {
-				uStats = &uriStat{}
-				s.UriStats[l.URI] = uStats
-			}
-			uStats.Total++
-			if l.Status != 200 {
-				uStats.Fail++
-			}
-		}
-	}
-
-	// Identify Top N URIs
-	topNUriSet := make(map[string]bool)
-	if non200Rule.UriRateThreshold > 0 && non200Rule.UriRateTopN > 0 {
-		type uriCount struct {
-			URI   string
-			Count int64
-		}
-		var sortedURIs []uriCount
-		for u, c := range globalUriCounts {
-			sortedURIs = append(sortedURIs, uriCount{URI: u, Count: c})
-		}
-
-		sort.Slice(sortedURIs, func(i, j int) bool {
-			return sortedURIs[i].Count > sortedURIs[j].Count
-		})
-
-		count := non200Rule.UriRateTopN
-		if count > len(sortedURIs) {
-			count = len(sortedURIs)
-		}
-		for i := 0; i < count; i++ {
-			topNUriSet[sortedURIs[i].URI] = true
-		}
-	}
-
-	// 2. Evaluate Rules
-	engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine)
-	if !ok {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	current, ok := m.entries[ip]
+	if !ok && len(m.entries) >= m.limit {
 		return
 	}
-
-	for ip, stat := range stats {
-		if engine.Check(ip, "", "") == action.ActionBlock {
-			continue
-		}
-
-		blocked := false
-		reason := ""
-
-		// Condition 1: Simple Fail Count
-		if non200Rule.FailCountThreshold > 0 && stat.FailRequests >= non200Rule.FailCountThreshold {
-			blocked = true
-			reason = "Fail Count Exceeded"
-		}
-
-		// Condition 2: Fail Count + Fail Rate
-		if !blocked && non200Rule.FailRateThreshold > 0 {
-			// Check if min count met (optional, default to 0 if not set)
-			if stat.FailRequests >= non200Rule.FailRateCountThreshold {
-				rate := float64(stat.FailRequests) / float64(stat.TotalRequests)
-				if rate >= non200Rule.FailRateThreshold {
-					blocked = true
-					reason = "Fail Rate Exceeded"
-				}
-			}
-		}
-
-		// Condition 3: Top N URI Interaction
-		if !blocked && len(topNUriSet) > 0 {
-			hitTopN := false
-			for u := range stat.UriStats {
-				if topNUriSet[u] {
-					hitTopN = true
-					break
-				}
-			}
-
-			if hitTopN {
-				rate := float64(stat.FailRequests) / float64(stat.TotalRequests)
-				if rate >= non200Rule.UriRateThreshold {
-					blocked = true
-					reason = "Top N URI Rate Exceeded"
-				}
-			}
-		}
-
-		if blocked {
-			engine.AddIPRule(ip, action.ActionBlock, time.Duration(non200Rule.BlockDuration)*time.Second)
-			utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ip, string(action.ActionBlock), time.Duration(non200Rule.BlockDuration)*time.Second, sharedMem.GossipChan)
-			log.Printf("[AdaptiveTrafficAnalyzer] Blocked IP %s for %ds (Tag: %s, Reason: %s)",
-				ip, non200Rule.BlockDuration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason)
-		}
+	if until.After(current) {
+		m.entries[ip] = until
 	}
 }
 
-// UriAnalyzer implements Analyzer for URI-based attacks
-type UriAnalyzer struct{}
-
-func (u *UriAnalyzer) Analyze(logs []LogEntry, rule *config.RuleSet, sharedMem *dataType.SharedMemory) {
-	uriRule := rule.AdaptiveTrafficAnalyzerRule.UriAnalysis
-	if !uriRule.Enabled {
-		return
+func (m *ipExpiry) active(ip string, now time.Time) bool {
+	if m == nil {
+		return false
 	}
-
-	// 1. Stats Aggregation
-	type uriStats struct {
-		Total    int64
-		Failures int64
-	}
-	stats := make(map[string]*uriStats)
-	var allCounts []float64
-
-	for _, l := range logs {
-		if l.URI == "" {
-			continue
-		}
-
-		// Canonicalization: Remove query, duplicate slashes
-		canonicalURI := utils.CanonicalizeURI(l.URI)
-
-		s, exists := stats[canonicalURI]
-		if !exists {
-			s = &uriStats{}
-			stats[canonicalURI] = s
-		}
-		s.Total++
-		if l.Status >= 400 && l.Status < 600 {
-			s.Failures++
-		}
-	}
-
-	for _, s := range stats {
-		allCounts = append(allCounts, float64(s.Total))
-	}
-
-	// Calculate IQR threshold if outlier check enabled
-	var iqrThreshold float64
-	checkOutliers := uriRule.RequestCountSensitivity > 0 && len(allCounts) > 4
-	if checkOutliers {
-		sort.Float64s(allCounts)
-		q1 := u.percentile(allCounts, 25)
-		q3 := u.percentile(allCounts, 75)
-		iqr := q3 - q1
-		iqrThreshold = q3 + (uriRule.RequestCountSensitivity * iqr)
-
-		// Fallback to min threshold if IQR calculation yields something too low
-		if uriRule.RequestCountThreshold > 0 && iqrThreshold < float64(uriRule.RequestCountThreshold) {
-			iqrThreshold = float64(uriRule.RequestCountThreshold)
-		}
-	}
-
-	// 2. Evaluate Rules
-	for uri, s := range stats {
-		blocked := false
-		reason := ""
-
-		// Condition 1: Failure Rate
-		if uriRule.FailRateThreshold > 0 && s.Total >= uriRule.FailRateCountThreshold {
-			rate := float64(s.Failures) / float64(s.Total)
-			if rate >= uriRule.FailRateThreshold {
-				blocked = true
-				reason = "URI Failure Rate Exceeded"
-			}
-		}
-
-		// Condition 2: Request Count Outlier (IQR)
-		if !blocked && checkOutliers {
-			if float64(s.Total) > iqrThreshold {
-				blocked = true
-				reason = "URI Request Count Outlier"
-			}
-		}
-
-		if blocked {
-			// Implement URI banning logic here.
-			if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
-				duration := time.Duration(uriRule.BlockDuration) * time.Second
-				if duration == 0 {
-					duration = 5 * time.Minute // Default fallback
-				}
-				engine.AddURIRule(uri, action.ActionCaptcha, duration)
-				utils.BroadcastActionRule(config.GlobalConfig.NodeName, "URI", uri, string(action.ActionCaptcha), duration, sharedMem.GossipChan)
-				log.Printf("[AdaptiveTrafficAnalyzer] [URI] Blocked URI %s for %v (Tag: %s, Reason: %s, Stats: %+v, IQR Threshold: %.2f)",
-					uri, duration, rule.AdaptiveTrafficAnalyzerRule.Tag, reason, s, iqrThreshold)
-			} else {
-				log.Printf("[AdaptiveTrafficAnalyzer] [ERROR] Failed to cast ActionRuleEngine for URI: %s", uri)
-			}
-		}
-	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.entries[ip].After(now)
 }
 
-func (u *UriAnalyzer) percentile(sortedData []float64, p float64) float64 {
-	index := (p / 100) * float64(len(sortedData)-1)
-	idxInt := int(index)
-	fraction := index - float64(idxInt)
-
-	if idxInt+1 < len(sortedData) {
-		return sortedData[idxInt] + fraction*(sortedData[idxInt+1]-sortedData[idxInt])
+func (m *ipExpiry) sweep(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for ip, until := range m.entries {
+		if !until.After(now) {
+			delete(m.entries, ip)
+		}
 	}
-	return sortedData[idxInt]
 }
