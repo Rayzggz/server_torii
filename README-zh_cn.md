@@ -20,6 +20,7 @@
 * IP 地址允许列表
 * URL 阻止列表 
 * URL 允许列表
+* 自定义规则（类 Cloudflare 表达式，可匹配 IP、国家、URI、Referer、User-Agent、请求头和 Cookie）
 
 ## 🔧 文档
 

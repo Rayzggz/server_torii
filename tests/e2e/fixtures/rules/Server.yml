@@ -58,3 +58,29 @@ AdaptiveTrafficAnalyzer:
     fail_rate_count_threshold: 5
     request_count_sensitivity: 0
     request_count_threshold: 5
+CustomRules:
+  enabled: false
+  rules:
+    - id: block-spam-referer
+      expression: 'http.referer contains "spam.e2e"'
+      action: block
+    - id: log-everything
+      expression: 'http.request.uri.path ne ""'
+      action: log
+    - id: block-delete
+      expression: 'http.request.method eq "DELETE" and not ip.src in {198.18.1.0/24}'
+      action: block
+    - id: captcha-badbot
+      expression: 'http.user_agent wildcard "*badbot*"'
+      action: captcha
+    - id: allow-monitor
+      expression: 'ip.src in {198.18.2.0/24} and http.request.uri.path eq "/health"'
+      action: allow
+    - id: skip-api-flood
+      expression: 'starts_with(http.request.uri.path, "/api/") and http.request.headers["x-api-key"] ne ""'
+      action: skip
+      skip: [HTTPFlood]
+    - id: disabled-block-all
+      enabled: false
+      expression: 'true'
+      action: block

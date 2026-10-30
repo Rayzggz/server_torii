@@ -21,6 +21,7 @@ var (
 	DefaultConnectingIPHeaders             = []string{"Torii-Real-IP"}
 	DefaultConnectingURIHeaders            = []string{"Torii-Original-URI"}
 	DefaultConnectingFeatureControlHeaders = []string{"Torii-Feature-Control"}
+	DefaultConnectingMethodHeaders         = []string{"Torii-Original-Method"}
 	DefaultSites                           = []AllSiteRuleSet{
 		{Host: "default_site", RulePath: "/www/server_torii/config/rules/default"},
 	}
@@ -40,6 +41,7 @@ func DefaultMainConfig() *MainConfig {
 		ConnectingIPHeaders:             append([]string{}, DefaultConnectingIPHeaders...),
 		ConnectingURIHeaders:            append([]string{}, DefaultConnectingURIHeaders...),
 		ConnectingFeatureControlHeaders: append([]string{}, DefaultConnectingFeatureControlHeaders...),
+		ConnectingMethodHeaders:         append([]string{}, DefaultConnectingMethodHeaders...),
 		Sites:                           append([]AllSiteRuleSet{}, DefaultSites...),
 	}
 }

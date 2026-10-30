@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"server_torii/internal/dataType"
+	"server_torii/internal/rules"
 	"server_torii/internal/utils"
 	"strings"
 
@@ -29,6 +30,23 @@ type ruleSetWrapper struct {
 	ExternalMigrationRule       *dataType.ExternalMigrationRule       `yaml:"ExternalMigration"`
 	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
 	CountryRule                 *countryRuleWrapper                   `yaml:"CountryRule"`
+	CustomRules                 *customRulesWrapper                   `yaml:"CustomRules"`
+}
+
+type customRulesWrapper struct {
+	Enabled       bool                 `yaml:"enabled"`
+	Rules         []customRuleWrapper  `yaml:"rules"`
+	UnknownFields map[string]yaml.Node `yaml:",inline"`
+}
+
+type customRuleWrapper struct {
+	ID            string               `yaml:"id"`
+	Description   string               `yaml:"description"`
+	Enabled       *bool                `yaml:"enabled"`
+	Expression    string               `yaml:"expression"`
+	Action        string               `yaml:"action"`
+	Skip          []string             `yaml:"skip"`
+	UnknownFields map[string]yaml.Node `yaml:",inline"`
 }
 
 type httpFloodRuleWrapper struct {
@@ -194,4 +212,60 @@ func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *dataType.HTTPFloodRul
 
 	dest.HTTPFloodFailureLimit, err = utils.ParseRateList(wrapper.HTTPFloodFailureLimit)
 	return err
+}
+
+// mapCustomRules compiles every enabled rule; any error rejects the whole file so a reload keeps the old rules.
+func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error {
+	for field := range wrapper.UnknownFields {
+		return fmt.Errorf("CustomRules: unknown field %q", field)
+	}
+	dest.Enabled = wrapper.Enabled
+	dest.Rules = make([]*rules.Rule, 0, len(wrapper.Rules))
+	seen := make(map[string]bool, len(wrapper.Rules))
+	for i, w := range wrapper.Rules {
+		label := fmt.Sprintf("CustomRules rule #%d", i+1)
+		if w.ID != "" {
+			label = fmt.Sprintf("CustomRules rule %q", w.ID)
+		}
+		for field := range w.UnknownFields {
+			return fmt.Errorf("%s: unknown field %q", label, field)
+		}
+		if w.ID == "" {
+			return fmt.Errorf("%s: id is required", label)
+		}
+		if seen[w.ID] {
+			return fmt.Errorf("%s: duplicate id", label)
+		}
+		seen[w.ID] = true
+		act, err := rules.ParseAction(w.Action)
+		if err != nil {
+			return fmt.Errorf("%s: %w", label, err)
+		}
+		var skipMask uint32
+		switch {
+		case act == rules.ActionSkip && len(w.Skip) == 0:
+			return fmt.Errorf("%s: skip action requires a non-empty skip list", label)
+		case act != rules.ActionSkip && len(w.Skip) > 0:
+			return fmt.Errorf("%s: skip list is only valid with the skip action", label)
+		case act == rules.ActionSkip:
+			if skipMask, err = rules.ParseSkipTargets(w.Skip); err != nil {
+				return fmt.Errorf("%s: %w", label, err)
+			}
+		}
+		prog, err := rules.Compile(w.Expression)
+		if err != nil {
+			return fmt.Errorf("%s: expression %s", label, err)
+		}
+		if w.Enabled != nil && !*w.Enabled {
+			continue
+		}
+		dest.Rules = append(dest.Rules, &rules.Rule{
+			ID:          w.ID,
+			Description: w.Description,
+			Action:      act,
+			SkipMask:    skipMask,
+			Program:     prog,
+		})
+	}
+	return nil
 }

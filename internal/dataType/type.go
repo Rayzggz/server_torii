@@ -22,7 +22,8 @@ const (
 	FeatureBitCountryRule       = 8  // bit 8
 	FeatureBitIPCAPTCHA         = 9  // bit 9
 	FeatureBitURLCAPTCHA        = 10 // bit 10
-	// Bits 11-15 reserved for future features
+	FeatureBitCustomRules       = 11 // bit 11
+	// Bits 12-15 reserved for future features
 )
 
 // Feature Control Values
@@ -38,6 +39,7 @@ const (
 	FeatureCountryRule       = 1 << FeatureBitCountryRule       // 0000000100000000
 	FeatureIPCAPTCHA         = 1 << FeatureBitIPCAPTCHA         // 0000001000000000
 	FeatureURLCAPTCHA        = 1 << FeatureBitURLCAPTCHA
+	FeatureCustomRules       = 1 << FeatureBitCustomRules
 )
 
 type UserRequest struct {
@@ -49,6 +51,8 @@ type UserRequest struct {
 	ToriiSessionID string
 	UserAgent      string
 	Host           string
+	Method         string
+	Headers        http.Header // original request headers inherited by the subrequest
 }
 
 type CaptchaRule struct {

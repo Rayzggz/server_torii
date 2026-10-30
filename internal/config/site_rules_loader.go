@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"server_torii/internal/dataType"
+	"server_torii/internal/rules"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -35,6 +36,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		ExternalMigrationRule:       &dataType.ExternalMigrationRule{},
 		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{},
 		CountryRule:                 &dataType.CountryRule{DefaultAction: dataType.CountryContinue, UnknownAction: dataType.CountryContinue, Countries: make(map[string]dataType.CountryAction)},
+		CustomRules:                 &rules.CustomRules{},
 	}
 
 	// Load IP Allow List
@@ -164,6 +166,31 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		}
 		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
 			return fmt.Errorf("CountryRule requires valid CAPTCHA configuration: %w", err)
+		}
+	}
+
+	if wrapper.CustomRules != nil {
+		if rs.CustomRules == nil {
+			rs.CustomRules = &rules.CustomRules{}
+		}
+		if err := mapCustomRules(wrapper.CustomRules, rs.CustomRules); err != nil {
+			return err
+		}
+		if rs.CustomRules.Uses(rules.ActionCaptcha) {
+			if wrapper.CAPTCHARule == nil {
+				return fmt.Errorf("CustomRules captcha action requires CAPTCHA configuration")
+			}
+			if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
+				return fmt.Errorf("CustomRules requires valid CAPTCHA configuration: %w", err)
+			}
+		}
+		if rs.CustomRules.Uses(rules.ActionExternal) {
+			if wrapper.ExternalMigrationRule == nil {
+				return fmt.Errorf("CustomRules external action requires ExternalMigration configuration")
+			}
+			if err := validate.Struct(wrapper.ExternalMigrationRule); err != nil {
+				return fmt.Errorf("CustomRules requires valid ExternalMigration configuration: %w", err)
+			}
 		}
 	}
 

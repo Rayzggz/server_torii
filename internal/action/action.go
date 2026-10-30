@@ -14,6 +14,7 @@ type Decision struct {
 	State        checkState
 	ResponseData []byte
 	JumpIndex    int
+	SkipMask     uint32 // checks to skip for the rest of the request, set by custom skip rules
 }
 
 func NewDecision() *Decision {
