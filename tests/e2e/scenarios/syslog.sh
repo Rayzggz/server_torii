@@ -10,17 +10,18 @@ test_syslog() {
     local i deadline remaining
     # Controls are observed over more than one complete analyzer window.
     for ((i=0; i<10; i++)); do
-        send_log nonexistent 203.0.113.150 /ignored 500
+        send_log nonexistent 203.0.113.150 /ignored 404
         send_log e2e-non200 203.0.113.151 /healthy 200
     done
-    send_log e2e-non200 203.0.113.152 /below-threshold 500
+    send_log e2e-non200 203.0.113.152 /below-threshold 404
     printf 'malformed 203.0.113.153\n' > "/dev/udp/127.0.0.1/$((BASE_PORT+1))"
     sleep 3
     for i in 150 151 152 153; do expect 200 1 "203.0.113.$i"; done
+    # IP detection scores client errors (4xx); 5xx responses are the origin's fault, not the client's.
     # Send sustained bounded batches to avoid a batch straddling the 2s boundary.
     deadline=$((SECONDS+10))
     while true; do
-        for ((i=0; i<10; i++)); do send_log e2e-non200 203.0.113.154 /failures 500; done
+        for ((i=0; i<10; i++)); do send_log e2e-non200 203.0.113.154 /failures 404; done
         check 1 203.0.113.154
         [[ "$HTTP_ACTION" != 403 ]] || break
         (( SECONDS < deadline )) || fail 'Non-200 analyzer did not block'
@@ -49,7 +50,7 @@ test_syslog() {
     # requiring probabilistic dissemination before a short TTL elapses.
     deadline=$((SECONDS+10))
     while true; do
-        for ((i=0; i<10; i++)); do send_log e2e-non200expiry 203.0.113.182 /expiry-ip 500; done
+        for ((i=0; i<10; i++)); do send_log e2e-non200expiry 203.0.113.182 /expiry-ip 404; done
         check 1 203.0.113.182
         [[ "$HTTP_ACTION" != 403 ]] || break
         (( SECONDS < deadline )) || fail 'Expiring IP analyzer rule not created'
@@ -60,7 +61,8 @@ test_syslog() {
     expect 200 1 203.0.113.182
     deadline=$((SECONDS+10))
     while true; do
-        for ((i=0; i<10; i++)); do send_log e2e-uriexpiry 203.0.113.183 /expiry-uri 500; done
+        # A hot URI needs several distinct non-browser clients.
+        for ((i=0; i<10; i++)); do send_log e2e-uriexpiry "203.0.113.$((240+i))" /expiry-uri 500; done
         check 1 203.0.113.184 "$ZERO" /expiry-uri
         [[ "$HTTP_ACTION" != CAPTCHA ]] || break
         (( SECONDS < deadline )) || fail 'Expiring URI analyzer rule not created'

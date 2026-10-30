@@ -43,21 +43,20 @@ AdaptiveTrafficAnalyzer:
   enabled: false
   tag: disabled
   analysis_interval: 2
-  non_200_analysis:
-    enabled: false
+  window_buckets: 2
+  uri_detection:
+    action: observe
     block_duration: 300
-    fail_count_threshold: 5
-    fail_rate_count_threshold: 5
-    fail_rate_threshold: 0
-    uri_rate_top_n: 0
-    uri_rate_threshold: 0
-  uri_analysis:
+    min_requests: 10
+    min_distinct_ips: 5
+    sustain: 2
+    fallback_share: 0.8
+  ip_detection:
     enabled: false
+    action: block
     block_duration: 300
-    fail_rate_threshold: 0.8
-    fail_rate_count_threshold: 5
-    request_count_sensitivity: 0
-    request_count_threshold: 5
+    min_failures: 5
+    fail_rate_threshold: 0.5
 CustomRules:
   enabled: false
   rules:

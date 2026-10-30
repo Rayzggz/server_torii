@@ -107,11 +107,12 @@ setup_cluster() {
         sed -i 's/failure_block_duration: 300/failure_block_duration: 3/g' "$node/rules/expiry/Server.yml"
         for site in non200 uri non200expiry uriexpiry; do
             cfg="$node/rules/$site/Server.yml"
-            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  non_200_analysis:/s/enabled: false/enabled: true/; s/tag: disabled/tag: e2e-$site/" "$cfg"
+            # Ranges end at the next top-level key so later sections such as CustomRules stay untouched.
+            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/; s/tag: disabled/tag: e2e-$site/" "$cfg"
             if [[ "$site" == non200* ]]; then
-                sed -i '/^  non_200_analysis:/,/^  uri_analysis:/s/enabled: false/enabled: true/' "$cfg"
+                sed -i '/^  ip_detection:/,/^[^ ]/s/enabled: false/enabled: true/' "$cfg"
             else
-                sed -i '/^  uri_analysis:/,$s/enabled: false/enabled: true/' "$cfg"
+                sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: captcha/' "$cfg"
             fi
             if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300/block_duration: 3/g' "$cfg"; fi
         done
