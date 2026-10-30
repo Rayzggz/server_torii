@@ -83,3 +83,33 @@ AdaptiveTrafficAnalyzer:
     fail_rate_threshold: 0.6
     scan_paths_threshold: 30
     max_broadcast_per_tick: 200
+CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after the IP/URL allow and block lists
+  enabled: false
+  # Fields: ip.src, ip.src.country (alias ip.geoip.country), http.host, http.request.uri, http.request.uri.path,
+  #   http.request.uri.query, http.request.uri.path.extension, http.request.uri.args["k"], http.request.method,
+  #   http.user_agent, http.referer, http.cookie, http.x_forwarded_for, http.request.headers["name"],
+  #   http.request.cookies["name"], torii.browser_evidence
+  #   http.request.method needs Nginx to send the original method: proxy_set_header Torii-Original-Method $request_method;
+  # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (len() only)
+  # Logic: not !, and &&, xor ^^, or || (in this precedence order), parentheses
+  # Functions: lower(), upper(), url_decode(), len(), starts_with(f, "x"), ends_with(f, "x")
+  # Actions: allow (pass now, skip every later check), skip (skip the checks in `skip`, keep evaluating rules),
+  #   continue (stop evaluating rules), log (log and keep evaluating), block, captcha, external
+  # Skip targets: CustomRules (the remaining rules), IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule,
+  #   HTTPFlood, ExternalMigration, Captcha
+  rules:
+    - id: block-wp-scan
+      description: "WordPress probes on a non-WordPress site"
+      expression: 'http.request.uri.path wildcard "/wp-*" and not ip.src in {10.0.0.0/8 192.168.0.0/16}'
+      action: block
+    - id: admin-hotlink
+      expression: 'starts_with(http.request.uri.path, "/admin") and not http.referer wildcard "https://example.com/*"'
+      action: captcha
+    - id: api-key-skip-flood
+      expression: 'starts_with(http.request.uri.path, "/api/") and http.request.headers["x-api-key"] ne ""'
+      action: skip
+      skip: [HTTPFlood, CountryRule]
+    - id: monitor
+      enabled: false
+      expression: 'ip.src in {203.0.113.0/24} and http.user_agent contains "UptimeMonitor"'
+      action: allow

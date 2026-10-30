@@ -7,9 +7,9 @@ E2E="$ROOT/tests/e2e"
 source "$E2E/lib.sh"
 suite=${1:-all}
 case "$suite" in
-    all) groups=(routing access country flood captcha external syslog gossip crawler reload) ;;
-    routing|access|country|flood|captcha|external|syslog|gossip|crawler|reload) groups=("$suite") ;;
-    *) printf 'Usage: bash tests/e2e/test.sh [all|routing|access|country|flood|captcha|external|syslog|gossip|crawler|reload]\n' >&2; exit 2 ;;
+    all) groups=(routing access country custom_rules flood captcha external syslog gossip crawler reload) ;;
+    routing|access|country|custom_rules|flood|captcha|external|syslog|gossip|crawler|reload) groups=("$suite") ;;
+    *) printf 'Usage: bash tests/e2e/test.sh [all|routing|access|country|custom_rules|flood|captcha|external|syslog|gossip|crawler|reload]\n' >&2; exit 2 ;;
 esac
 preflight
 setup_cluster

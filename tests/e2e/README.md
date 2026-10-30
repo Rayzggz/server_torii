@@ -54,6 +54,7 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 | --- | --- |
 | `routing` | Node identities and health, default/exact/wildcard sites, configured header aliases and precedence, feature overrides |
 | `access` | IPv4/CIDR and IPv4-mapped IPv6 allow/block/CAPTCHA lists, ignored native IPv6 rules, exact/regex URL rules, overlap precedence and nonmatches |
+| `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/captcha/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
 | `country` | Pinned US/AU/GB database records, default and unknown policies, missing database, rule precedence |
 | `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry |
 | `captcha` | ALTCHA challenge and shell solution, clearance, list integration, tampering, malformed proof, session binding/expiry, challenge/clearance expiry, failure block |

@@ -20,6 +20,7 @@ English | [简体中文](README-zh_cn.md)
 * IP Address Allow List  
 * URL Block List  
 * URL Allow List
+* Custom Rules (Cloudflare-style expressions on IP, country, URI, Referer, User-Agent, headers and cookies)
 
 ## 🔧 Documents
 

@@ -7,30 +7,42 @@ import (
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/rules"
 	"server_torii/internal/utils"
 )
 
 type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
 
+// checkStep pairs a check with the rules.Skip* bit that lets a custom skip rule bypass it.
+type checkStep struct {
+	skip uint32
+	fn   CheckFunc
+}
+
 func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
 	decision := action.NewDecision()
 
-	checkFuncs := make([]CheckFunc, 0)
-	checkFuncs = append(checkFuncs, check.IPAllowList)
-	checkFuncs = append(checkFuncs, check.IPBlockList)
-	checkFuncs = append(checkFuncs, check.URLAllowList)
-	checkFuncs = append(checkFuncs, check.URLBlockList)
-	checkFuncs = append(checkFuncs, check.IPCAPTCHA)
-	checkFuncs = append(checkFuncs, check.URLCAPTCHA)
-	checkFuncs = append(checkFuncs, check.CountryRule)
-	checkFuncs = append(checkFuncs, check.VerifyBot)
-	checkFuncs = append(checkFuncs, check.ActionRule)
-	checkFuncs = append(checkFuncs, check.HTTPFlood)
-	checkFuncs = append(checkFuncs, check.ExternalMigration)
-	checkFuncs = append(checkFuncs, check.Captcha)
+	checkSteps := []checkStep{
+		{0, check.IPAllowList},
+		{0, check.IPBlockList},
+		{0, check.URLAllowList},
+		{0, check.URLBlockList},
+		{rules.SkipCustomRules, check.CustomRules},
+		{rules.SkipIPCAPTCHA, check.IPCAPTCHA},
+		{rules.SkipURLCAPTCHA, check.URLCAPTCHA},
+		{rules.SkipCountryRule, check.CountryRule},
+		{rules.SkipVerifyBot, check.VerifyBot},
+		{rules.SkipActionRule, check.ActionRule},
+		{rules.SkipHTTPFlood, check.HTTPFlood},
+		{rules.SkipExternalMigration, check.ExternalMigration},
+		{rules.SkipCaptcha, check.Captcha},
+	}
 
-	for _, checkFunc := range checkFuncs {
-		checkFunc(userRequestData, ruleSet, decision, sharedMem)
+	for _, step := range checkSteps {
+		if decision.SkipMask&step.skip != 0 {
+			continue
+		}
+		step.fn(userRequestData, ruleSet, decision, sharedMem)
 		if decision.State == action.Done {
 			break
 		}

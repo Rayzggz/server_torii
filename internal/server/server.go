@@ -69,6 +69,8 @@ func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRe
 		ToriiSessionID: getHeader(r, "__torii_session_id"),
 		UserAgent:      r.UserAgent(),
 		Host:           getReqHost(cfg, r),
+		Method:         getReqMethod(cfg, r),
+		Headers:        r.Header,
 	}
 	return userRequest
 }
@@ -83,7 +85,7 @@ func getHeader(r *http.Request, headerName string) string {
 
 // processFeatureControl processes the feature control header and combines it with config rules
 // Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
-// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule, 9=IPCAPTCHA, 10=URLCAPTCHA
+// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule, 9=IPCAPTCHA, 10=URLCAPTCHA, 11=CustomRules
 func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
 	// Define feature list in order (position 0 to N)
 	configStates := []bool{
@@ -98,6 +100,7 @@ func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *con
 		ruleSet.CountryRule.Enabled,                                     // position 8
 		ruleSet.IPCAPTCHARule != nil && ruleSet.IPCAPTCHARule.Enabled,   // position 9
 		ruleSet.URLCAPTCHARule != nil && ruleSet.URLCAPTCHARule.Enabled, // position 10
+		ruleSet.CustomRules != nil && ruleSet.CustomRules.Enabled,       // position 11
 		// Future features can be added here
 	}
 
@@ -183,6 +186,16 @@ func getClientIP(cfg *config.MainConfig, r *http.Request) string {
 		}
 	}
 	return clientIP
+}
+
+// getReqMethod reads the original method: Nginx auth_request subrequests are always GET.
+func getReqMethod(cfg *config.MainConfig, r *http.Request) string {
+	for _, headerName := range cfg.ConnectingMethodHeaders {
+		if methodVal := r.Header.Get(headerName); methodVal != "" {
+			return methodVal
+		}
+	}
+	return r.Method
 }
 
 func getReqHost(cfg *config.MainConfig, r *http.Request) string {

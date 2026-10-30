@@ -14,6 +14,7 @@ type MainConfig struct {
 	ConnectingIPHeaders             []string         `yaml:"connecting_ip_headers" validate:"required"`
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
 	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers" validate:"required"`
+	ConnectingMethodHeaders         []string         `yaml:"connecting_method_headers"`
 	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required"`
 	Peers                           []Peer           `yaml:"peers"`
 }

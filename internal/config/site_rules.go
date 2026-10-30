@@ -2,6 +2,7 @@ package config
 
 import (
 	"server_torii/internal/dataType"
+	"server_torii/internal/rules"
 	"strings"
 )
 
@@ -19,6 +20,7 @@ type RuleSet struct {
 	ExternalMigrationRule       *dataType.ExternalMigrationRule
 	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule
 	CountryRule                 *dataType.CountryRule
+	CustomRules                 *rules.CustomRules
 }
 
 // GetSiteRules returns the rules for a specific host.
