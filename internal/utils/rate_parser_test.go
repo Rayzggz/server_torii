@@ -67,3 +67,22 @@ func TestParseRateList_DuplicateWindowLastWins(t *testing.T) {
 		t.Errorf("result[1] = %d, want 200 (last value wins)", result[1])
 	}
 }
+
+func TestFindMaxRateTime(t *testing.T) {
+	tests := []struct {
+		name  string
+		rates map[int64]int64
+		want  int64
+	}{
+		{"nil", nil, 0},
+		{"single window", map[int64]int64{60: 100}, 60},
+		{"picks the longest window, not the highest limit", map[int64]int64{1: 1000, 3600: 5, 300: 50}, 3600},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FindMaxRateTime(tt.rates); got != tt.want {
+				t.Fatalf("FindMaxRateTime(%v) = %d, want %d", tt.rates, got, tt.want)
+			}
+		})
+	}
+}
