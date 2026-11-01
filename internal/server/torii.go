@@ -279,6 +279,19 @@ func validateInternalRedirectPath(raw string) (string, error) {
 	return redirect, nil
 }
 
+// externalRedirectLocation escapes each value, so a URI with its own query string reaches the provider intact.
+func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacValue string) string {
+	sep := "?"
+	if strings.Contains(redirectURL, "?") {
+		sep = "&"
+	}
+	return redirectURL + sep +
+		"domain=" + url.QueryEscape(domain) +
+		"&session_id=" + url.QueryEscape(sessionID) +
+		"&original_uri=" + url.QueryEscape(originalURI) +
+		"&hmac=" + url.QueryEscape(hmacValue)
+}
+
 func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
 	if r.URL.Path == cfg.WebPath+"/checker_pages/403" {
 		tpl, err := template.ParseFiles(cfg.ErrorPage + "/403.html")
@@ -364,7 +377,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		timestamp := sessionParts[0]
 		hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
 
-		w.Header().Set("Location", ruleSet.ExternalMigrationRule.RedirectUrl+"?domain="+reqData.Host+"&session_id="+sessionID+"&original_uri="+reqData.Uri+"&hmac="+hmacValue)
+		w.Header().Set("Location", externalRedirectLocation(ruleSet.ExternalMigrationRule.RedirectUrl, reqData.Host, sessionID, reqData.Uri, hmacValue))
 		w.WriteHeader(http.StatusFound)
 		_, err := w.Write([]byte("OK"))
 		if err != nil {

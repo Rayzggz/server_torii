@@ -343,3 +343,68 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 		t.Fatalf("clearance rejected after round trip: %v %q", decision.State, decision.HTTPCode)
 	}
 }
+
+func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
+	tests := []struct {
+		name        string
+		redirectURL string
+		uri         string
+		wantQuery   url.Values
+	}{
+		{
+			name:        "original URI with its own query",
+			redirectURL: "https://mitigation.invalid/verify",
+			uri:         "/search?q=a b&page=2#frag",
+		},
+		{
+			name:        "original URI that injects provider parameters",
+			redirectURL: "https://mitigation.invalid/verify",
+			uri:         "/x?domain=evil.example&hmac=0",
+		},
+		{
+			name:        "redirect URL that already has a query",
+			redirectURL: "https://mitigation.invalid/verify?tenant=42",
+			uri:         "/a?b=1",
+			wantQuery:   url.Values{"tenant": {"42"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newExternalFixture(t)
+			f.ruleSet.ExternalMigrationRule.RedirectUrl = tt.redirectURL
+			reqData := f.reqData
+			reqData.Uri = tt.uri
+
+			rec := httptest.NewRecorder()
+			CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{})
+
+			loc, err := url.Parse(rec.Header().Get("Location"))
+			if err != nil {
+				t.Fatalf("Location is not a URL: %v", err)
+			}
+			if loc.Fragment != "" {
+				t.Fatalf("fragment leaked into the provider URL: %q", loc.Fragment)
+			}
+			q := loc.Query()
+			for _, key := range []string{"domain", "session_id", "original_uri", "hmac"} {
+				if len(q[key]) != 1 {
+					t.Fatalf("%s appears %d times in %q", key, len(q[key]), loc.RawQuery)
+				}
+			}
+			if q.Get("original_uri") != tt.uri || q.Get("domain") != "example.com" {
+				t.Fatalf("provider sees original_uri=%q domain=%q", q.Get("original_uri"), q.Get("domain"))
+			}
+			for k, v := range tt.wantQuery {
+				if q.Get(k) != v[0] {
+					t.Fatalf("%s = %q, want %q", k, q.Get(k), v[0])
+				}
+			}
+			// The provider must be able to verify the signature from the decoded values.
+			stamp, _, _ := strings.Cut(q.Get("session_id"), ":")
+			want := check.CalculateRedirectHMAC(q.Get("domain"), stamp, q.Get("original_uri"), f.ruleSet.ExternalMigrationRule.SecretKey)
+			if q.Get("hmac") != want {
+				t.Fatal("provider cannot verify the redirect signature")
+			}
+		})
+	}
+}

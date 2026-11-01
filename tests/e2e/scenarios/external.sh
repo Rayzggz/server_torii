@@ -6,7 +6,7 @@ test_external() {
     assert_eq "$HTTP_CODE" 302
     location=$(header Location)
     assert_contains "$location" 'https://mitigation.invalid/verify?domain=default_site&session_id='
-    assert_contains "$location" '&original_uri=/return&hmac='
+    assert_contains "$location" '&original_uri=%2Freturn&hmac='
     session=$(awk '$6=="__torii_session_id" {print $7}' "$jar")
     [[ -n "$session" ]] || fail 'Missing migration session'
     assert_contains "$(header Set-Cookie)" 'HttpOnly'
