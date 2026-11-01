@@ -260,7 +260,8 @@ func validateInternalRedirectPath(raw string) (string, error) {
 	if u.Scheme != "" || u.Host != "" {
 		return "", fmt.Errorf("redirect target must not contain scheme or host")
 	}
-	if strings.HasPrefix(u.Path, "//") {
+	// Browsers treat a backslash as a slash, so "/\host" would also be scheme-relative.
+	if strings.HasPrefix(u.Path, "//") || strings.Contains(u.Path, `\`) {
 		return "", fmt.Errorf("redirect target must not be scheme-relative")
 	}
 	if !strings.HasPrefix(u.Path, "/") {
