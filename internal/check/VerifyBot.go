@@ -27,7 +27,8 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	var exptractRDNS []string
 	switch {
 	case strings.Contains(ua, "googlebot") && ruleSet.VerifyBotRule.VerifyGoogleBot:
-		exptractRDNS = []string{"googlebot.com", "google.com", "googleusercontent.com"}
+		// Not googleusercontent.com: every Google Cloud VM reverse-resolves there.
+		exptractRDNS = []string{"googlebot.com", "google.com"}
 	case strings.Contains(ua, "bingbot") && ruleSet.VerifyBotRule.VerifyBingBot:
 		exptractRDNS = []string{"search.msn.com"}
 	case strings.Contains(ua, "baiduspider") && ruleSet.VerifyBotRule.VerifyBaiduBot:
@@ -56,7 +57,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	for _, rdns := range exptractRDNS {
 		for _, actual := range actualRDNS {
-			if strings.Contains(actual, rdns) {
+			if hostInDomain(actual, rdns) {
 				ips, err := net.LookupIP(actual)
 				if err != nil {
 					utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: LookupIP failed: %v", err))
@@ -79,4 +80,11 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	decision.SetCode(action.Done, []byte("403"))
 	return
 
+}
+
+// hostInDomain reports whether host is domain or one of its subdomains.
+// A substring match would accept attacker-controlled names such as "googlebot.com.example.net".
+func hostInDomain(host, domain string) bool {
+	host = strings.ToLower(strings.TrimSuffix(host, "."))
+	return host == domain || strings.HasSuffix(host, "."+domain)
 }

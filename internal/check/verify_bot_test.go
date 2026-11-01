@@ -80,3 +80,33 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 		})
 	}
 }
+
+func TestHostInDomain(t *testing.T) {
+	tests := []struct {
+		host, domain string
+		want         bool
+	}{
+		{"crawl-66-249-66-1.googlebot.com.", "googlebot.com", true},
+		{"crawl-66-249-66-1.googlebot.com", "googlebot.com", true},
+		{"CRAWL-66-249-66-1.GOOGLEBOT.COM.", "googlebot.com", true},
+		{"googlebot.com", "googlebot.com", true},
+		{"rate-limited-proxy-66-249-90-1.google.com.", "google.com", true},
+		{"msnbot-157-55-39-1.search.msn.com.", "search.msn.com", true},
+		{"17-58-98-1.applebot.apple.com.", "apple.com", true},
+		// Attacker-controlled reverse DNS that only contains the crawler domain.
+		{"crawl.googlebot.com.attacker.example.", "googlebot.com", false},
+		{"googlebot.com.attacker.example", "googlebot.com", false},
+		{"evilgooglebot.com.", "googlebot.com", false},
+		{"fakegoogle.com.", "google.com", false},
+		{"apple.com.lk.", "apple.com", false},
+		{"search.msn.com.evil.example.", "search.msn.com", false},
+		{"msn.com.", "search.msn.com", false},
+		{"", "googlebot.com", false},
+		{".", "googlebot.com", false},
+	}
+	for _, tt := range tests {
+		if got := hostInDomain(tt.host, tt.domain); got != tt.want {
+			t.Errorf("hostInDomain(%q, %q) = %v, want %v", tt.host, tt.domain, got, tt.want)
+		}
+	}
+}

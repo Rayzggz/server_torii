@@ -16,7 +16,7 @@ test_crawler() {
         (( attempts <= 30 )) || break
         if ! hostname=$(dig +time=2 +tries=1 +short -x "$candidate" | awk 'NR==1 {print}'); then continue; fi
         hostname=${hostname%.}
-        case "$hostname" in *.googlebot.com|*.google.com|*.googleusercontent.com) ;; *) continue ;; esac
+        case "$hostname" in *.googlebot.com|*.google.com) ;; *) continue ;; esac
         if ! addresses=$(dig +time=2 +tries=1 +short A "$hostname"); then continue; fi
         if grep -Fxq "$candidate" <<< "$addresses"; then selected=$candidate; break; fi
     done <<< "$prefixes"

@@ -230,6 +230,10 @@ var fakeCrawlers = []struct {
 	{"Googlebot from Cloudflare DNS", "1.1.1.1", liveCrawlers[0].ua},
 	{"Googlebot from Quad9 DNS", "9.9.9.9", liveCrawlers[0].ua},
 	{"Googlebot from an address without reverse DNS", "192.0.2.1", liveCrawlers[0].ua},
+	// Rentable Google Cloud VMs: their reverse DNS (*.bc.googleusercontent.com) resolves back to them.
+	{"Googlebot from a Google Cloud VM (34.120.177.193)", "34.120.177.193", liveCrawlers[0].ua},
+	{"Googlebot from a Google Cloud VM (35.186.224.25)", "35.186.224.25", liveCrawlers[0].ua},
+	{"Googlebot from a Google Cloud VM (34.102.136.180)", "34.102.136.180", liveCrawlers[0].ua},
 	{"upper-case GOOGLEBOT from Quad9 DNS", "9.9.9.9", "MOZILLA/5.0 (COMPATIBLE; GOOGLEBOT/2.1)"},
 	{"Bingbot from a Microsoft edge server (msedge.net)", "204.79.197.200", liveCrawlers[1].ua},
 	{"Bingbot from a Microsoft address without reverse DNS", "13.107.21.200", liveCrawlers[1].ua},
