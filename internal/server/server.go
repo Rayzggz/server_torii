@@ -60,7 +60,7 @@ func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error
 		if strings.Compare(r.URL.Path, path.Join(cfg.WebPath, "/checker")) == 0 {
 			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
 		} else {
-			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem)
+			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem, snap.Pages)
 		}
 
 	})

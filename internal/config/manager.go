@@ -12,6 +12,7 @@ import (
 // SiteConfigSnapshot represents a complete, immutable snapshot of the active site configurations and their derived states.
 type SiteConfigSnapshot struct {
 	SiteRules map[string]*RuleSet
+	Pages     *ErrorPages
 }
 
 // ConfigManager handles the thread-safe swapping of site configuration snapshots.
@@ -50,6 +51,12 @@ func (m *ConfigManager) Reload(cfg *MainConfig, sharedMem *dataType.SharedMemory
 	siteRules, err := LoadSiteRules(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to reload site rules: %w", err)
+	}
+
+	// Parse before touching shared memory so a broken template leaves everything as it was.
+	pages, err := LoadErrorPages(cfg.ErrorPage)
+	if err != nil {
+		return fmt.Errorf("failed to reload error pages: %w", err)
 	}
 
 	// Derive maximum cache life times needed for limits across all sites to validate against sharedMem limits.
@@ -107,6 +114,7 @@ func (m *ConfigManager) Reload(cfg *MainConfig, sharedMem *dataType.SharedMemory
 
 	newSnapshot := &SiteConfigSnapshot{
 		SiteRules: siteRules,
+		Pages:     pages,
 	}
 
 	m.snapshot.Store(newSnapshot)

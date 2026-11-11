@@ -103,7 +103,7 @@ func (f *externalFixture) migrate(t *testing.T, reqData dataType.UserRequest, q 
 	target := "/torii/external_migration?" + q.Encode()
 	reqData.Uri = target
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{})
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
 	return rec
 }
 
@@ -273,7 +273,7 @@ func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
 	reqData.Uri = "/protected"
 
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{})
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -319,7 +319,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	reqData.Uri = "/protected"
 
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{})
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
 	loc, _ := url.Parse(rec.Header().Get("Location"))
 	provider := loc.Query()
 
@@ -376,7 +376,7 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 			reqData.Uri = tt.uri
 
 			rec := httptest.NewRecorder()
-			CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{})
+			CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
 
 			loc, err := url.Parse(rec.Header().Get("Location"))
 			if err != nil {

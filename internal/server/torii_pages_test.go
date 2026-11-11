@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
@@ -27,7 +29,7 @@ func newPagesConfig(t *testing.T) *config.MainConfig {
 func serveTorii(path string, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) *httptest.ResponseRecorder {
 	reqData.Uri = path
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, path, nil), reqData, ruleSet, cfg, sharedMem)
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, path, nil), reqData, ruleSet, cfg, sharedMem, pagesFor(cfg))
 	return rec
 }
 
@@ -168,7 +170,7 @@ func postCaptcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMe
 	req := httptest.NewRequest(http.MethodPost, "/torii/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, req, reqData, ruleSet, &config.MainConfig{WebPath: "/torii"}, sharedMem)
+	CheckTorii(rec, req, reqData, ruleSet, &config.MainConfig{WebPath: "/torii"}, sharedMem, nil)
 	return rec
 }
 
@@ -287,5 +289,42 @@ func TestTrafficMarkerOf(t *testing.T) {
 		if analyzer.marks.active(ip, now.Add(2*time.Minute)) {
 			t.Errorf("%s mark did not expire", ip)
 		}
+	}
+}
+
+// pagesFor parses cfg's error pages the way a config reload does, so tests exercise the precompiled path.
+func pagesFor(cfg *config.MainConfig) *config.ErrorPages {
+	if cfg.ErrorPage == "" {
+		return nil
+	}
+	pages, err := config.LoadErrorPages(cfg.ErrorPage)
+	if err != nil {
+		panic(err)
+	}
+	return pages
+}
+
+func TestErrorPagesAreParsedOnce(t *testing.T) {
+	cfg := newPagesConfig(t)
+	pages := pagesFor(cfg)
+	// Once loaded, the templates no longer depend on the files: deleting them must not matter.
+	if err := os.Remove(filepath.Join(cfg.ErrorPage, "403.html")); err != nil {
+		t.Fatal(err)
+	}
+	reqData := dataType.UserRequest{RemoteIP: "203.0.113.5", Uri: "/torii/checker_pages/403"}
+	rec := httptest.NewRecorder()
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, cfg, &dataType.SharedMemory{}, pages)
+	if rec.Code != http.StatusForbidden || rec.Body.String() != "403|node-a|203.0.113.5" {
+		t.Fatalf("got %d %q, want precompiled 403 page", rec.Code, rec.Body.String())
+	}
+}
+
+func TestNilErrorPagesAnswer500(t *testing.T) {
+	cfg := newPagesConfig(t)
+	reqData := dataType.UserRequest{Uri: "/torii/checker_pages/403"}
+	rec := httptest.NewRecorder()
+	CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, cfg, &dataType.SharedMemory{}, nil)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
 	}
 }

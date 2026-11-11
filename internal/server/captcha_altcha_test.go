@@ -35,7 +35,7 @@ func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/torii/captcha/challenge", nil)
 	rec := httptest.NewRecorder()
 
-	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{})
+	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -77,7 +77,7 @@ func TestCheckToriiAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/torii/captcha/challenge", nil)
 	rec := httptest.NewRecorder()
 
-	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{})
+	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
@@ -134,7 +134,7 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 
 			req := httptest.NewRequest(http.MethodGet, "/torii/checker_pages/CAPTCHA", nil)
 			rec := httptest.NewRecorder()
-			CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{})
+			CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
 
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
