@@ -76,4 +76,16 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 // validateMainConfig validates the main configuration object.
 func validateMainConfig(cfg *MainConfig) {
 	validateConfiguration(cfg, "MainConfig")
+	warnPublicGlobalSecret(cfg)
+}
+
+// warnPublicGlobalSecret reports whether global_secret is DefaultGlobalSecret, which is published in
+// config_example/torii.yml, and logs a warning if so. Anyone can forge gossip messages signed with it.
+func warnPublicGlobalSecret(cfg *MainConfig) bool {
+	if cfg.GlobalSecret != DefaultGlobalSecret {
+		return false
+	}
+	log.Printf("[WARNING] Configuration issue in MainConfig.GlobalSecret: global_secret is the public default value from the example configuration; " +
+		"anyone can forge gossip messages signed with it. Set it to a random value, e.g. the output of `openssl rand -hex 16`.")
+	return true
 }
