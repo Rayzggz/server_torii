@@ -299,7 +299,7 @@ func altchaHMACSecret(rule *dataType.CaptchaRule) string {
 func GenClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
@@ -326,7 +326,7 @@ func verifyClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
@@ -340,7 +340,7 @@ func GenSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
@@ -367,7 +367,7 @@ func VerifySessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet)
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sCAPTCHA-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))

@@ -179,7 +179,7 @@ func TestNewCountryDatabaseLogsUnknownPolicyWarning(t *testing.T) {
 
 	path := filepath.Join(t.TempDir(), "missing.mmdb")
 	db := NewCountryDatabase(path)
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	message := output.String()
 	if !strings.Contains(message, "[WARNING]") ||
@@ -202,7 +202,7 @@ func TestCountryDatabaseReloadOrWarnLogsRetention(t *testing.T) {
 	if err := db.Reload(); err != nil {
 		t.Fatalf("initial Reload returned error: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	var output bytes.Buffer
 	restoreLog := captureLogOutput(&output)
@@ -231,7 +231,7 @@ func TestCountryDatabaseSkipsPrivateAddresses(t *testing.T) {
 	if err := db.Reload(); err != nil {
 		t.Fatalf("Reload returned error: %v", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	if got, err := db.Country(netip.MustParseAddr("192.168.1.1")); err != nil || got != "" {
 		t.Fatalf("Country = %q, %v; want private address skipped", got, err)

@@ -146,7 +146,6 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 		utils.LogError(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
 		return
 	}
-	return
 }
 
 func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, pages *config.ErrorPages) {
@@ -295,7 +294,8 @@ func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacV
 }
 
 func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, pages *config.ErrorPages) {
-	if r.URL.Path == cfg.WebPath+"/checker_pages/403" {
+	switch r.URL.Path {
+	case cfg.WebPath + "/checker_pages/403":
 		tpl := pages.Get(config.PageForbidden)
 		if tpl == nil {
 			utils.LogError(reqData, "Error page 403.html is not loaded", "CheckMain")
@@ -320,7 +320,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
 
-	} else if r.URL.Path == cfg.WebPath+"/checker_pages/CAPTCHA" {
+	case cfg.WebPath + "/checker_pages/CAPTCHA":
 		captchaPage := config.PageCaptcha
 		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
 			captchaPage = config.PageCaptchaAltcha
@@ -340,7 +340,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
 		writeHTML(w, reqData, http.StatusServiceUnavailable, body, "CheckMain")
 
-	} else if r.URL.Path == cfg.WebPath+"/checker_pages/429" {
+	case cfg.WebPath + "/checker_pages/429":
 		tpl := pages.Get(config.PageTooManyRequests)
 		if tpl == nil {
 			utils.LogError(reqData, "Error page 429.html is not loaded", "CheckMain")
@@ -364,7 +364,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 		writeHTML(w, reqData, http.StatusTooManyRequests, body, "CheckMain")
 
-	} else if r.URL.Path == cfg.WebPath+"/checker_pages/EXTERNAL" {
+	case cfg.WebPath + "/checker_pages/EXTERNAL":
 		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
 
 		setToriiCookie(w, "__torii_session_id", string(externalMigrationSessionID), http.SameSiteLaxMode)
@@ -387,7 +387,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 
 		return
-	} else {
+	default:
 		tpl := pages.Get(config.PageForbidden)
 		if tpl == nil {
 			utils.LogError(reqData, "Error page 403.html is not loaded", "CheckMain")

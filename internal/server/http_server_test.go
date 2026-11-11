@@ -26,14 +26,14 @@ func TestHTTPServerDropsSlowHeaderClient(t *testing.T) {
 	}
 	srv := newHTTPServer("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	srv.ReadHeaderTimeout = 200 * time.Millisecond
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	conn, err := net.Dial("tcp", ln.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte("GET / HTTP/1.1\r\nHost: x\r\n")); err != nil {
 		t.Fatal(err)
 	}

@@ -31,7 +31,7 @@ func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, de
 func GenExternalMigrationClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
@@ -58,7 +58,7 @@ func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSe
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
@@ -68,7 +68,7 @@ func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSe
 func GenExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
@@ -90,7 +90,7 @@ func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSe
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
@@ -99,12 +99,12 @@ func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSe
 
 func CalculateExternalMigrationHMAC(sessionID, timestampStr, originalURI, secretKey string) string {
 	mac := hmac.New(sha512.New, []byte(secretKey))
-	mac.Write([]byte(fmt.Sprintf("%s%s%s", sessionID, timestampStr, originalURI)))
+	mac.Write(fmt.Appendf(nil, "%s%s%s", sessionID, timestampStr, originalURI))
 	return fmt.Sprintf("%x", mac.Sum(nil))
 }
 
 func CalculateRedirectHMAC(domain, timestampStr, originalUri, secretKey string) string {
 	mac := hmac.New(sha512.New, []byte(secretKey))
-	mac.Write([]byte(fmt.Sprintf("%s:%s:%s", domain, timestampStr, originalUri)))
+	mac.Write(fmt.Appendf(nil, "%s:%s:%s", domain, timestampStr, originalUri))
 	return fmt.Sprintf("%x", mac.Sum(nil))
 }

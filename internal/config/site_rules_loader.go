@@ -228,12 +228,7 @@ func loadIPRules(filePath string, trie *dataType.TrieNode) error {
 	if err != nil {
 		return err
 	}
-	defer func(file *os.File) {
-		var err = file.Close()
-		if err != nil {
-
-		}
-	}(file)
+	defer func() { _ = file.Close() }() // read-only; a Close error cannot lose data
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
@@ -261,12 +256,7 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 	if err != nil {
 		return err
 	}
-	defer func(file *os.File) {
-		var err = file.Close()
-		if err != nil {
-
-		}
-	}(file)
+	defer func() { _ = file.Close() }() // read-only; a Close error cannot lose data
 
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {

@@ -46,7 +46,7 @@ func TestSyslogConcurrency(t *testing.T) {
 		t.Fatalf("failed to find free port: %v", err)
 	}
 	port := fmt.Sprintf("%d", conn.LocalAddr().(*net.UDPAddr).Port)
-	conn.Close()
+	_ = conn.Close()
 
 	// Start listener in a goroutine
 	listener := NewSyslogListener(port, analyzer)
@@ -67,7 +67,7 @@ func TestSyslogConcurrency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to dial: %v", err)
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 
 	// Send more messages than buffer size to trigger dropping or filling buffer
 	// Buffer is 10000. Send 15000.

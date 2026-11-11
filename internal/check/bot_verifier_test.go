@@ -109,7 +109,7 @@ func TestBotVerifierCachesBothOutcomes(t *testing.T) {
 	}
 
 	// A different crawler claim from the same address is verified separately.
-	v.verify(net.ParseIP("66.249.66.1"), "bing", []string{"search.msn.com"})
+	_, _, _ = v.verify(net.ParseIP("66.249.66.1"), "bing", []string{"search.msn.com"})
 	if got := r.ptrCalls.Load(); got != 3 {
 		t.Fatalf("reverse lookups = %d after bing claim, want 3", got)
 	}
@@ -122,9 +122,9 @@ func TestBotVerifierTTLs(t *testing.T) {
 	v.now = func() time.Time { return now }
 
 	ip := net.ParseIP("203.0.113.7")
-	v.verify(ip, "google", googleDomains)
+	_, _, _ = v.verify(ip, "google", googleDomains)
 	now = now.Add(botRejectedTTL - time.Second)
-	v.verify(ip, "google", googleDomains)
+	_, _, _ = v.verify(ip, "google", googleDomains)
 	if got := r.ptrCalls.Load(); got != 1 {
 		t.Fatalf("rejection re-looked-up before TTL: %d calls", got)
 	}
@@ -134,7 +134,7 @@ func TestBotVerifierTTLs(t *testing.T) {
 	}
 
 	good := net.ParseIP("66.249.66.1")
-	v.verify(good, "google", googleDomains)
+	_, _, _ = v.verify(good, "google", googleDomains)
 	now = now.Add(botVerifiedTTL - time.Second)
 	if _, fresh, _ := v.verify(good, "google", googleDomains); fresh {
 		t.Fatal("verified crawler re-checked before TTL")
@@ -153,7 +153,7 @@ func TestBotVerifierCachesLookupErrorsBriefly(t *testing.T) {
 	if ok || !fresh || err == nil {
 		t.Fatalf("verify = (%v, %v, %v), want rejection with error", ok, fresh, err)
 	}
-	v.verify(ip, "google", googleDomains)
+	_, _, _ = v.verify(ip, "google", googleDomains)
 	if got := r.ptrCalls.Load(); got != 1 {
 		t.Fatalf("DNS error not cached: %d calls", got)
 	}
@@ -223,7 +223,7 @@ func TestBotVerifierBoundsCache(t *testing.T) {
 	v := newBotVerifier(googleResolver())
 	v.rejected = newBotLRU(100)
 	for i := 0; i < 1000; i++ {
-		v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
+		_, _, _ = v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
 		if n := v.rejected.len(); n > 100 {
 			t.Fatalf("rejected cache grew to %d entries, cap 100", n)
 		}
@@ -237,9 +237,9 @@ func TestBotVerifierFloodKeepsVerifiedCrawlers(t *testing.T) {
 	v.rejected = newBotLRU(100)
 
 	good := net.ParseIP("66.249.66.1")
-	v.verify(good, "google", googleDomains)
+	_, _, _ = v.verify(good, "google", googleDomains)
 	for i := 0; i < 10_000; i++ {
-		v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
+		_, _, _ = v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
 	}
 	before := r.ptrCalls.Load()
 	if ok, fresh, _ := v.verify(good, "google", googleDomains); !ok || fresh {

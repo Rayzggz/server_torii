@@ -38,7 +38,7 @@ func testExternalRequest() dataType.UserRequest {
 // signExternalClearance builds a clearance with an arbitrary timestamp, so expiry can be tested.
 func signExternalClearance(reqData dataType.UserRequest, secret string, ts int64) string {
 	mac := hmac.New(sha512.New, []byte(secret))
-	mac.Write([]byte(fmt.Sprintf("%d%s%sEXTERNAL-CLEARANCE", ts, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent))))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", ts, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
 	return fmt.Sprintf("%d:%x", ts, mac.Sum(nil))
 }
 

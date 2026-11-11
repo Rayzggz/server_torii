@@ -59,7 +59,7 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 	}
 
 	// The same host reuses its logger instead of reopening files.
-	if logger.getLogger("example.com") != logger.getLogger("example.com") {
+	if first, again := logger.getLogger("example.com"), logger.getLogger("example.com"); first != again {
 		t.Error("logger not cached per host")
 	}
 }
