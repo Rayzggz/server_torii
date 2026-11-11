@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"server_torii/internal/action"
@@ -103,12 +104,13 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		if err := tpl.Execute(w, data); err != nil {
+		body, err := renderPage(tpl, data)
+		if err != nil {
+			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckTorii")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		writeHTML(w, reqData, http.StatusForbidden, body, "CheckTorii")
 	}
 }
 
@@ -237,11 +239,31 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 		Date:         time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusBadRequest)
-	if err := tpl.Execute(w, templateData); err != nil {
+	body, err := renderPage(tpl, templateData)
+	if err != nil {
+		utils.LogError(data, fmt.Sprintf("Error executing template: %v", err), "showExternalMigrationError")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
+	}
+	writeHTML(w, data, http.StatusBadRequest, body, "showExternalMigrationError")
+}
+
+// renderPage executes tpl into memory, so a failure can still be answered with a clean 500
+// instead of a truncated page behind an already-sent status line.
+func renderPage(tpl *template.Template, data any) ([]byte, error) {
+	var buf bytes.Buffer
+	if err := tpl.Execute(&buf, data); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func writeHTML(w http.ResponseWriter, reqData dataType.UserRequest, status int, body []byte, caller string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
+	w.WriteHeader(status)
+	if _, err := w.Write(body); err != nil {
+		utils.LogError(reqData, "Error writing response: "+err.Error(), caller)
 	}
 }
 
@@ -309,13 +331,13 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		if err := tpl.Execute(w, data); err != nil {
+		body, err := renderPage(tpl, data)
+		if err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
 
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/CAPTCHA" {
 		captchaPage := config.PageCaptcha
@@ -328,14 +350,14 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Set-Cookie", "__torii_session_id="+string(check.GenSessionID(reqData, *ruleSet))+"; Path=/; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if err := tpl.Execute(w, nil); err != nil {
+		body, err := renderPage(tpl, nil)
+		if err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		w.Header().Set("Set-Cookie", "__torii_session_id="+string(check.GenSessionID(reqData, *ruleSet))+"; Path=/; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+		writeHTML(w, reqData, http.StatusServiceUnavailable, body, "CheckMain")
 
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/429" {
 		tpl := pages.Get(config.PageTooManyRequests)
@@ -353,13 +375,13 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusTooManyRequests)
-		if err := tpl.Execute(w, data); err != nil {
+		body, err := renderPage(tpl, data)
+		if err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		writeHTML(w, reqData, http.StatusTooManyRequests, body, "CheckMain")
 
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/EXTERNAL" {
 		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
@@ -401,12 +423,12 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		if err := tpl.Execute(w, data); err != nil {
+		body, err := renderPage(tpl, data)
+		if err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
 	}
 }
