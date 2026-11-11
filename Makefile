@@ -1,10 +1,13 @@
-.PHONY: all build clean install uninstall test-e2e upgrade
+.PHONY: all build tidy clean install uninstall reinstall test-e2e upgrade
 
 all: build
 
+# Dependencies are pinned by the committed go.mod/go.sum. Run `make tidy`
+# after adding or removing imports, then commit both files.
+tidy:
+	go mod tidy
 
 build:
-	go mod tidy
 	go build -o server_torii .
 
 test-e2e:
