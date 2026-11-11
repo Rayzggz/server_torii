@@ -1,7 +1,6 @@
 package check
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"server_torii/internal/action"
@@ -24,62 +23,50 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	ua := strings.ToLower(reqData.UserAgent)
 
+	var bot string
 	var exptractRDNS []string
 	switch {
 	case strings.Contains(ua, "googlebot") && ruleSet.VerifyBotRule.VerifyGoogleBot:
 		// Not googleusercontent.com: every Google Cloud VM reverse-resolves there.
-		exptractRDNS = []string{"googlebot.com", "google.com"}
+		bot, exptractRDNS = "google", []string{"googlebot.com", "google.com"}
 	case strings.Contains(ua, "bingbot") && ruleSet.VerifyBotRule.VerifyBingBot:
-		exptractRDNS = []string{"search.msn.com"}
+		bot, exptractRDNS = "bing", []string{"search.msn.com"}
 	case strings.Contains(ua, "baiduspider") && ruleSet.VerifyBotRule.VerifyBaiduBot:
-		exptractRDNS = []string{"baidu.com", "baidu.jp"}
+		bot, exptractRDNS = "baidu", []string{"baidu.com", "baidu.jp"}
 	case strings.Contains(ua, "yandex.com/bots") && ruleSet.VerifyBotRule.VerifyYandexBot:
-		exptractRDNS = []string{"yandex.com", "yandex.ru", "yandex.net"}
+		bot, exptractRDNS = "yandex", []string{"yandex.com", "yandex.ru", "yandex.net"}
 	case strings.Contains(ua, "sogou web spider") && ruleSet.VerifyBotRule.VerifySogouBot:
-		exptractRDNS = []string{"sogou.com"}
+		bot, exptractRDNS = "sogou", []string{"sogou.com"}
 	case strings.Contains(ua, "applebot") && ruleSet.VerifyBotRule.VerifyAppleBot:
-		exptractRDNS = []string{"apple.com"}
+		bot, exptractRDNS = "apple", []string{"apple.com"}
 	default:
 		decision.Set(action.Continue)
 		return
 	}
 
-	actualRDNS, err := net.LookupAddr(reqData.RemoteIP)
-	if err != nil {
-		var dnsErr *net.DNSError
-		//ignore the error if it is a not found error
-		if !(errors.As(err, &dnsErr) && dnsErr.IsNotFound) {
-			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: lookupAddr failed: %v", err))
-			decision.SetCode(action.Done, []byte("403"))
-			return
-		}
+	ip := net.ParseIP(reqData.RemoteIP)
+	if ip == nil {
+		utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
+		decision.SetCode(action.Done, []byte("403"))
+		return
 	}
 
-	for _, rdns := range exptractRDNS {
-		for _, actual := range actualRDNS {
-			if hostInDomain(actual, rdns) {
-				ips, err := net.LookupIP(actual)
-				if err != nil {
-					utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: LookupIP failed: %v", err))
-					decision.SetCode(action.Done, []byte("403"))
-					return
-				}
-				for _, ip := range ips {
-					if ip.String() == reqData.RemoteIP {
-						if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok {
-							marker.MarkNeutral(reqData.RemoteIP, verifiedBotMarkTTL)
-						}
-						decision.Set(action.Done)
-						return
-					}
-				}
-			}
+	verified, fresh, err := defaultBotVerifier.verify(ip, bot, exptractRDNS)
+	if verified {
+		if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok {
+			marker.MarkNeutral(reqData.RemoteIP, verifiedBotMarkTTL)
+		}
+		decision.Set(action.Done)
+		return
+	}
+	if fresh {
+		if err != nil {
+			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
+		} else {
+			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
 		}
 	}
-	utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: LookupAddr failed: %v", err))
 	decision.SetCode(action.Done, []byte("403"))
-	return
-
 }
 
 // hostInDomain reports whether host is domain or one of its subdomains.
