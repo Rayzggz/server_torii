@@ -299,11 +299,11 @@ func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
 
 	// Load rules for each configured site
 	for _, site := range cfg.Sites {
-		rules, err := LoadRules(site.RulePath)
+		ruleSet, err := LoadRules(site.RulePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load rules for site %s: %w", site.Host, err)
 		}
-		siteRules[site.Host] = rules
+		siteRules[site.Host] = ruleSet
 	}
 
 	// Check if default_site exists
