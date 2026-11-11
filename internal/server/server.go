@@ -8,7 +8,31 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"strings"
+	"time"
 )
+
+// HTTP server limits. Torii sits behind a reverse proxy and serves small
+// auth_request/checker requests, so these can be tight; they exist mainly to
+// stop slow-connection attacks (slowloris) from exhausting goroutines/FDs.
+const (
+	httpReadHeaderTimeout = 5 * time.Second
+	httpReadTimeout       = 10 * time.Second
+	httpWriteTimeout      = 30 * time.Second
+	httpIdleTimeout       = 120 * time.Second
+	httpMaxHeaderBytes    = 64 << 10 // 64 KiB
+)
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		WriteTimeout:      httpWriteTimeout,
+		IdleTimeout:       httpIdleTimeout,
+		MaxHeaderBytes:    httpMaxHeaderBytes,
+	}
+}
 
 // StartServer starts the HTTP server
 func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error {
@@ -56,7 +80,7 @@ func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error
 	}
 
 	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
-	return http.ListenAndServe(":"+cfg.Port, nil)
+	return newHTTPServer(":"+cfg.Port, nil).ListenAndServe()
 }
 
 func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
