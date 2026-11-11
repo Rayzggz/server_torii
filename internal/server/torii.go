@@ -72,7 +72,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok && ruleSet.CAPTCHARule != nil {
 				marker.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
 			}
-			w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenClearance(reqData, *ruleSet))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+			setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 			w.WriteHeader(http.StatusOK)
 			_, err := w.Write(decision.ResponseData)
 			if err != nil {
@@ -212,7 +212,7 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 		return
 	}
 
-	w.Header().Set("Set-Cookie", "__torii_clearance="+string(check.GenExternalMigrationClearance(reqData, *ruleSet))+"; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+	setToriiCookie(w, "__torii_clearance", string(check.GenExternalMigrationClearance(reqData, *ruleSet)), 0)
 	http.Redirect(w, r, originalURI, http.StatusFound)
 }
 
@@ -356,7 +356,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		w.Header().Set("Set-Cookie", "__torii_session_id="+string(check.GenSessionID(reqData, *ruleSet))+"; Path=/; Path=/; Max-Age=86400; Priority=High; HttpOnly;")
+		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
 		writeHTML(w, reqData, http.StatusServiceUnavailable, body, "CheckMain")
 
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/429" {
@@ -386,7 +386,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 	} else if r.URL.Path == cfg.WebPath+"/checker_pages/EXTERNAL" {
 		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
 
-		w.Header().Set("Set-Cookie", "__torii_session_id="+string(externalMigrationSessionID)+"; Path=/;  Max-Age=86400; Priority=High; HttpOnly; SameSite=Lax")
+		setToriiCookie(w, "__torii_session_id", string(externalMigrationSessionID), http.SameSiteLaxMode)
 
 		sessionID := string(externalMigrationSessionID)
 		sessionParts := strings.Split(sessionID, ":")
@@ -431,4 +431,17 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
 	}
+}
+
+// setToriiCookie writes a Torii cookie with consistent attributes.
+// sameSite 0 omits the attribute so the browser default applies.
+func setToriiCookie(w http.ResponseWriter, name, value string, sameSite http.SameSite) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   86400,
+		HttpOnly: true,
+		SameSite: sameSite,
+	})
 }
