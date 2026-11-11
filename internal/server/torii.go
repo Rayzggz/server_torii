@@ -103,8 +103,8 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.WriteHeader(http.StatusForbidden)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
 		if err := tpl.Execute(w, data); err != nil {
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 			return
@@ -237,8 +237,8 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 		Date:         time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	w.WriteHeader(http.StatusBadRequest)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusBadRequest)
 	if err := tpl.Execute(w, templateData); err != nil {
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
@@ -309,8 +309,8 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.WriteHeader(http.StatusForbidden)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
 		if err := tpl.Execute(w, data); err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -353,8 +353,8 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.WriteHeader(http.StatusTooManyRequests)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusTooManyRequests)
 		if err := tpl.Execute(w, data); err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -401,8 +401,8 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
-		w.WriteHeader(http.StatusForbidden)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
 		if err := tpl.Execute(w, data); err != nil {
 			utils.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
 			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
