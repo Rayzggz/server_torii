@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"log"
 	"os"
@@ -17,6 +18,12 @@ import (
 )
 
 func main() {
+	// os.Exit skips deferred calls, so all real work lives in run() and its
+	// defers (engine, GeoIP DB, log file, server shutdown) always execute.
+	os.Exit(run())
+}
+
+func run() int {
 	var inputConfigPath string
 	flag.StringVar(&inputConfigPath, "config", "", "Config file base path")
 	flag.Parse()
@@ -43,7 +50,8 @@ func main() {
 
 	err = config.InitManager(cfg, sharedMem)
 	if err != nil {
-		log.Fatalf("Failed to initialize config manager: %v", err)
+		log.Printf("[ERROR] Failed to initialize config manager: %v", err)
+		return 1
 	}
 
 	if cfg.EnableGossip {
@@ -90,16 +98,17 @@ func main() {
 
 	//set default log file
 	defaultLogPath := filepath.Join(cfg.LogPath, "server_torii.log")
-	logFile, err := os.OpenFile(defaultLogPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	logFile, err := os.OpenFile(defaultLogPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
 	if err != nil {
-		log.Fatalf("Failed to open log file: %v", err)
+		log.Printf("[ERROR] Failed to open log file: %v", err)
+		return 1
 	}
-	defer func(logFile *os.File) {
-		err := logFile.Close()
-		if err != nil {
-			log.Fatalf("Failed to close log file: %v", err)
+	defer func() {
+		log.SetOutput(os.Stderr)
+		if err := logFile.Close(); err != nil {
+			log.Printf("[WARNING] Failed to close log file: %v", err)
 		}
-	}(logFile)
+	}()
 	log.SetOutput(logFile)
 
 	//log startup information and time
@@ -109,9 +118,14 @@ func main() {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(stop)
 
+	defer close(gcStopCh)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(cfg, sharedMem)
+		serverErr <- server.StartServer(ctx, cfg, sharedMem)
 	}()
 
 	for {
@@ -126,17 +140,23 @@ func main() {
 				}
 				continue
 			case syscall.SIGINT, syscall.SIGTERM:
-				log.Println("Stopping server...")
-				close(gcStopCh)
+				log.Printf("Received %v, stopping server...", sig)
+				cancel()
+				// Wait for StartServer to finish Shutdown and run its defers.
+				if err := <-serverErr; err != nil {
+					log.Printf("[ERROR] Server shutdown error: %v", err)
+					return 1
+				}
 				log.Println("Server stopped")
-				return
+				return 0
 			}
 		case err := <-serverErr:
 			if err != nil {
-				log.Fatalf("Failed to start server: %v", err)
+				log.Printf("[ERROR] Failed to start server: %v", err)
+				return 1
 			}
 			log.Println("Server stopped")
-			return
+			return 0
 		}
 	}
 }

@@ -1,6 +1,8 @@
 package server
 
 import (
+	"context"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -20,6 +22,10 @@ const (
 	httpWriteTimeout      = 30 * time.Second
 	httpIdleTimeout       = 120 * time.Second
 	httpMaxHeaderBytes    = 64 << 10 // 64 KiB
+
+	// shutdownTimeout bounds how long in-flight requests may take to finish
+	// after a stop signal before connections are forcibly closed.
+	shutdownTimeout = 10 * time.Second
 )
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
@@ -34,8 +40,11 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
-// StartServer starts the HTTP server
-func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error {
+// StartServer starts the HTTP server and blocks until it stops. When ctx is
+// cancelled the server is shut down gracefully (in-flight requests get up to
+// shutdownTimeout to finish) and the analyzer / syslog listener are stopped.
+// A graceful stop returns nil.
+func StartServer(ctx context.Context, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 
 		userRequestData := processRequestData(cfg, r)
@@ -79,8 +88,31 @@ func StartServer(cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error
 		defer syslogListener.Stop()
 	}
 
-	log.Printf("HTTP Server listening on :%s ...", cfg.Port)
-	return newHTTPServer(":"+cfg.Port, nil).ListenAndServe()
+	srv := newHTTPServer(":"+cfg.Port, nil)
+	listenErr := make(chan error, 1)
+	go func() {
+		log.Printf("HTTP Server listening on :%s ...", cfg.Port)
+		listenErr <- srv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-listenErr:
+		// Listener failed (e.g. port in use) before any shutdown was requested.
+		return err
+	case <-ctx.Done():
+	}
+
+	log.Println("Shutting down HTTP server...")
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[WARNING] Graceful shutdown did not complete: %v; forcing close", err)
+		_ = srv.Close()
+	}
+	if err := <-listenErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
