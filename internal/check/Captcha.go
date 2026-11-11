@@ -73,7 +73,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
 				failureCounter.Reset(ipKey)
-				decision.SetCode(action.Done, []byte("403"))
+				decision.SetVerdict(action.Done, action.VerdictBlock)
 				return
 			}
 		}
@@ -81,7 +81,7 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 
 	if !verifyClearanceCookie(reqData, *ruleSet) {
 		failureCounter.Add(reqData.RemoteIP, 1)
-		decision.SetCode(action.Done, []byte("CAPTCHA"))
+		decision.SetVerdict(action.Done, action.VerdictCaptcha)
 		return
 	}
 
@@ -93,7 +93,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 	failureCounter := sharedMem.CaptchaFailureLimitCounter.Load()
 
 	if r.Method != "POST" {
-		decision.SetResponse(action.Done, []byte("403"), nil)
+		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return
 	}
 
@@ -103,7 +103,7 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		} else {
 			utils.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}
-		decision.SetResponse(action.Done, []byte("200"), []byte("bad"))
+		decision.SetCaptchaResult(action.Done, action.VerdictAllow, action.CaptchaBad)
 		return
 	}
 
@@ -113,14 +113,14 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		} else {
 			utils.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}
-		decision.SetResponse(action.Done, []byte("200"), []byte("badSession"))
+		decision.SetCaptchaResult(action.Done, action.VerdictAllow, action.CaptchaBadSession)
 		return
 	}
 
 	verificationResult, err := verifyCaptchaResponse(r, reqData, ruleSet)
 	if err != nil {
 		utils.LogError(reqData, "", err.Error())
-		decision.SetResponse(action.Done, []byte("500"), []byte("bad"))
+		decision.SetCaptchaResult(action.Done, action.VerdictError, action.CaptchaBad)
 		return
 	}
 	if verificationResult != captchaVerificationValid {
@@ -129,15 +129,15 @@ func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config
 		} else {
 			utils.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}
-		response := []byte("bad")
+		response := action.CaptchaBad
 		if verificationResult == captchaVerificationSessionMismatch {
-			response = []byte("badSession")
+			response = action.CaptchaBadSession
 		}
-		decision.SetResponse(action.Done, []byte("200"), response)
+		decision.SetCaptchaResult(action.Done, action.VerdictAllow, response)
 		return
 	}
 
-	decision.SetResponse(action.Done, []byte("200"), []byte("good"))
+	decision.SetCaptchaResult(action.Done, action.VerdictAllow, action.CaptchaGood)
 }
 
 func hasCaptchaResponse(r *http.Request, ruleSet *config.RuleSet) bool {

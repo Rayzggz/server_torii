@@ -71,8 +71,8 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: dataType.FeatureVerifyBot}
 			decision := action.NewDecision()
 			VerifyBot(reqData, allBotsRuleSet(), decision, &dataType.SharedMemory{AdaptiveTrafficAnalyzer: marker})
-			if decision.State != action.Done || string(decision.HTTPCode) != "403" {
-				t.Fatalf("decision = (%v, %q), want (Done, 403)", decision.State, decision.HTTPCode)
+			if decision.State != action.Done || decision.Verdict != action.VerdictBlock {
+				t.Fatalf("decision = (%v, %q), want (Done, 403)", decision.State, decision.Verdict)
 			}
 			if len(marker.neutral) != 0 {
 				t.Fatalf("spoofed crawler marked neutral: %v", marker.neutral)

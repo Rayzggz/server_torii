@@ -22,7 +22,7 @@ func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		return
 	}
 	if trie.Search(ip) {
-		decision.SetCode(action.Done, []byte("200"))
+		decision.SetVerdict(action.Done, action.VerdictAllow)
 	} else {
 		decision.Set(action.Continue)
 	}

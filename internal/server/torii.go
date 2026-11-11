@@ -21,7 +21,7 @@ import (
 func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory, pages *config.ErrorPages) {
 	decision := action.NewDecision()
 
-	decision.SetCode(action.Continue, []byte("403"))
+	decision.SetVerdict(action.Continue, action.VerdictBlock)
 	if strings.HasPrefix(r.URL.Path, cfg.WebPath+"/checker_pages/") {
 		handleCheckerPages(w, r, reqData, ruleSet, cfg, pages)
 		return
@@ -42,50 +42,28 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			return
 		}
 	}
-	if bytes.Compare(decision.HTTPCode, []byte("200")) == 0 {
-		if bytes.Compare(decision.ResponseData, []byte("ok")) == 0 {
+	if decision.Verdict == action.VerdictAllow {
+		switch decision.Captcha {
+		case action.CaptchaBad, action.CaptchaBadSession:
 			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte("ok"))
-			if err != nil {
+			if _, err := w.Write([]byte(decision.Captcha.String())); err != nil {
 				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-				return
 			}
 			return
-		}
-		if bytes.Compare(decision.ResponseData, []byte("bad")) == 0 {
-			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte("bad"))
-			if err != nil {
-				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-				return
-			}
-			return
-		} else if bytes.Compare(decision.ResponseData, []byte("badSession")) == 0 {
-			w.WriteHeader(http.StatusOK)
-			_, err := w.Write([]byte("badSession"))
-			if err != nil {
-				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-				return
-			}
-			return
-		} else if bytes.Compare(decision.ResponseData, []byte("good")) == 0 {
+		case action.CaptchaGood:
 			if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok && ruleSet.CAPTCHARule != nil {
 				marker.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
 			}
 			setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 			w.WriteHeader(http.StatusOK)
-			_, err := w.Write(decision.ResponseData)
-			if err != nil {
+			if _, err := w.Write([]byte(decision.Captcha.String())); err != nil {
 				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-				return
 			}
-		} else {
+		default:
 			//should not be here
 			w.WriteHeader(http.StatusInternalServerError)
-			_, err := w.Write([]byte("500 - Internal Server Error"))
-			if err != nil {
+			if _, err := w.Write([]byte("500 - Internal Server Error")); err != nil {
 				utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-				return
 			}
 		}
 	} else {

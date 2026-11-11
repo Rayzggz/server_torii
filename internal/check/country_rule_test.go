@@ -61,7 +61,7 @@ func TestCountryRulePolicies(t *testing.T) {
 				decision := action.NewDecision()
 				CountryRule(req, rules, decision, shared)
 				want := map[dataType.CountryAction]string{dataType.CountryContinue: "200", dataType.CountryBlock: "403", dataType.CountryCaptcha: "CAPTCHA"}[policy]
-				if string(decision.HTTPCode) != want || (decision.State == action.Done) != (policy != dataType.CountryContinue) {
+				if decision.Verdict.String() != want || (decision.State == action.Done) != (policy != dataType.CountryContinue) {
 					t.Fatalf("decision = %#v, want %s", decision, want)
 				}
 				if (source == "invalid" || source == "private" || source == "loopback" || source == "missing") && resolver.calls != 0 {

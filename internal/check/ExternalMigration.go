@@ -21,7 +21,7 @@ func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, de
 	}
 
 	if !verifyExternalMigrationClearanceCookie(reqData, *ruleSet) {
-		decision.SetCode(action.Done, []byte("EXTERNAL"))
+		decision.SetVerdict(action.Done, action.VerdictExternal)
 		return
 	}
 

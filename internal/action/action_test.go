@@ -4,27 +4,45 @@ import "testing"
 
 func TestDecisionTransitions(t *testing.T) {
 	d := NewDecision()
-	if d.State != Continue || string(d.HTTPCode) != "200" || d.ResponseData != nil || d.JumpIndex != -1 {
+	if d.State != Continue || d.Verdict != VerdictAllow || d.Captcha != CaptchaNone || d.JumpIndex != -1 {
 		t.Fatalf("unexpected default: %+v", d)
 	}
 	d.Set(Done)
-	if d.State != Done || string(d.HTTPCode) != "200" {
+	if d.State != Done || d.Verdict != VerdictAllow {
 		t.Fatalf("Set: %+v", d)
 	}
-	d.SetCode(Done, []byte("403"))
-	if d.State != Done || string(d.HTTPCode) != "403" {
-		t.Fatalf("SetCode: %+v", d)
+	d.SetVerdict(Done, VerdictBlock)
+	if d.State != Done || d.Verdict != VerdictBlock {
+		t.Fatalf("SetVerdict: %+v", d)
 	}
-	d.SetResponse(Done, []byte("302"), []byte("https://example.com"))
-	if d.State != Done || string(d.HTTPCode) != "302" || string(d.ResponseData) != "https://example.com" {
-		t.Fatalf("SetResponse: %+v", d)
+	d.SetCaptchaResult(Done, VerdictAllow, CaptchaGood)
+	if d.State != Done || d.Verdict != VerdictAllow || d.Captcha != CaptchaGood {
+		t.Fatalf("SetCaptchaResult: %+v", d)
 	}
-	d.SetJump(Jump, []byte("200"), 4)
-	if d.State != Jump || string(d.HTTPCode) != "200" || d.JumpIndex != 4 {
+	d.SetJump(Jump, VerdictAllow, 4)
+	if d.State != Jump || d.Verdict != VerdictAllow || d.JumpIndex != 4 {
 		t.Fatalf("SetJump: %+v", d)
 	}
 	other := NewDecision()
-	if other.State != Continue || other.JumpIndex != -1 || other.ResponseData != nil {
+	if other.State != Continue || other.JumpIndex != -1 || other.Captcha != CaptchaNone {
 		t.Fatalf("decisions share state: %+v", other)
+	}
+}
+
+func TestVerdictString(t *testing.T) {
+	for v, want := range map[Verdict]string{
+		VerdictAllow: "200", VerdictBlock: "403", VerdictCaptcha: "CAPTCHA",
+		VerdictRateLimit: "429", VerdictExternal: "EXTERNAL", VerdictError: "500", Verdict(255): "UNKNOWN",
+	} {
+		if got := v.String(); got != want {
+			t.Errorf("Verdict(%d).String() = %q, want %q", v, got, want)
+		}
+	}
+	for r, want := range map[CaptchaResult]string{
+		CaptchaNone: "", CaptchaGood: "good", CaptchaBad: "bad", CaptchaBadSession: "badSession", CaptchaResult(255): "UNKNOWN",
+	} {
+		if got := r.String(); got != want {
+			t.Errorf("CaptchaResult(%d).String() = %q, want %q", r, got, want)
+		}
 	}
 }

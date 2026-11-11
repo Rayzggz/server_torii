@@ -48,16 +48,16 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		}
 	}
 
-	switch string(decision.HTTPCode) {
-	case "200":
+	switch decision.Verdict {
+	case action.VerdictAllow:
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte("Server Torii Access Passed"))
 		if err != nil {
 			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
 			return
 		}
-	case "403", "CAPTCHA", "429", "EXTERNAL":
-		w.Header().Set("Torii-Action", string(decision.HTTPCode))
+	case action.VerdictBlock, action.VerdictCaptcha, action.VerdictRateLimit, action.VerdictExternal:
+		w.Header().Set("Torii-Action", decision.Verdict.String())
 		w.WriteHeader(445)
 		_, err := w.Write([]byte("Server Torii Auth Required"))
 		if err != nil {

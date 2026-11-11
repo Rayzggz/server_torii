@@ -47,7 +47,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	ip := net.ParseIP(reqData.RemoteIP)
 	if ip == nil {
 		utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
-		decision.SetCode(action.Done, []byte("403"))
+		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return
 	}
 
@@ -66,7 +66,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
 		}
 	}
-	decision.SetCode(action.Done, []byte("403"))
+	decision.SetVerdict(action.Done, action.VerdictBlock)
 }
 
 // hostInDomain reports whether host is domain or one of its subdomains.

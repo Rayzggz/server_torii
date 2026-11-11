@@ -42,7 +42,7 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 	switch selected {
 	case dataType.CountryBlock:
 		utils.LogInfo(reqData, "", "CountryRule BLOCK "+reason)
-		decision.SetCode(action.Done, []byte("403"))
+		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case dataType.CountryCaptcha:
 		utils.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
 		reqData.FeatureControl |= dataType.FeatureCaptcha

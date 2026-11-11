@@ -50,7 +50,7 @@ func TestIPListRules(t *testing.T) {
 				if tc.match {
 					wantCode = checker.code
 				}
-				if (decision.State == action.Done) != tc.match || string(decision.HTTPCode) != wantCode {
+				if (decision.State == action.Done) != tc.match || decision.Verdict.String() != wantCode {
 					t.Fatalf("decision = %+v, want done=%v code=%s", decision, tc.match, wantCode)
 				}
 			})
@@ -94,7 +94,7 @@ func TestURLListRules(t *testing.T) {
 				if tc.match {
 					wantCode = checker.code
 				}
-				if (decision.State == action.Done) != tc.match || string(decision.HTTPCode) != wantCode {
+				if (decision.State == action.Done) != tc.match || decision.Verdict.String() != wantCode {
 					t.Fatalf("decision = %+v, want done=%v code=%s", decision, tc.match, wantCode)
 				}
 			})

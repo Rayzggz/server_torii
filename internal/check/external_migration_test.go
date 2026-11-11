@@ -118,8 +118,8 @@ func TestExternalMigrationClearance(t *testing.T) {
 				}
 				return
 			}
-			if decision.State != action.Done || string(decision.HTTPCode) != "EXTERNAL" {
-				t.Fatalf("decision = (%v, %q), want (Done, EXTERNAL)", decision.State, decision.HTTPCode)
+			if decision.State != action.Done || decision.Verdict != action.VerdictExternal {
+				t.Fatalf("decision = (%v, %q), want (Done, EXTERNAL)", decision.State, decision.Verdict)
 			}
 		})
 	}

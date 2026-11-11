@@ -27,7 +27,7 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	HTTPFlood(reqData, ruleSet, decision, sharedMem)
 
 	if decision.State != action.Continue {
-		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.HTTPCode)
+		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 	Captcha(reqData, ruleSet, decision, sharedMem)
 
 	if decision.State != action.Continue {
-		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.HTTPCode)
+		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
 	}
 }
 
@@ -67,10 +67,10 @@ func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	if decision.State != action.Done {
 		t.Fatalf("expected done decision, got state=%v", decision.State)
 	}
-	if string(decision.HTTPCode) != "200" {
-		t.Fatalf("expected http code 200, got %s", decision.HTTPCode)
+	if decision.Verdict != action.VerdictAllow {
+		t.Fatalf("expected http code 200, got %s", decision.Verdict)
 	}
-	if string(decision.ResponseData) != "bad" {
-		t.Fatalf("expected response bad, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBad {
+		t.Fatalf("expected response bad, got %s", decision.Captcha)
 	}
 }

@@ -16,7 +16,7 @@ func URLAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decisio
 	url := reqData.Uri
 	list := ruleSet.URLAllowRule.List
 	if list.Match(url) {
-		decision.SetCode(action.Done, []byte("200"))
+		decision.SetVerdict(action.Done, action.VerdictAllow)
 	} else {
 		decision.Set(action.Continue)
 	}

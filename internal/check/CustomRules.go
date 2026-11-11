@@ -23,10 +23,10 @@ func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		utils.LogInfo(reqData, "", "CustomRule "+rule.String())
 		switch rule.Action {
 		case rules.ActionAllow:
-			decision.SetCode(action.Done, []byte("200"))
+			decision.SetVerdict(action.Done, action.VerdictAllow)
 			return
 		case rules.ActionBlock:
-			decision.SetCode(action.Done, []byte("403"))
+			decision.SetVerdict(action.Done, action.VerdictBlock)
 			return
 		case rules.ActionCaptcha:
 			reqData.FeatureControl |= dataType.FeatureCaptcha

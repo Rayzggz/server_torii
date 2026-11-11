@@ -43,7 +43,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				failureCounter.Reset(ipKey)
-				decision.SetCode(action.Done, []byte("403"))
+				decision.SetVerdict(action.Done, action.VerdictBlock)
 				return
 			}
 		}
@@ -53,7 +53,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 		if speedCounter.Query(ipKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 			failureCounter.Add(ipKey, 1)
-			decision.SetCode(action.Done, []byte("429"))
+			decision.SetVerdict(action.Done, action.VerdictRateLimit)
 			return
 		}
 	}
@@ -62,7 +62,7 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 		if sameURICounter.Query(uriKey, window) > limit {
 			utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
 			failureCounter.Add(ipKey, 1)
-			decision.SetCode(action.Done, []byte("429"))
+			decision.SetVerdict(action.Done, action.VerdictRateLimit)
 			return
 		}
 	}

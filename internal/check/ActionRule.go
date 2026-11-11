@@ -21,7 +21,7 @@ func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision 
 
 	switch act {
 	case action.ActionBlock:
-		decision.SetCode(action.Done, []byte("403"))
+		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case action.ActionCaptcha:
 		reqData.FeatureControl |= dataType.FeatureCaptcha
 		Captcha(reqData, ruleSet, decision, sharedMem)

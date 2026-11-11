@@ -23,7 +23,7 @@ func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 	}
 	if trie.Search(ip) {
 		utils.LogInfo(reqData, "", "IPBlockList")
-		decision.SetCode(action.Done, []byte("403"))
+		decision.SetVerdict(action.Done, action.VerdictBlock)
 	} else {
 		decision.Set(action.Continue)
 	}

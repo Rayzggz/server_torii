@@ -149,7 +149,7 @@ func TestExternalMigrationCallbackGrantsClearance(t *testing.T) {
 	decision := action.NewDecision()
 	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
 	if decision.State != action.Continue {
-		t.Fatalf("clearance rejected: state=%v code=%q", decision.State, decision.HTTPCode)
+		t.Fatalf("clearance rejected: state=%v code=%q", decision.State, decision.Verdict)
 	}
 }
 
@@ -340,7 +340,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	decision := action.NewDecision()
 	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
 	if decision.State != action.Continue {
-		t.Fatalf("clearance rejected after round trip: %v %q", decision.State, decision.HTTPCode)
+		t.Fatalf("clearance rejected after round trip: %v %q", decision.State, decision.Verdict)
 	}
 }
 

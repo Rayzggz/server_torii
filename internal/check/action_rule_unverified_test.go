@@ -35,10 +35,10 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 			decision := action.NewDecision()
 			ActionRule(dataType.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
 			if done := decision.State == action.Done; done != tc.wantDone {
-				t.Fatalf("done = %v (code %s), want %v", done, decision.HTTPCode, tc.wantDone)
+				t.Fatalf("done = %v (code %s), want %v", done, decision.Verdict, tc.wantDone)
 			}
-			if tc.wantDone && string(decision.HTTPCode) != "CAPTCHA" {
-				t.Fatalf("code = %s, want CAPTCHA", decision.HTTPCode)
+			if tc.wantDone && decision.Verdict != action.VerdictCaptcha {
+				t.Fatalf("code = %s, want CAPTCHA", decision.Verdict)
 			}
 		})
 	}

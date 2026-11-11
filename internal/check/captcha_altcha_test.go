@@ -32,11 +32,11 @@ func TestCheckCaptchaAltchaGood(t *testing.T) {
 	if decision.State != action.Done {
 		t.Fatalf("expected done decision, got state=%v", decision.State)
 	}
-	if string(decision.HTTPCode) != "200" {
-		t.Fatalf("expected http code 200, got %s", decision.HTTPCode)
+	if decision.Verdict != action.VerdictAllow {
+		t.Fatalf("expected http code 200, got %s", decision.Verdict)
 	}
-	if string(decision.ResponseData) != "good" {
-		t.Fatalf("expected response good, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaGood {
+		t.Fatalf("expected response good, got %s", decision.Captcha)
 	}
 }
 
@@ -66,8 +66,8 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 
 	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
 
-	if string(decision.ResponseData) != "badSession" {
-		t.Fatalf("expected response badSession for fresh-session replay, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBadSession {
+		t.Fatalf("expected response badSession for fresh-session replay, got %s", decision.Captcha)
 	}
 	if got := counter.Query(replayReqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -105,8 +105,8 @@ func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 
 	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
 
-	if string(decision.ResponseData) != "bad" {
-		t.Fatalf("expected response bad for tampered session binding, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBad {
+		t.Fatalf("expected response bad for tampered session binding, got %s", decision.Captcha)
 	}
 }
 
@@ -129,8 +129,8 @@ func TestCheckCaptchaAltchaRejectsWrongSolution(t *testing.T) {
 	decision := action.NewDecision()
 	CheckCaptcha(req, reqData, ruleSet, decision, testCaptchaSharedMemory())
 
-	if string(decision.ResponseData) != "bad" {
-		t.Fatalf("expected response bad for wrong solution, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBad {
+		t.Fatalf("expected response bad for wrong solution, got %s", decision.Captcha)
 	}
 }
 
@@ -149,8 +149,8 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 
 	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
 
-	if string(decision.ResponseData) != "bad" {
-		t.Fatalf("expected response bad, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBad {
+		t.Fatalf("expected response bad, got %s", decision.Captcha)
 	}
 	if got := counter.Query(reqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -174,8 +174,8 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 
 	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
 
-	if string(decision.ResponseData) != "badSession" {
-		t.Fatalf("expected response badSession, got %s", decision.ResponseData)
+	if decision.Captcha != action.CaptchaBadSession {
+		t.Fatalf("expected response badSession, got %s", decision.Captcha)
 	}
 }
 
