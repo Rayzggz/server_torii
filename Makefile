@@ -7,8 +7,14 @@ all: build
 tidy:
 	go mod tidy
 
+# Short commit hash (plus "-dirty" for uncommitted changes), shown by the
+# health check. Empty outside a git checkout; the binary then falls back to
+# the VCS info Go embeds, or "unknown". Override with `make COMMIT=...`.
+COMMIT ?= $(shell h=$$(git rev-parse --short=7 HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h="$$h-dirty"; echo "$$h"; })
+LDFLAGS := -X server_torii/internal/dataType.buildCommit=$(COMMIT)
+
 build:
-	go build -o server_torii .
+	go build -ldflags "$(LDFLAGS)" -o server_torii .
 
 test-e2e:
 	bash tests/e2e/test.sh

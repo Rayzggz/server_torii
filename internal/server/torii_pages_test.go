@@ -104,7 +104,7 @@ func TestHealthCheck(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	lines := strings.Split(rec.Body.String(), "\n")
-	if len(lines) != 5 || lines[0] != "ok" {
+	if len(lines) != 6 || lines[0] != "ok" {
 		t.Fatalf("body = %q", rec.Body.String())
 	}
 	fields := map[string]string{}
@@ -114,6 +114,9 @@ func TestHealthCheck(t *testing.T) {
 	}
 	if fields["version"] != dataType.ServerToriiVersion {
 		t.Errorf("version = %q, want %q", fields["version"], dataType.ServerToriiVersion)
+	}
+	if fields["commit"] != dataType.ServerToriiCommit() || fields["commit"] == "" {
+		t.Errorf("commit = %q, want %q", fields["commit"], dataType.ServerToriiCommit())
 	}
 	if fields["sliver"] != "node-a" {
 		t.Errorf("sliver = %q, want node-a", fields["sliver"])
