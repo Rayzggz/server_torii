@@ -17,6 +17,9 @@ func TestTrieMatching(t *testing.T) {
 		{"host", []string{"192.0.2.42/32"}, []string{"192.0.2.42"}, []string{"192.0.2.41", "192.0.2.43"}},
 		{"overlapping", []string{"10.1.2.0/24", "10.0.0.0/8", "10.1.2.0/24", "192.0.2.1/32"}, []string{"10.255.255.255", "10.1.2.3", "192.0.2.1"}, []string{"11.0.0.0", "192.0.2.2"}},
 		{"all_ipv4", []string{"0.0.0.0/0"}, []string{"0.0.0.0", "255.255.255.255"}, []string{"::1", "invalid"}},
+		{"mapped_host", []string{"::ffff:1.2.3.4/128"}, []string{"1.2.3.4", "::ffff:1.2.3.4"}, []string{"1.2.3.5", "::1"}},
+		{"mapped_subnet", []string{"::ffff:192.0.2.0/120"}, []string{"192.0.2.0", "192.0.2.255"}, []string{"192.0.3.0"}},
+		{"mapped_all", []string{"::ffff:0.0.0.0/96"}, []string{"0.0.0.0", "255.255.255.255"}, []string{"::1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			trie := &TrieNode{}
@@ -57,5 +60,17 @@ func TestTrieIgnoresIPv6Rules(t *testing.T) {
 	trie.Insert(network)
 	if !trie.IsEmpty() {
 		t.Fatal("unsupported IPv6 rule populated trie")
+	}
+}
+
+func TestTrieIgnoresMappedPrefixWiderThanIPv4(t *testing.T) {
+	trie := &TrieNode{}
+	_, network, err := net.ParseCIDR("::ffff:0.0.0.0/64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	trie.Insert(network)
+	if !trie.IsEmpty() {
+		t.Fatal("prefix wider than ::ffff:0:0/96 populated trie")
 	}
 }

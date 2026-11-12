@@ -14,9 +14,21 @@ func (node *TrieNode) IsEmpty() bool {
 
 // Insert IP or CIDR rule into trie, prefixLength represents the prefix length
 func (node *TrieNode) Insert(ipNet *net.IPNet) {
-	ones, _ := ipNet.Mask.Size()
+	ones, bits := ipNet.Mask.Size()
 	ip := ipNet.IP.To4()
 	if ip == nil {
+		return
+	}
+	// An IPv4-mapped IPv6 rule (e.g. ::ffff:1.2.3.4/128) carries a 128-bit
+	// mask. Translate it to the equivalent IPv4 prefix; a prefix shorter than
+	// the ::ffff:0:0/96 mapping reaches beyond IPv4 space and is unsupported.
+	if bits == 8*net.IPv6len {
+		if ones < 8*(net.IPv6len-net.IPv4len) {
+			return
+		}
+		ones -= 8 * (net.IPv6len - net.IPv4len)
+	}
+	if ones > 8*net.IPv4len {
 		return
 	}
 	current := node
