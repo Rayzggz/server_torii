@@ -3,6 +3,7 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/rules"
@@ -30,19 +31,17 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 			decision.SetVerdict(action.Done, action.VerdictBlock)
 			return
 		case rules.ActionCaptcha:
-			reqData.FeatureControl |= request.FeatureCaptcha
-			Captcha(reqData, ruleSet, decision, rt)
+			requireCaptcha(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionExternal:
-			reqData.FeatureControl |= request.FeatureExternalMigration
-			ExternalMigration(reqData, ruleSet, decision, rt)
+			requireExternalMigration(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionContinue:
 			decision.Set(action.Continue)
 			return
 		case rules.ActionSkip:
 			decision.SkipMask |= rule.SkipMask
-			if decision.SkipMask&rules.SkipCustomRules != 0 {
+			if decision.SkipMask&feature.CustomRules.SkipMask() != 0 {
 				decision.Set(action.Continue)
 				return
 			}

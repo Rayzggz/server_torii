@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
 	"server_torii/internal/rules"
@@ -19,7 +20,7 @@ func customRule(t *testing.T, id string, act rules.Action, expr string, skip ...
 	if err != nil {
 		t.Fatalf("Compile(%q): %v", expr, err)
 	}
-	mask, err := rules.ParseSkipTargets(skip)
+	mask, err := feature.ParseSkipTargets(skip)
 	if err != nil {
 		t.Fatal(err)
 	}

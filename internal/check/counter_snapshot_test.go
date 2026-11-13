@@ -53,7 +53,6 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 }
 
 func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
-	decision := action.NewDecision()
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		CAPTCHARule: &config.CaptchaRule{},
@@ -63,15 +62,9 @@ func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	}
 	req := httptest.NewRequest("POST", "/captcha", nil)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.State != action.Done {
-		t.Fatalf("expected done decision, got state=%v", decision.State)
-	}
-	if decision.Verdict != action.VerdictAllow {
-		t.Fatalf("expected http code 200, got %s", decision.Verdict)
-	}
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad, got %s", submission)
 	}
 }

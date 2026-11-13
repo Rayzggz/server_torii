@@ -6,45 +6,40 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
-	"server_torii/internal/rules"
 	"server_torii/internal/state"
 )
 
 type CheckFunc func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 
-// checkStep pairs a check with the rules.Skip* bit that lets a custom skip rule bypass it.
-type checkStep struct {
-	skip uint32
-	fn   CheckFunc
+// checkFuncs implements each step of feature.Pipeline.
+var checkFuncs = [feature.Count]CheckFunc{
+	feature.IPAllow:           check.IPAllowList,
+	feature.IPBlock:           check.IPBlockList,
+	feature.URLAllow:          check.URLAllowList,
+	feature.URLBlock:          check.URLBlockList,
+	feature.CustomRules:       check.CustomRules,
+	feature.IPCAPTCHA:         check.IPCAPTCHA,
+	feature.URLCAPTCHA:        check.URLCAPTCHA,
+	feature.CountryRule:       check.CountryRule,
+	feature.VerifyBot:         check.VerifyBot,
+	feature.ActionRule:        check.ActionRule,
+	feature.HTTPFlood:         check.HTTPFlood,
+	feature.ExternalMigration: check.ExternalMigration,
+	feature.Captcha:           check.Captcha,
 }
 
 // CheckMain runs the check pipeline and answers the auth_request subrequest.
 func (s *Server) CheckMain(w http.ResponseWriter, userRequestData request.UserRequest, ruleSet *config.RuleSet) {
 	decision := action.NewDecision()
 
-	checkSteps := []checkStep{
-		{0, check.IPAllowList},
-		{0, check.IPBlockList},
-		{0, check.URLAllowList},
-		{0, check.URLBlockList},
-		{rules.SkipCustomRules, check.CustomRules},
-		{rules.SkipIPCAPTCHA, check.IPCAPTCHA},
-		{rules.SkipURLCAPTCHA, check.URLCAPTCHA},
-		{rules.SkipCountryRule, check.CountryRule},
-		{rules.SkipVerifyBot, check.VerifyBot},
-		{rules.SkipActionRule, check.ActionRule},
-		{rules.SkipHTTPFlood, check.HTTPFlood},
-		{rules.SkipExternalMigration, check.ExternalMigration},
-		{rules.SkipCaptcha, check.Captcha},
-	}
-
-	for _, step := range checkSteps {
-		if decision.SkipMask&step.skip != 0 {
+	for _, c := range feature.Pipeline() {
+		if decision.SkipMask&c.SkipMask() != 0 {
 			continue
 		}
-		step.fn(userRequestData, ruleSet, decision, s.rt)
+		checkFuncs[c](userRequestData, ruleSet, decision, s.rt)
 		if decision.State == action.Done {
 			break
 		}

@@ -46,8 +46,7 @@ func CountryRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case config.CountryCaptcha:
 		logx.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
-		reqData.FeatureControl |= request.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, rt)
+		requireCaptcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)
 	}

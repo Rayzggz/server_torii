@@ -16,7 +16,6 @@ const (
 	VerdictCaptcha                  // request must solve a CAPTCHA
 	VerdictRateLimit                // request exceeded a rate limit
 	VerdictExternal                 // request is handed to external migration
-	VerdictError                    // internal error while deciding
 )
 
 var verdictNames = [...]string{
@@ -25,7 +24,6 @@ var verdictNames = [...]string{
 	VerdictCaptcha:   "CAPTCHA",
 	VerdictRateLimit: "429",
 	VerdictExternal:  "EXTERNAL",
-	VerdictError:     "500",
 }
 
 // String returns the wire label of the verdict, as sent in the Torii-Action header.
@@ -36,41 +34,15 @@ func (v Verdict) String() string {
 	return "UNKNOWN"
 }
 
-// CaptchaResult is the outcome of a CAPTCHA submission.
-type CaptchaResult uint8
-
-const (
-	CaptchaNone       CaptchaResult = iota // no CAPTCHA submission was evaluated
-	CaptchaGood                            // solution accepted
-	CaptchaBad                             // solution missing or wrong
-	CaptchaBadSession                      // challenge session invalid or mismatched
-)
-
-var captchaResultNames = [...]string{
-	CaptchaNone:       "",
-	CaptchaGood:       "good",
-	CaptchaBad:        "bad",
-	CaptchaBadSession: "badSession",
-}
-
-// String returns the response body sent to the CAPTCHA page for this result.
-func (r CaptchaResult) String() string {
-	if int(r) < len(captchaResultNames) {
-		return captchaResultNames[r]
-	}
-	return "UNKNOWN"
-}
-
-// Decision saves the result of the decision
+// Decision is what the check pipeline has concluded about a request so far.
 type Decision struct {
 	Verdict  Verdict
 	State    checkState
-	Captcha  CaptchaResult
 	SkipMask uint32 // checks to skip for the rest of the request, set by custom skip rules
 }
 
 func NewDecision() *Decision {
-	return &Decision{Verdict: VerdictAllow, State: Continue, Captcha: CaptchaNone}
+	return &Decision{Verdict: VerdictAllow, State: Continue}
 }
 
 func (d *Decision) Set(state checkState) {
@@ -80,10 +52,4 @@ func (d *Decision) Set(state checkState) {
 func (d *Decision) SetVerdict(state checkState, verdict Verdict) {
 	d.State = state
 	d.Verdict = verdict
-}
-
-func (d *Decision) SetCaptchaResult(state checkState, verdict Verdict, result CaptchaResult) {
-	d.State = state
-	d.Verdict = verdict
-	d.Captcha = result
 }

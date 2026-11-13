@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"net/url"
-	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
@@ -26,19 +25,12 @@ func TestCheckCaptchaAltchaGood(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
 	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.State != action.Done {
-		t.Fatalf("expected done decision, got state=%v", decision.State)
-	}
-	if decision.Verdict != action.VerdictAllow {
-		t.Fatalf("expected http code 200, got %s", decision.Verdict)
-	}
-	if decision.Captcha != action.CaptchaGood {
-		t.Fatalf("expected response good, got %s", decision.Captcha)
+	if submission != SubmissionGood {
+		t.Fatalf("expected response good, got %s", submission)
 	}
 }
 
@@ -61,15 +53,14 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
 	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
 	rt.CaptchaFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, replayReqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBadSession {
-		t.Fatalf("expected response badSession for fresh-session replay, got %s", decision.Captcha)
+	if submission != SubmissionBadSession {
+		t.Fatalf("expected response badSession for fresh-session replay, got %s", submission)
 	}
 	if got := counter.Query(replayReqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -102,13 +93,12 @@ func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
 	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, replayReqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad for tampered session binding, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad for tampered session binding, got %s", submission)
 	}
 }
 
@@ -128,11 +118,10 @@ func TestCheckCaptchaAltchaRejectsWrongSolution(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	CheckCaptcha(req, reqData, ruleSet, decision, testCaptchaRuntime())
+	submission := CheckCaptcha(req, reqData, ruleSet, testCaptchaRuntime())
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad for wrong solution, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad for wrong solution, got %s", submission)
 	}
 }
 
@@ -144,15 +133,14 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
 	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
 	rt.CaptchaFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad, got %s", submission)
 	}
 	if got := counter.Query(reqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -171,13 +159,12 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
 	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, rt)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBadSession {
-		t.Fatalf("expected response badSession, got %s", decision.Captcha)
+	if submission != SubmissionBadSession {
+		t.Fatalf("expected response badSession, got %s", submission)
 	}
 }
 

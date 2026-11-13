@@ -203,13 +203,3 @@ func TestWildcardEscapes(t *testing.T) {
 		}
 	}
 }
-
-func TestParseSkipTargets(t *testing.T) {
-	mask, err := ParseSkipTargets([]string{"HTTPFlood", "Captcha"})
-	if err != nil || mask != SkipHTTPFlood|SkipCaptcha {
-		t.Fatalf("ParseSkipTargets = %b, %v", mask, err)
-	}
-	if _, err := ParseSkipTargets([]string{"IPAllow"}); err == nil {
-		t.Fatal("IPAllow runs before CustomRules and must not be a skip target")
-	}
-}

@@ -20,15 +20,13 @@ func ActionRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *
 	case action.ActionBlock:
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case action.ActionCaptcha:
-		reqData.FeatureControl |= request.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, rt)
+		requireCaptcha(reqData, ruleSet, decision, rt)
 	case action.ActionCaptchaUnverified:
 		if rt.HasBrowserEvidence(reqData.RemoteIP) {
 			decision.Set(action.Continue)
 			return
 		}
-		reqData.FeatureControl |= request.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, rt)
+		requireCaptcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)
 	}

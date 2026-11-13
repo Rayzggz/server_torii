@@ -27,45 +27,6 @@ func ParseAction(name string) (Action, error) {
 	}
 }
 
-// Skip targets are the checks that run after CustomRules and can be skipped by a skip rule.
-const (
-	SkipCustomRules uint32 = 1 << iota // the remaining custom rules
-	SkipIPCAPTCHA
-	SkipURLCAPTCHA
-	SkipCountryRule
-	SkipVerifyBot
-	SkipActionRule
-	SkipHTTPFlood
-	SkipExternalMigration
-	SkipCaptcha
-)
-
-var skipTargets = map[string]uint32{
-	"CustomRules":       SkipCustomRules,
-	"IPCAPTCHA":         SkipIPCAPTCHA,
-	"URLCAPTCHA":        SkipURLCAPTCHA,
-	"CountryRule":       SkipCountryRule,
-	"VerifyBot":         SkipVerifyBot,
-	"ActionRule":        SkipActionRule,
-	"HTTPFlood":         SkipHTTPFlood,
-	"ExternalMigration": SkipExternalMigration,
-	"Captcha":           SkipCaptcha,
-}
-
-// ParseSkipTargets turns check names into a skip mask.
-func ParseSkipTargets(names []string) (uint32, error) {
-	var mask uint32
-	for _, name := range names {
-		bit, ok := skipTargets[name]
-		if !ok {
-			return 0, fmt.Errorf("invalid skip target %q: expected one of %s", name,
-				"CustomRules, IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule, HTTPFlood, ExternalMigration, Captcha")
-		}
-		mask |= bit
-	}
-	return mask, nil
-}
-
 // Rule is one compiled custom rule.
 type Rule struct {
 	ID          string

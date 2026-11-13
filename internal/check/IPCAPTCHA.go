@@ -21,6 +21,5 @@ func IPCAPTCHA(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		return
 	}
 	logx.LogInfo(reqData, "", "IPCAPTCHA")
-	reqData.FeatureControl |= request.FeatureCaptcha
-	Captcha(reqData, ruleSet, decision, rt)
+	requireCaptcha(reqData, ruleSet, decision, rt)
 }

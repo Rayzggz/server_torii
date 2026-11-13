@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"server_torii/internal/feature"
 	"server_torii/internal/rules"
 	"strings"
 	"testing"
@@ -71,7 +72,7 @@ func TestCustomRulesDisabledRuleDropped(t *testing.T) {
 	if !dest.Enabled || len(dest.Rules) != 1 || dest.Rules[0].ID != "on" {
 		t.Fatalf("rules = %#v", dest.Rules)
 	}
-	if dest.Rules[0].SkipMask != rules.SkipCaptcha|rules.SkipHTTPFlood {
+	if dest.Rules[0].SkipMask != feature.Captcha.SkipMask()|feature.HTTPFlood.SkipMask() {
 		t.Fatalf("skip mask = %b", dest.Rules[0].SkipMask)
 	}
 }

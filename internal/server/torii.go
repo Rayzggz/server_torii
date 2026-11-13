@@ -5,10 +5,8 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"net/http"
 	"net/url"
-	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/logx"
@@ -20,86 +18,51 @@ import (
 )
 
 // CheckTorii serves every Torii endpoint other than the checker; unknown paths get the 403 page.
+//
+// Two paths are in play. r.URL.Path is what nginx asked Torii for, and is trusted: it selects
+// the pages nginx redirects to internally and the gossip endpoint peers call directly.
+// reqData.Uri is the URI the visitor originally requested, forwarded in a header: it selects the
+// endpoints a browser reaches under the address of the protected site.
 func (s *Server) CheckTorii(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
-	decision := action.NewDecision()
-
-	decision.SetVerdict(action.Continue, action.VerdictBlock)
-	if strings.HasPrefix(r.URL.Path, s.cfg.WebPath+"/checker_pages/") {
+	webPath := s.cfg.WebPath
+	switch {
+	case strings.HasPrefix(r.URL.Path, webPath+"/checker_pages/"):
 		s.handleCheckerPages(w, r, reqData, ruleSet, pages)
-		return
-	} else if reqData.Uri == s.cfg.WebPath+"/captcha/challenge" {
+	case reqData.Uri == webPath+"/captcha/challenge":
 		handleCaptchaChallenge(w, r, reqData, ruleSet)
-		return
-	} else if reqData.Uri == s.cfg.WebPath+"/captcha" {
-		check.CheckCaptcha(r, reqData, ruleSet, decision, s.rt)
-	} else if reqData.Uri == s.cfg.WebPath+"/health_check" {
+	case reqData.Uri == webPath+"/captcha":
+		s.handleCaptchaSubmission(w, r, reqData, ruleSet, pages)
+	case reqData.Uri == webPath+"/health_check":
 		s.handleHealthCheck(w, reqData)
-		return
-	} else if strings.HasPrefix(reqData.Uri, s.cfg.WebPath+"/external_migration") {
+	case strings.HasPrefix(reqData.Uri, webPath+"/external_migration"):
 		s.handleExternalMigration(w, r, reqData, ruleSet, pages)
-		return
-	} else if r.URL.Path == s.cfg.WebPath+"/gossip" {
-		if s.cfg.EnableGossip && s.gossip != nil {
-			s.gossip.HandleGossip(w, r)
-			return
-		}
+	case r.URL.Path == webPath+"/gossip" && s.cfg.EnableGossip && s.gossip != nil:
+		s.gossip.HandleGossip(w, r)
+	default:
+		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
 	}
-	if decision.Verdict == action.VerdictError && decision.Captcha != action.CaptchaNone {
-		// The CAPTCHA provider could not verify the answer; this is not the client's fault, so the page may retry.
-		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		if _, err := w.Write([]byte("error")); err != nil {
-			logx.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-		}
-		return
-	}
-	if decision.Verdict == action.VerdictAllow {
-		switch decision.Captcha {
-		case action.CaptchaBad, action.CaptchaBadSession:
-			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write([]byte(decision.Captcha.String())); err != nil {
-				logx.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-			}
-			return
-		case action.CaptchaGood:
-			if ruleSet.CAPTCHARule != nil {
-				s.rt.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
-			}
-			setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
-			w.WriteHeader(http.StatusOK)
-			if _, err := w.Write([]byte(decision.Captcha.String())); err != nil {
-				logx.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-			}
-		default:
-			//should not be here
-			w.WriteHeader(http.StatusInternalServerError)
-			if _, err := w.Write([]byte("500 - Internal Server Error")); err != nil {
-				logx.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
-			}
-		}
-	} else {
-		tpl := pages.Get(config.PageForbidden)
-		if tpl == nil {
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
+}
 
-		data := struct {
-			EdgeTag   string
-			ConnectIP string
-			Date      string
-		}{
-			EdgeTag:   s.cfg.NodeName,
-			ConnectIP: reqData.RemoteIP,
-			Date:      time.Now().Format("2006-01-02 15:04:05"),
+// handleCaptchaSubmission answers the script of the CAPTCHA page, which acts on the response body.
+func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
+	outcome := check.CheckCaptcha(r, reqData, ruleSet, s.rt)
+	status := http.StatusOK
+	switch outcome {
+	case check.SubmissionRejected:
+		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
+		return
+	case check.SubmissionUnavailable:
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		status = http.StatusServiceUnavailable
+	case check.SubmissionGood:
+		if ruleSet.CAPTCHARule != nil {
+			s.rt.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
 		}
-		body, err := renderPage(tpl, data)
-		if err != nil {
-			logx.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckTorii")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		writeHTML(w, reqData, http.StatusForbidden, body, "CheckTorii")
+		setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
+	}
+	w.WriteHeader(status)
+	if _, err := w.Write([]byte(outcome.String())); err != nil {
+		logx.LogError(reqData, "Error writing response: "+err.Error(), "handleCaptchaSubmission")
 	}
 }
 
@@ -207,54 +170,65 @@ func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request,
 	http.Redirect(w, r, originalURI, http.StatusFound)
 }
 
-func (s *Server) showExternalMigrationError(w http.ResponseWriter, data request.UserRequest, pages *config.ErrorPages, errorMsg string) {
-	tpl := pages.Get(config.PageError)
-	if tpl == nil {
-		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	templateData := struct {
+func (s *Server) showExternalMigrationError(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, errorMsg string) {
+	data := struct {
+		pageData
 		ErrorCode    string
 		ErrorTitle   string
 		ErrorMessage string
-		EdgeTag      string
-		ConnectIP    string
-		Date         string
-	}{
-		ErrorCode:    "400",
-		ErrorTitle:   "Migration Error",
-		ErrorMessage: errorMsg,
-		EdgeTag:      s.cfg.NodeName,
-		ConnectIP:    data.RemoteIP,
-		Date:         time.Now().Format("2006-01-02 15:04:05"),
+	}{s.pageData(reqData), "400", "Migration Error", errorMsg}
+	if body, ok := s.renderPage(w, reqData, pages, config.PageError, data); ok {
+		writeHTML(w, reqData, http.StatusBadRequest, body)
 	}
-
-	body, err := renderPage(tpl, templateData)
-	if err != nil {
-		logx.LogError(data, fmt.Sprintf("Error executing template: %v", err), "showExternalMigrationError")
-		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-	writeHTML(w, data, http.StatusBadRequest, body, "showExternalMigrationError")
 }
 
-// renderPage executes tpl into memory, so a failure can still be answered with a clean 500
-// instead of a truncated page behind an already-sent status line.
-func renderPage(tpl *template.Template, data any) ([]byte, error) {
+// pageData is what every error page template may show.
+type pageData struct {
+	EdgeTag   string
+	ConnectIP string
+	Date      string
+}
+
+func (s *Server) pageData(reqData request.UserRequest) pageData {
+	return pageData{
+		EdgeTag:   s.cfg.NodeName,
+		ConnectIP: reqData.RemoteIP,
+		Date:      time.Now().Format("2006-01-02 15:04:05"),
+	}
+}
+
+// serveErrorPage answers with one of the configured error pages.
+func (s *Server) serveErrorPage(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, page config.Page, status int) {
+	if body, ok := s.renderPage(w, reqData, pages, page, s.pageData(reqData)); ok {
+		writeHTML(w, reqData, status, body)
+	}
+}
+
+// renderPage executes a page into memory, so a failure can still be answered with a clean 500
+// instead of a truncated page behind an already-sent status line. When it reports false the
+// 500 has been written.
+func (s *Server) renderPage(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, page config.Page, data any) ([]byte, bool) {
+	tpl := pages.Get(page)
+	if tpl == nil {
+		logx.LogError(reqData, "Error page "+page.String()+" is not loaded", "renderPage")
+		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+		return nil, false
+	}
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, data); err != nil {
-		return nil, err
+		logx.LogError(reqData, fmt.Sprintf("Error executing template %s: %v", page, err), "renderPage")
+		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+		return nil, false
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), true
 }
 
-func writeHTML(w http.ResponseWriter, reqData request.UserRequest, status int, body []byte, caller string) {
+func writeHTML(w http.ResponseWriter, reqData request.UserRequest, status int, body []byte) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil {
-		logx.LogError(reqData, "Error writing response: "+err.Error(), caller)
+		logx.LogError(reqData, "Error writing response: "+err.Error(), "writeHTML")
 	}
 }
 
@@ -304,125 +278,49 @@ func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacV
 		"&hmac=" + url.QueryEscape(hmacValue)
 }
 
+// handleCheckerPages serves the page nginx shows for each verdict of the checker.
 func (s *Server) handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	switch r.URL.Path {
-	case s.cfg.WebPath + "/checker_pages/403":
-		tpl := pages.Get(config.PageForbidden)
-		if tpl == nil {
-			logx.LogError(reqData, "Error page 403.html is not loaded", "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		data := struct {
-			EdgeTag   string
-			ConnectIP string
-			Date      string
-		}{
-			EdgeTag:   s.cfg.NodeName,
-			ConnectIP: reqData.RemoteIP,
-			Date:      time.Now().Format("2006-01-02 15:04:05"),
-		}
-		body, err := renderPage(tpl, data)
-		if err != nil {
-			logx.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
-
 	case s.cfg.WebPath + "/checker_pages/CAPTCHA":
-		captchaPage := config.PageCaptcha
+		page := config.PageCaptcha
 		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
-			captchaPage = config.PageCaptchaAltcha
+			page = config.PageCaptchaAltcha
 		}
-		tpl := pages.Get(captchaPage)
-		if tpl == nil {
-			logx.LogError(reqData, "Error page "+captchaPage.String()+" is not loaded", "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		body, err := renderPage(tpl, nil)
-		if err != nil {
-			logx.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+		body, ok := s.renderPage(w, reqData, pages, page, nil)
+		if !ok {
 			return
 		}
 		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
-		writeHTML(w, reqData, http.StatusServiceUnavailable, body, "CheckMain")
+		writeHTML(w, reqData, http.StatusServiceUnavailable, body)
 
 	case s.cfg.WebPath + "/checker_pages/429":
-		tpl := pages.Get(config.PageTooManyRequests)
-		if tpl == nil {
-			logx.LogError(reqData, "Error page 429.html is not loaded", "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		data := struct {
-			EdgeTag   string
-			ConnectIP string
-			Date      string
-		}{
-			EdgeTag:   s.cfg.NodeName,
-			ConnectIP: reqData.RemoteIP,
-			Date:      time.Now().Format("2006-01-02 15:04:05"),
-		}
-		body, err := renderPage(tpl, data)
-		if err != nil {
-			logx.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		writeHTML(w, reqData, http.StatusTooManyRequests, body, "CheckMain")
+		s.serveErrorPage(w, reqData, pages, config.PageTooManyRequests, http.StatusTooManyRequests)
 
 	case s.cfg.WebPath + "/checker_pages/EXTERNAL":
-		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
+		s.redirectToExternalMigration(w, reqData, ruleSet)
 
-		setToriiCookie(w, "__torii_session_id", string(externalMigrationSessionID), http.SameSiteLaxMode)
-
-		sessionID := string(externalMigrationSessionID)
-		sessionParts := strings.Split(sessionID, ":")
-		if len(sessionParts) != 2 {
-			logx.LogError(reqData, "Invalid session ID format", "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		timestamp := sessionParts[0]
-		hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
-
-		w.Header().Set("Location", externalRedirectLocation(ruleSet.ExternalMigrationRule.RedirectUrl, reqData.Host, sessionID, reqData.Uri, hmacValue))
-		w.WriteHeader(http.StatusFound)
-		_, err := w.Write([]byte("OK"))
-		if err != nil {
-			return
-		}
-
-		return
-	default:
-		tpl := pages.Get(config.PageForbidden)
-		if tpl == nil {
-			logx.LogError(reqData, "Error page 403.html is not loaded", "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		data := struct {
-			EdgeTag   string
-			ConnectIP string
-			Date      string
-		}{
-			EdgeTag:   s.cfg.NodeName,
-			ConnectIP: reqData.RemoteIP,
-			Date:      time.Now().Format("2006-01-02 15:04:05"),
-		}
-		body, err := renderPage(tpl, data)
-		if err != nil {
-			logx.LogError(reqData, fmt.Sprintf("Error executing template: %v", err), "CheckMain")
-			http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
+	default: // including /checker_pages/403
+		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
 	}
+}
+
+// redirectToExternalMigration sends the visitor to the external provider with a signed session.
+func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData request.UserRequest, ruleSet *config.RuleSet) {
+	sessionID := string(check.GenExternalMigrationSessionID(reqData, *ruleSet))
+	setToriiCookie(w, "__torii_session_id", sessionID, http.SameSiteLaxMode)
+
+	sessionParts := strings.Split(sessionID, ":")
+	if len(sessionParts) != 2 {
+		logx.LogError(reqData, "Invalid session ID format", "redirectToExternalMigration")
+		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+	timestamp := sessionParts[0]
+	hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
+
+	w.Header().Set("Location", externalRedirectLocation(ruleSet.ExternalMigrationRule.RedirectUrl, reqData.Host, sessionID, reqData.Uri, hmacValue))
+	w.WriteHeader(http.StatusFound)
+	_, _ = w.Write([]byte("OK"))
 }
 
 // setToriiCookie writes a Torii cookie with consistent attributes.

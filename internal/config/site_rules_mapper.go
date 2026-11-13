@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
+	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
 	"strings"
@@ -247,7 +248,7 @@ func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error 
 		case act != rules.ActionSkip && len(w.Skip) > 0:
 			return fmt.Errorf("%s: skip list is only valid with the skip action", label)
 		case act == rules.ActionSkip:
-			if skipMask, err = rules.ParseSkipTargets(w.Skip); err != nil {
+			if skipMask, err = feature.ParseSkipTargets(w.Skip); err != nil {
 				return fmt.Errorf("%s: %w", label, err)
 			}
 		}

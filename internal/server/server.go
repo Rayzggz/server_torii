@@ -9,6 +9,7 @@ import (
 	"path"
 	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/gossip"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
@@ -156,30 +157,13 @@ func getHeader(r *http.Request, headerName string) string {
 
 // processFeatureControl processes the feature control header and combines it with config rules
 // Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
-// Position mapping: 0=IPAllow, 1=IPBlock, 2=URLAllow, 3=URLBlock, 4=VerifyBot, 5=HTTPFlood, 6=Captcha, 7=ExternalMigration, 8=CountryRule, 9=IPCAPTCHA, 10=URLCAPTCHA, 11=CustomRules
+// Header positions are the feature control bits declared in package request.
 func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
-	// Define feature list in order (position 0 to N)
-	configStates := []bool{
-		ruleSet.IPAllowRule.Enabled,                                     // position 0
-		ruleSet.IPBlockRule.Enabled,                                     // position 1
-		ruleSet.URLAllowRule.Enabled,                                    // position 2
-		ruleSet.URLBlockRule.Enabled,                                    // position 3
-		ruleSet.VerifyBotRule.Enabled,                                   // position 4
-		ruleSet.HTTPFloodRule.Enabled,                                   // position 5
-		ruleSet.CAPTCHARule.Enabled,                                     // position 6
-		ruleSet.ExternalMigrationRule.Enabled,                           // position 7
-		ruleSet.CountryRule.Enabled,                                     // position 8
-		ruleSet.IPCAPTCHARule != nil && ruleSet.IPCAPTCHARule.Enabled,   // position 9
-		ruleSet.URLCAPTCHARule != nil && ruleSet.URLCAPTCHARule.Enabled, // position 10
-		ruleSet.CustomRules != nil && ruleSet.CustomRules.Enabled,       // position 11
-		// Future features can be added here
-	}
-
 	// Build config baseline from ruleSet
-	var configBits uint16 = 0
-	for i, enabled := range configStates {
-		if enabled {
-			configBits |= 1 << i
+	var configBits uint16
+	for _, c := range feature.Pipeline() {
+		if ruleSet.FeatureEnabled(c) {
+			configBits |= c.ControlMask()
 		}
 	}
 
