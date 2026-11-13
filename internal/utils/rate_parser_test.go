@@ -45,6 +45,11 @@ func TestParseRateList_InvalidFormat(t *testing.T) {
 		{"bad number", []string{"abc/1s"}},
 		{"bad unit", []string{"100/1x"}},
 		{"bad time number", []string{"100/abcs"}},
+		{"zero limit", []string{"0/10s"}},
+		{"negative limit", []string{"-5/10s"}},
+		{"zero window", []string{"100/0s"}},
+		{"zero limit and window", []string{"0/0s"}},
+		{"negative window", []string{"100/-1m"}},
 	}
 
 	for _, tt := range tests {

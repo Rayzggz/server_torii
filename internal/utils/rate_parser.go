@@ -15,6 +15,9 @@ func ParseRate(s string) (int64, int64, error) {
 	if err != nil {
 		return 0, 0, fmt.Errorf("unexpected rate format: %s", s)
 	}
+	if limit <= 0 {
+		return 0, 0, fmt.Errorf("rate limit must be positive: %s", s)
+	}
 
 	timeStr := parts[1]
 	if len(timeStr) < 2 {
@@ -25,6 +28,9 @@ func ParseRate(s string) (int64, int64, error) {
 	value, err := strconv.Atoi(numPart)
 	if err != nil {
 		return 0, 0, fmt.Errorf("unexpected time format: %s", timeStr)
+	}
+	if value <= 0 {
+		return 0, 0, fmt.Errorf("rate time window must be positive: %s", timeStr)
 	}
 	var seconds int
 	switch unit {
