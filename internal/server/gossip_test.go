@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/gossip"
 	"testing"
 	"time"
 
@@ -60,11 +60,11 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
-		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-		msg := dataType.GossipMessage{
+		payload, _ := json.Marshal(gossip.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		msg := gossip.GossipMessage{
 			ID:         msgID,
 			OriginNode: originNode,
-			Type:       dataType.GossipTypeActionRule,
+			Type:       gossip.GossipTypeActionRule,
 			Content:    string(payload),
 			Timestamp:  time.Now().Unix(),
 		}

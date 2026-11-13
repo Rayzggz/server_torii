@@ -5,8 +5,9 @@ import (
 	"net/netip"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 )
@@ -21,24 +22,24 @@ func (r *fakeCountryResolver) Country(netip.Addr) (string, error) { r.calls++; r
 
 func countryTestRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		CountryRule: &dataType.CountryRule{DefaultAction: dataType.CountryContinue, UnknownAction: dataType.CountryContinue, Countries: map[string]dataType.CountryAction{}},
-		CAPTCHARule: &dataType.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{}},
+		CountryRule: &config.CountryRule{DefaultAction: config.CountryContinue, UnknownAction: config.CountryContinue, Countries: map[string]config.CountryAction{}},
+		CAPTCHARule: &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{}},
 	}
 }
 
 func TestCountryRulePolicies(t *testing.T) {
-	for _, policy := range []dataType.CountryAction{dataType.CountryContinue, dataType.CountryBlock, dataType.CountryCaptcha} {
+	for _, policy := range []config.CountryAction{config.CountryContinue, config.CountryBlock, config.CountryCaptcha} {
 		for _, source := range []string{"override", "default", "invalid", "private", "loopback", "link_local", "empty", "error", "missing", "missing_database"} {
 			t.Run(string(policy)+"/"+source, func(t *testing.T) {
 				rules := countryTestRuleSet()
 				resolver := &fakeCountryResolver{country: "us"}
 				shared := &state.Runtime{CountryResolver: resolver}
-				shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
-				req := dataType.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: dataType.FeatureCountryRule}
+				shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+				req := request.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: request.FeatureCountryRule}
 				rules.CountryRule.UnknownAction = policy
 				switch source {
 				case "override":
-					rules.CountryRule.DefaultAction = dataType.CountryBlock
+					rules.CountryRule.DefaultAction = config.CountryBlock
 					rules.CountryRule.Countries["US"] = policy
 				case "default":
 					rules.CountryRule.DefaultAction = policy
@@ -61,8 +62,8 @@ func TestCountryRulePolicies(t *testing.T) {
 				}
 				decision := action.NewDecision()
 				CountryRule(req, rules, decision, shared)
-				want := map[dataType.CountryAction]string{dataType.CountryContinue: "200", dataType.CountryBlock: "403", dataType.CountryCaptcha: "CAPTCHA"}[policy]
-				if decision.Verdict.String() != want || (decision.State == action.Done) != (policy != dataType.CountryContinue) {
+				want := map[config.CountryAction]string{config.CountryContinue: "200", config.CountryBlock: "403", config.CountryCaptcha: "CAPTCHA"}[policy]
+				if decision.Verdict.String() != want || (decision.State == action.Done) != (policy != config.CountryContinue) {
 					t.Fatalf("decision = %#v, want %s", decision, want)
 				}
 				if (source == "invalid" || source == "private" || source == "loopback" || source == "missing") && resolver.calls != 0 {
@@ -76,10 +77,10 @@ func TestCountryRulePolicies(t *testing.T) {
 func TestCountryRuleSkipsLookup(t *testing.T) {
 	for _, absent := range []bool{false, true} {
 		rules := countryTestRuleSet()
-		req := dataType.UserRequest{RemoteIP: "8.8.8.8"}
+		req := request.UserRequest{RemoteIP: "8.8.8.8"}
 		if absent {
 			rules.CountryRule = nil
-			req.FeatureControl = dataType.FeatureCountryRule
+			req.FeatureControl = request.FeatureCountryRule
 		}
 		resolver := &fakeCountryResolver{country: "US"}
 		decision := action.NewDecision()
@@ -92,11 +93,11 @@ func TestCountryRuleSkipsLookup(t *testing.T) {
 
 func TestCountryRuleCaptchaClearanceContinues(t *testing.T) {
 	rules := countryTestRuleSet()
-	rules.CountryRule.DefaultAction = dataType.CountryCaptcha
-	req := dataType.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: dataType.FeatureCountryRule}
+	rules.CountryRule.DefaultAction = config.CountryCaptcha
+	req := request.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: request.FeatureCountryRule}
 	req.ToriiClearance = string(GenClearance(req, *rules))
 	shared := &state.Runtime{CountryResolver: &fakeCountryResolver{country: "US"}}
-	shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+	shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	decision := action.NewDecision()
 	CountryRule(req, rules, decision, shared)
 	if decision.State != action.Continue {

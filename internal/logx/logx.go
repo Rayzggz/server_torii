@@ -1,11 +1,11 @@
-package utils
+package logx
 
 import (
 	"fmt"
 	"log"
 	"os"
 	"path/filepath"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"sync"
 	"time"
 
@@ -78,7 +78,7 @@ func (m *LogxManager) openLogFile(path string) *os.File {
 	return f
 }
 
-func LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
+func LogInfo(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")
@@ -97,7 +97,7 @@ func LogInfo(reqData dataType.UserRequest, msg, msg2 string) {
 	lg.Info(line)
 }
 
-func LogError(reqData dataType.UserRequest, msg, msg2 string) {
+func LogError(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")
@@ -116,7 +116,7 @@ func LogError(reqData dataType.UserRequest, msg, msg2 string) {
 	lg.Error(line)
 }
 
-func LogDebug(reqData dataType.UserRequest, msg, msg2 string) {
+func LogDebug(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")

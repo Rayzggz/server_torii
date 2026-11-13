@@ -3,7 +3,8 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 	"time"
@@ -17,12 +18,12 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 	engine.AddURIRule("/members/:id", action.ActionCaptchaUnverified, time.Minute)
-	rules := &config.RuleSet{CAPTCHARule: &dataType.CaptchaRule{
+	rules := &config.RuleSet{CAPTCHARule: &config.CaptchaRule{
 		SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{},
 	}}
 	for _, tc := range []struct {
 		name     string
-		analyzer dataType.BrowserEvidence
+		analyzer state.BrowserEvidence
 		ip       string
 		wantDone bool
 	}{
@@ -32,9 +33,9 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			shared := &state.Runtime{ActionRuleEngine: engine, BrowserEvidence: tc.analyzer}
-			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			decision := action.NewDecision()
-			ActionRule(dataType.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
+			ActionRule(request.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
 			if done := decision.State == action.Done; done != tc.wantDone {
 				t.Fatalf("done = %v (code %s), want %v", done, decision.Verdict, tc.wantDone)
 			}

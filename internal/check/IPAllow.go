@@ -4,13 +4,13 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 )
 
-func IPAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func IPAllowList(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if IPAllow feature is enabled using binary operation
-	if (reqData.FeatureControl & dataType.FeatureIPAllow) == 0 {
+	if (reqData.FeatureControl & request.FeatureIPAllow) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

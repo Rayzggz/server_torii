@@ -5,7 +5,6 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/state"
 	"sync"
 	"testing"
@@ -23,7 +22,7 @@ func TestSyslogConcurrency(t *testing.T) {
 	siteRules := make(map[string]*config.RuleSet)
 	// Add a dummy rule to ensure logs are not discarded early
 	siteRules["test_site"] = &config.RuleSet{
-		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{
+		AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{
 			Tag:     "nginx",
 			Enabled: true,
 		},

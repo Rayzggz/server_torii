@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func ExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if ExternalMigration feature is enabled using binary operation
-	if (reqData.FeatureControl & dataType.FeatureExternalMigration) == 0 {
+	if (reqData.FeatureControl & request.FeatureExternalMigration) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
@@ -29,14 +29,14 @@ func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, de
 	decision.Set(action.Continue)
 }
 
-func GenExternalMigrationClearance(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+func GenExternalMigrationClearance(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", timeNow, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func verifyExternalMigrationClearanceCookie(reqData request.UserRequest, ruleSet config.RuleSet) bool {
 	if reqData.ToriiClearance == "" {
 		return false
 	}
@@ -50,7 +50,7 @@ func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSe
 	timeNow := time.Now().Unix()
 	parsedTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		utils.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
+		logx.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
 		return false
 	}
 
@@ -59,21 +59,21 @@ func verifyExternalMigrationClearanceCookie(reqData dataType.UserRequest, ruleSe
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", parsedTimestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))
 
 }
 
-func GenExternalMigrationSessionID(reqData dataType.UserRequest, ruleSet config.RuleSet) []byte {
+func GenExternalMigrationSessionID(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
 	timeNow := time.Now().Unix()
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", timeNow, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return []byte(fmt.Sprintf("%s:%s", fmt.Sprintf("%d", timeNow), fmt.Sprintf("%x", mac.Sum(nil))))
 }
 
-func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSet config.RuleSet) bool {
+func VerifyExternalMigrationSessionIDCookie(reqData request.UserRequest, ruleSet config.RuleSet) bool {
 	if reqData.ToriiSessionID == "" {
 		return false
 	}
@@ -86,12 +86,12 @@ func VerifyExternalMigrationSessionIDCookie(reqData dataType.UserRequest, ruleSe
 
 	parsedTimestamp, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil {
-		utils.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
+		logx.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
 		return false
 	}
 
 	mac := hmac.New(sha512.New, []byte(ruleSet.ExternalMigrationRule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", parsedTimestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION", parsedTimestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	computedHash := fmt.Sprintf("%x", mac.Sum(nil))
 
 	return hmac.Equal([]byte(computedHash), []byte(expectedHash))

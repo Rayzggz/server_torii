@@ -3,7 +3,7 @@ package state
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/gossip"
 	"testing"
 	"time"
 )
@@ -46,8 +46,8 @@ func TestApplyRule(t *testing.T) {
 
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossip := make(chan dataType.GossipMessage, 4)
-	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossip}
+	gossipCh := make(chan gossip.GossipMessage, 4)
+	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossipCh}
 
 	if !rt.BlockIP("1.2.3.4", time.Minute) {
 		t.Fatal("BlockIP reported no engine")
@@ -56,8 +56,8 @@ func TestApplyRule(t *testing.T) {
 		t.Fatalf("IP rule = %s, want BLOCK", got)
 	}
 	select {
-	case msg := <-gossip:
-		if msg.OriginNode != "node-a" || msg.Type != dataType.GossipTypeActionRule {
+	case msg := <-gossipCh:
+		if msg.OriginNode != "node-a" || msg.Type != gossip.GossipTypeActionRule {
 			t.Fatalf("unexpected broadcast: %+v", msg)
 		}
 	default:
@@ -68,7 +68,7 @@ func TestApplyRule(t *testing.T) {
 	if got := engine.Check("9.9.9.9", "", "/search"); got != action.ActionCaptcha {
 		t.Fatalf("URI rule = %s, want CAPTCHA", got)
 	}
-	if len(gossip) != 0 {
+	if len(gossipCh) != 0 {
 		t.Fatal("local-only rule was broadcast")
 	}
 

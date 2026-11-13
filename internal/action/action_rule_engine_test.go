@@ -1,7 +1,7 @@
 package action
 
 import (
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"sync"
 	"testing"
 	"time"
@@ -112,7 +112,7 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 
 	engine.AddIPRule("10.0.0.5", ActionBlock, time.Minute)
 
-	req := &dataType.UserRequest{
+	req := &request.UserRequest{
 		RemoteIP:  "10.0.0.5",
 		UserAgent: "Mozilla/5.0",
 		Uri:       "/index.html",
@@ -122,7 +122,7 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 		t.Errorf("Expected ActionBlock for CheckRequest, got %v", action)
 	}
 
-	reqNormal := &dataType.UserRequest{
+	reqNormal := &request.UserRequest{
 		RemoteIP:  "10.0.0.6",
 		UserAgent: "Mozilla/5.0",
 		Uri:       "/index.html",

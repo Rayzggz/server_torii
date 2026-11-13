@@ -3,13 +3,13 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 )
 
-func URLAllowList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func URLAllowList(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if URLAllow feature is enabled using binary operation
-	if (reqData.FeatureControl & dataType.FeatureURLAllow) == 0 {
+	if (reqData.FeatureControl & request.FeatureURLAllow) == 0 {
 		decision.Set(action.Continue)
 		return
 	}

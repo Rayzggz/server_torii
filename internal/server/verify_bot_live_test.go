@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
 	"server_torii/internal/state"
 	"strings"
 	"testing"
@@ -49,7 +49,7 @@ func requireCrawlerDNS(t *testing.T, ip string) {
 func verifyBotRuleSet() *config.RuleSet {
 	rs := featureControlRuleSet()
 	rs.CountryRule.Enabled = false
-	rs.VerifyBotRule = &dataType.VerifyBotRule{
+	rs.VerifyBotRule = &config.VerifyBotRule{
 		Enabled:         true,
 		VerifyGoogleBot: true,
 		VerifyBingBot:   true,
@@ -59,7 +59,7 @@ func verifyBotRuleSet() *config.RuleSet {
 		VerifyAppleBot:  true,
 	}
 	// CAPTCHA runs after VerifyBot, so a pass proves VerifyBot short-circuited the chain.
-	rs.CAPTCHARule = &dataType.CaptchaRule{Enabled: true, SecretKey: "1234567890abcdef", CaptchaValidateTime: 600}
+	rs.CAPTCHARule = &config.CaptchaRule{Enabled: true, SecretKey: "1234567890abcdef", CaptchaValidateTime: 600}
 	return rs
 }
 
@@ -90,7 +90,7 @@ func newVerifyBotEnv() (*config.MainConfig, *state.Runtime, *AdaptiveTrafficAnal
 	cfg.WebPath = "/torii"
 	sharedMem := &state.Runtime{}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
+	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(analyzer)
 	return cfg, sharedMem, analyzer

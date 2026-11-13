@@ -3,7 +3,6 @@ package server
 import (
 	"log"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/state"
 	"sync"
 	"time"
@@ -75,7 +74,7 @@ type AdaptiveTrafficAnalyzer struct {
 	windows     map[string]*analysisWindow
 	marks       *ipExpiry
 	evidence    *ipExpiry
-	ingest      sync.Map // *dataType.AdaptiveTrafficAnalyzerRule -> *ingestSettings
+	ingest      sync.Map // *config.AdaptiveTrafficAnalyzerRule -> *ingestSettings
 	lastSweep   time.Time
 }
 
@@ -165,7 +164,7 @@ func (ata *AdaptiveTrafficAnalyzer) recordEvidence(entry LogEntry, now time.Time
 	}
 }
 
-func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *dataType.AdaptiveTrafficAnalyzerRule) *ingestSettings {
+func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *config.AdaptiveTrafficAnalyzerRule) *ingestSettings {
 	if cached, ok := ata.ingest.Load(rule); ok {
 		return cached.(*ingestSettings)
 	}

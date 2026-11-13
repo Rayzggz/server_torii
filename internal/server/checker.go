@@ -6,13 +6,13 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/rules"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 )
 
-type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
+type CheckFunc func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 
 // checkStep pairs a check with the rules.Skip* bit that lets a custom skip rule bypass it.
 type checkStep struct {
@@ -21,7 +21,7 @@ type checkStep struct {
 }
 
 // CheckMain runs the check pipeline and answers the auth_request subrequest.
-func (s *Server) CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet) {
+func (s *Server) CheckMain(w http.ResponseWriter, userRequestData request.UserRequest, ruleSet *config.RuleSet) {
 	decision := action.NewDecision()
 
 	checkSteps := []checkStep{
@@ -55,7 +55,7 @@ func (s *Server) CheckMain(w http.ResponseWriter, userRequestData dataType.UserR
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte("Server Torii Access Passed"))
 		if err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
+			logx.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
 			return
 		}
 	case action.VerdictBlock, action.VerdictCaptcha, action.VerdictRateLimit, action.VerdictExternal:
@@ -63,12 +63,12 @@ func (s *Server) CheckMain(w http.ResponseWriter, userRequestData dataType.UserR
 		w.WriteHeader(445)
 		_, err := w.Write([]byte("Server Torii Auth Required"))
 		if err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
+			logx.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
 			return
 		}
 	default:
 		//should never happen
-		utils.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
+		logx.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}

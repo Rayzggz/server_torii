@@ -5,9 +5,9 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"strings"
 	"time"
 )
@@ -15,9 +15,9 @@ import (
 // verifiedBotMarkTTL keeps verified crawlers out of traffic analysis.
 const verifiedBotMarkTTL = time.Hour
 
-func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if VerifyBot feature is enabled using binary operation
-	if (reqData.FeatureControl & dataType.FeatureVerifyBot) == 0 {
+	if (reqData.FeatureControl & request.FeatureVerifyBot) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
@@ -47,7 +47,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	ip := net.ParseIP(reqData.RemoteIP)
 	if ip == nil {
-		utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
+		logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return
 	}
@@ -60,9 +60,9 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	}
 	if fresh {
 		if err != nil {
-			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
+			logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
 		} else {
-			utils.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
+			logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
 		}
 	}
 	decision.SetVerdict(action.Done, action.VerdictBlock)

@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
+	"server_torii/internal/gossip"
+	"server_torii/internal/logx"
 	"server_torii/internal/server"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"syscall"
 	"time"
 )
@@ -63,7 +63,7 @@ func run() int {
 
 	var gossipManager *server.GossipManager
 	if cfg.EnableGossip {
-		rt.GossipChan = make(chan dataType.GossipMessage, 1000)
+		rt.GossipChan = make(chan gossip.GossipMessage, 1000)
 		gossipManager = server.NewGossipManager(cfg, engine)
 		go gossipManager.Start(rt.GossipChan)
 	}
@@ -74,7 +74,7 @@ func run() int {
 	go rt.RunGC(ctx, time.Minute)
 
 	// Initialize log system
-	utils.InitLogx(cfg.LogPath)
+	logx.InitLogx(cfg.LogPath)
 
 	log.Printf("Ready to start server on port %s", cfg.Port)
 

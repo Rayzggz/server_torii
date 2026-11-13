@@ -1,23 +1,22 @@
-package utils
+package gossip
 
 import (
 	"encoding/json"
-	"server_torii/internal/dataType"
 	"testing"
 	"time"
 )
 
 func TestBroadcastActionRulePayload(t *testing.T) {
-	ch := make(chan dataType.GossipMessage, 1)
+	ch := make(chan GossipMessage, 1)
 	before := time.Now().Add(time.Minute).Unix()
 	BroadcastActionRule("node-a", "URI", `/quoted/"path`, "BLOCK", time.Minute, ch)
 	after := time.Now().Add(time.Minute).Unix()
 	select {
 	case message := <-ch:
-		if message.Type != dataType.GossipTypeActionRule || message.OriginNode != "node-a" {
+		if message.Type != GossipTypeActionRule || message.OriginNode != "node-a" {
 			t.Fatalf("unexpected envelope: %+v", message)
 		}
-		var payload dataType.ActionRulePayload
+		var payload ActionRulePayload
 		if err := json.Unmarshal([]byte(message.Content), &payload); err != nil {
 			t.Fatal(err)
 		}
@@ -33,9 +32,9 @@ func TestBroadcastActionRulePayload(t *testing.T) {
 }
 
 func TestBroadcastActionRuleDoesNotBlock(t *testing.T) {
-	full := make(chan dataType.GossipMessage, 1)
-	full <- dataType.GossipMessage{ID: "existing"}
-	for name, ch := range map[string]chan dataType.GossipMessage{"nil": nil, "full": full, "unbuffered": make(chan dataType.GossipMessage)} {
+	full := make(chan GossipMessage, 1)
+	full <- GossipMessage{ID: "existing"}
+	for name, ch := range map[string]chan GossipMessage{"nil": nil, "full": full, "unbuffered": make(chan GossipMessage)} {
 		t.Run(name, func(t *testing.T) {
 			done := make(chan struct{})
 			go func() { BroadcastActionRule("node", "IP", "192.0.2.1", "BLOCK", time.Minute, ch); close(done) }()

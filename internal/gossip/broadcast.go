@@ -1,18 +1,17 @@
-package utils
+package gossip
 
 import (
 	"encoding/json"
-	"server_torii/internal/dataType"
 	"time"
 )
 
 // BroadcastActionRule sends an action rule event to the gossip channel
-func BroadcastActionRule(nodeName string, ruleType string, value string, action string, duration time.Duration, gossipChan chan dataType.GossipMessage) {
+func BroadcastActionRule(nodeName string, ruleType string, value string, action string, duration time.Duration, gossipChan chan GossipMessage) {
 	if gossipChan == nil {
 		return
 	}
 
-	payload := dataType.ActionRulePayload{
+	payload := ActionRulePayload{
 		RuleType:  ruleType,
 		Value:     value,
 		Action:    action,
@@ -25,8 +24,8 @@ func BroadcastActionRule(nodeName string, ruleType string, value string, action 
 	}
 
 	select {
-	case gossipChan <- dataType.GossipMessage{
-		Type:       dataType.GossipTypeActionRule,
+	case gossipChan <- GossipMessage{
+		Type:       GossipTypeActionRule,
 		OriginNode: nodeName,
 		Content:    string(payloadBytes),
 	}:

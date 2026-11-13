@@ -2,7 +2,6 @@ package config
 
 import (
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"strings"
 	"testing"
 )
@@ -30,17 +29,17 @@ func TestCountryRuleSchema(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wrapper, err := decodeServerRules([]byte("CountryRule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
-			rule := &dataType.CountryRule{}
+			rule := &CountryRule{}
 			if err == nil {
 				err = mapCountryRule(wrapper.CountryRule, rule)
 			}
 			if (err != nil) != tt.invalid {
 				t.Fatalf("error = %v, invalid = %t", err, tt.invalid)
 			}
-			if tt.name == "defaults" && (rule.DefaultAction != dataType.CountryContinue || rule.UnknownAction != dataType.CountryContinue || len(rule.Countries) != 0) {
+			if tt.name == "defaults" && (rule.DefaultAction != CountryContinue || rule.UnknownAction != CountryContinue || len(rule.Countries) != 0) {
 				t.Fatalf("wrong defaults: %#v", rule)
 			}
-			if tt.name == "normalized" && rule.Countries["US"] != dataType.CountryCaptcha {
+			if tt.name == "normalized" && rule.Countries["US"] != CountryCaptcha {
 				t.Fatalf("wrong normalization: %#v", rule)
 			}
 		})
@@ -67,7 +66,7 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 			t.Run(policy+"/"+config.name, func(t *testing.T) {
 				file := filepath.Join(t.TempDir(), "Server.yml")
 				writeFile(t, file, "CountryRule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
-				rules := &RuleSet{CountryRule: &dataType.CountryRule{}, CAPTCHARule: &dataType.CaptchaRule{}, HTTPFloodRule: &dataType.HTTPFloodRule{}}
+				rules := &RuleSet{CountryRule: &CountryRule{}, CAPTCHARule: &CaptchaRule{}, HTTPFloodRule: &HTTPFloodRule{}}
 				err := loadServerRules(file, rules)
 				if (err != nil) != config.invalid {
 					t.Fatalf("error = %v, invalid = %t", err, config.invalid)
@@ -82,7 +81,7 @@ func TestExampleCountryRulesLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != CountryCaptcha || rules.CountryRule.DefaultAction != CountryBlock {
 		t.Fatalf("unexpected example: %#v", rules.CountryRule)
 	}
 }

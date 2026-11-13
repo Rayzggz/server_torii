@@ -3,9 +3,8 @@ package config
 import (
 	"fmt"
 	"log"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
-	"server_torii/internal/utils"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -18,19 +17,19 @@ const (
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
-	IPAllowRule                 *dataType.IPAllowRule                 `yaml:"IPAllow"`
-	IPBlockRule                 *dataType.IPBlockRule                 `yaml:"IPBlock"`
-	URLAllowRule                *dataType.URLAllowRule                `yaml:"URLAllow"`
-	URLBlockRule                *dataType.URLBlockRule                `yaml:"URLBlock"`
-	IPCAPTCHARule               *dataType.IPCAPTCHARule               `yaml:"IPCAPTCHA"`
-	URLCAPTCHARule              *dataType.URLCAPTCHARule              `yaml:"URLCAPTCHA"`
-	CAPTCHARule                 *captchaRuleWrapper                   `yaml:"CAPTCHA"`
-	VerifyBotRule               *dataType.VerifyBotRule               `yaml:"VerifyBot"`
-	HTTPFloodRule               httpFloodRuleWrapper                  `yaml:"HTTPFlood"`
-	ExternalMigrationRule       *dataType.ExternalMigrationRule       `yaml:"ExternalMigration"`
-	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
-	CountryRule                 *countryRuleWrapper                   `yaml:"CountryRule"`
-	CustomRules                 *customRulesWrapper                   `yaml:"CustomRules"`
+	IPAllowRule                 *IPAllowRule                 `yaml:"IPAllow"`
+	IPBlockRule                 *IPBlockRule                 `yaml:"IPBlock"`
+	URLAllowRule                *URLAllowRule                `yaml:"URLAllow"`
+	URLBlockRule                *URLBlockRule                `yaml:"URLBlock"`
+	IPCAPTCHARule               *IPCAPTCHARule               `yaml:"IPCAPTCHA"`
+	URLCAPTCHARule              *URLCAPTCHARule              `yaml:"URLCAPTCHA"`
+	CAPTCHARule                 *captchaRuleWrapper          `yaml:"CAPTCHA"`
+	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
+	HTTPFloodRule               httpFloodRuleWrapper         `yaml:"HTTPFlood"`
+	ExternalMigrationRule       *ExternalMigrationRule       `yaml:"ExternalMigration"`
+	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
+	CountryRule                 *countryRuleWrapper          `yaml:"CountryRule"`
+	CustomRules                 *customRulesWrapper          `yaml:"CustomRules"`
 }
 
 type customRulesWrapper struct {
@@ -79,9 +78,9 @@ type countryRuleWrapper struct {
 }
 
 // A zero node means omitted; an explicit empty or null action is invalid.
-func countryActionOrDefault(node yaml.Node) (dataType.CountryAction, error) {
+func countryActionOrDefault(node yaml.Node) (CountryAction, error) {
 	if node.Kind == 0 {
-		return dataType.CountryContinue, nil
+		return CountryContinue, nil
 	}
 	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
 		return "", fmt.Errorf("country action must be a string")
@@ -89,17 +88,17 @@ func countryActionOrDefault(node yaml.Node) (dataType.CountryAction, error) {
 	return parseCountryAction(node.Value)
 }
 
-func parseCountryAction(value string) (dataType.CountryAction, error) {
-	action := dataType.CountryAction(value)
+func parseCountryAction(value string) (CountryAction, error) {
+	action := CountryAction(value)
 	switch action {
-	case dataType.CountryContinue, dataType.CountryBlock, dataType.CountryCaptcha:
+	case CountryContinue, CountryBlock, CountryCaptcha:
 		return action, nil
 	default:
 		return "", fmt.Errorf("invalid country action %q: expected continue, block, or captcha", value)
 	}
 }
 
-func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) error {
+func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
 	for field := range wrapper.UnknownFields {
 		return fmt.Errorf("CountryRule: unknown field %q", field)
 	}
@@ -111,7 +110,7 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) err
 	if dest.UnknownAction, err = countryActionOrDefault(wrapper.UnknownAction); err != nil {
 		return fmt.Errorf("CountryRule unknown_action: %w", err)
 	}
-	dest.Countries = make(map[string]dataType.CountryAction, len(wrapper.Countries))
+	dest.Countries = make(map[string]CountryAction, len(wrapper.Countries))
 	for code, value := range wrapper.Countries {
 		normalized, err := normalizeCountryCode(code)
 		if err != nil {
@@ -129,15 +128,15 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *dataType.CountryRule) err
 	return nil
 }
 
-func countryRequiresCaptcha(rule *dataType.CountryRule) bool {
+func countryRequiresCaptcha(rule *CountryRule) bool {
 	if rule == nil {
 		return false
 	}
-	if rule.DefaultAction == dataType.CountryCaptcha || rule.UnknownAction == dataType.CountryCaptcha {
+	if rule.DefaultAction == CountryCaptcha || rule.UnknownAction == CountryCaptcha {
 		return true
 	}
 	for _, action := range rule.Countries {
-		if action == dataType.CountryCaptcha {
+		if action == CountryCaptcha {
 			return true
 		}
 	}
@@ -154,7 +153,7 @@ func normalizeCountryCode(code string) (string, error) {
 	return normalized, nil
 }
 
-func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) error {
+func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *CaptchaRule) error {
 	validateConfiguration(wrapper, "CAPTCHARule")
 	dest.Enabled = wrapper.Enabled
 	dest.Provider = wrapper.Provider
@@ -176,14 +175,14 @@ func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *dataType.CaptchaRule) err
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
 	var err error
-	dest.CaptchaFailureLimit, err = utils.ParseRateList(wrapper.CaptchaFailureLimit)
+	dest.CaptchaFailureLimit, err = ratelimit.ParseRateList(wrapper.CaptchaFailureLimit)
 	return err
 }
 
-func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRule, dest *dataType.AdaptiveTrafficAnalyzerRule) {
+func mapAdaptiveTrafficAnalyzerRule(wrapper *AdaptiveTrafficAnalyzerRule, dest *AdaptiveTrafficAnalyzerRule) {
 	validateConfiguration(wrapper, "AdaptiveTrafficAnalyzerRule")
 	*dest = *wrapper
-	for name, a := range map[string]dataType.AnalyzerAction{
+	for name, a := range map[string]AnalyzerAction{
 		"ip_detection.action":  wrapper.IPDetection.Action,
 		"uri_detection.action": wrapper.URIDetection.Action,
 	} {
@@ -194,23 +193,23 @@ func mapAdaptiveTrafficAnalyzerRule(wrapper *dataType.AdaptiveTrafficAnalyzerRul
 	NormalizeAdaptiveTrafficAnalyzerRule(dest)
 }
 
-func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *dataType.HTTPFloodRule) error {
+func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error {
 	validateConfiguration(wrapper, "HTTPFloodRule")
 	dest.Enabled = wrapper.Enabled
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
 	var err error
-	dest.HTTPFloodSpeedLimit, err = utils.ParseRateList(wrapper.HTTPFloodSpeedLimit)
+	dest.HTTPFloodSpeedLimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodSpeedLimit)
 	if err != nil {
 		return err
 	}
 
-	dest.HTTPFloodSameURILimit, err = utils.ParseRateList(wrapper.HTTPFloodSameURILimit)
+	dest.HTTPFloodSameURILimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodSameURILimit)
 	if err != nil {
 		return err
 	}
 
-	dest.HTTPFloodFailureLimit, err = utils.ParseRateList(wrapper.HTTPFloodFailureLimit)
+	dest.HTTPFloodFailureLimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodFailureLimit)
 	return err
 }
 

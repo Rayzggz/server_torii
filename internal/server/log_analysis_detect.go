@@ -7,9 +7,7 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"sort"
 	"strings"
 	"time"
@@ -37,7 +35,7 @@ type trafficDetector struct{}
 
 type detection struct {
 	ctx      *analysisContext
-	rule     dataType.AdaptiveTrafficAnalyzerRule
+	rule     config.AdaptiveTrafficAnalyzerRule
 	state    *siteState
 	now      time.Time
 	window   time.Duration
@@ -111,7 +109,7 @@ func (det *detection) buildBucket() *bucket {
 			ib = &ipBucket{pages: make(map[string]pageHits), okPages: make(map[string]struct{}), errPaths: make(map[string]struct{})}
 			b.ips[l.IP] = ib
 		}
-		canonical := utils.CanonicalizeURI(l.URI)
+		canonical := action.CanonicalizeURI(l.URI)
 		ib.total++
 		if isClientError(l.Status) {
 			ib.clientErr++
@@ -558,14 +556,14 @@ func (e *enforcer) hasIPRule(ip string) bool {
 }
 
 // apply records the rule. limited broadcasts count toward maxBroadcast; the rest stay local.
-func (e *enforcer) apply(ruleType, value string, act dataType.AnalyzerAction, dur time.Duration, limited bool) {
+func (e *enforcer) apply(ruleType, value string, act config.AnalyzerAction, dur time.Duration, limited bool) {
 	var at action.ActionType
 	switch act {
-	case dataType.AnalyzerCaptchaUnverified:
+	case config.AnalyzerCaptchaUnverified:
 		at = action.ActionCaptchaUnverified
-	case dataType.AnalyzerCaptcha:
+	case config.AnalyzerCaptcha:
 		at = action.ActionCaptcha
-	case dataType.AnalyzerBlock:
+	case config.AnalyzerBlock:
 		at = action.ActionBlock
 	default:
 		return
@@ -585,13 +583,13 @@ func (e *enforcer) apply(ruleType, value string, act dataType.AnalyzerAction, du
 	e.rt.ApplyRule(ruleType, value, at, dur, broadcast)
 }
 
-func actionVerb(act dataType.AnalyzerAction) string {
+func actionVerb(act config.AnalyzerAction) string {
 	switch act {
-	case dataType.AnalyzerCaptchaUnverified:
+	case config.AnalyzerCaptchaUnverified:
 		return "CAPTCHA (clients without browser evidence)"
-	case dataType.AnalyzerCaptcha:
+	case config.AnalyzerCaptcha:
 		return "CAPTCHA (every visitor)"
-	case dataType.AnalyzerBlock:
+	case config.AnalyzerBlock:
 		return "BLOCK"
 	default:
 		return "[observe] would act on"

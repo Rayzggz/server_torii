@@ -3,7 +3,6 @@ package config
 import (
 	"net"
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"testing"
 )
 
@@ -124,7 +123,7 @@ sites:
 	if !rules.CountryRule.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
 	}
-	if rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+	if rules.CountryRule.Countries["US"] != CountryCaptcha || rules.CountryRule.DefaultAction != CountryBlock {
 		t.Fatalf("unexpected country policy: %#v", rules.CountryRule)
 	}
 	if !rules.CAPTCHARule.Enabled {

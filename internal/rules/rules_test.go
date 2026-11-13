@@ -3,7 +3,7 @@ package rules
 import (
 	"net/http"
 	"net/netip"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"strings"
 	"testing"
 )
@@ -16,13 +16,13 @@ type stubEvidence struct{ ip string }
 
 func (e stubEvidence) HasBrowserEvidence(ip string) bool { return ip == e.ip }
 
-func testRequest() *dataType.UserRequest {
+func testRequest() *request.UserRequest {
 	headers := http.Header{}
 	headers.Set("Referer", "https://evil.example/page")
 	headers.Set("Accept-Language", "zh-CN,zh;q=0.9")
 	headers.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
 	headers.Add("Cookie", "session=abc; theme=dark")
-	return &dataType.UserRequest{
+	return &request.UserRequest{
 		RemoteIP:  "8.8.8.8",
 		Uri:       "/wp-admin/Setup.PHP?step=2&lang=en%20US",
 		UserAgent: "Mozilla/5.0 (compatible; Googlebot/2.1)",
@@ -105,7 +105,7 @@ func TestEval(t *testing.T) {
 }
 
 func TestEvalMissingData(t *testing.T) {
-	req := &dataType.UserRequest{RemoteIP: "not-an-ip", Uri: "/"}
+	req := &request.UserRequest{RemoteIP: "not-an-ip", Uri: "/"}
 	cases := []struct {
 		expr string
 		want bool
@@ -135,7 +135,7 @@ func TestIPv4MappedAddress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := &dataType.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
+	req := &request.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
 	if !prog.Eval(NewContext(req, nil, nil)) {
 		t.Error("IPv4-mapped address should match its IPv4 prefix")
 	}

@@ -10,7 +10,7 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/gossip"
 	"testing"
 	"time"
 
@@ -27,11 +27,11 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 	}
 
 	createReq := func(ts int64, id string) *http.Request {
-		payload, _ := json.Marshal(dataType.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-		msg := dataType.GossipMessage{
+		payload, _ := json.Marshal(gossip.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		msg := gossip.GossipMessage{
 			ID:         id,
 			OriginNode: "KnownPeer",
-			Type:       dataType.GossipTypeActionRule,
+			Type:       gossip.GossipTypeActionRule,
 			Content:    string(payload),
 			Timestamp:  ts,
 		}

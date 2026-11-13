@@ -2,7 +2,6 @@ package config
 
 import (
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"server_torii/internal/rules"
 	"strings"
 	"testing"
@@ -106,7 +105,7 @@ func TestCustomRulesDependencies(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "Server.yml")
 			writeFile(t, file, "CustomRules:\n  enabled: false\n  rules:\n    - {id: a, expression: 'true', action: "+tc.action+"}\n"+tc.extra)
-			rs := &RuleSet{CountryRule: &dataType.CountryRule{}, CAPTCHARule: &dataType.CaptchaRule{}, HTTPFloodRule: &dataType.HTTPFloodRule{}, ExternalMigrationRule: &dataType.ExternalMigrationRule{}}
+			rs := &RuleSet{CountryRule: &CountryRule{}, CAPTCHARule: &CaptchaRule{}, HTTPFloodRule: &HTTPFloodRule{}, ExternalMigrationRule: &ExternalMigrationRule{}}
 			err := loadServerRules(file, rs)
 			if (err != nil) != tc.invalid {
 				t.Fatalf("error = %v, invalid = %t", err, tc.invalid)

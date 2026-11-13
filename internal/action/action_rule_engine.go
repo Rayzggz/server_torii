@@ -1,8 +1,8 @@
 package action
 
 import (
-	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
+	"server_torii/internal/gossip"
+	"server_torii/internal/request"
 	"sync"
 	"time"
 )
@@ -139,7 +139,7 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 	}
 
 	// Check Canonical URI Rules
-	canonicalURI := utils.CanonicalizeURI(uri)
+	canonicalURI := CanonicalizeURI(uri)
 	if canonicalURI != uri {
 		if rule, ok := e.uriRules[canonicalURI]; ok {
 			if rule.ExpiresAt.After(now) {
@@ -152,7 +152,7 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 }
 
 // CheckRequest evaluates the request against the rules using UserRequest data.
-func (e *ActionRuleEngine) CheckRequest(req dataType.UserRequest) ActionType {
+func (e *ActionRuleEngine) CheckRequest(req request.UserRequest) ActionType {
 	return e.Check(req.RemoteIP, req.UserAgent, req.Uri)
 }
 
@@ -192,16 +192,16 @@ func (e *ActionRuleEngine) cleanup() {
 }
 
 // GetSnapshot returns a copy of the active action rules.
-func (e *ActionRuleEngine) GetSnapshot() []dataType.ActionRulePayload {
+func (e *ActionRuleEngine) GetSnapshot() []gossip.ActionRulePayload {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	var snapshot []dataType.ActionRulePayload
+	var snapshot []gossip.ActionRulePayload
 	now := time.Now()
 
 	for ip, rule := range e.ipRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
+			snapshot = append(snapshot, gossip.ActionRulePayload{
 				RuleType:  "IP",
 				Value:     ip,
 				Action:    string(rule.Action),
@@ -211,7 +211,7 @@ func (e *ActionRuleEngine) GetSnapshot() []dataType.ActionRulePayload {
 	}
 	for ua, rule := range e.uaRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
+			snapshot = append(snapshot, gossip.ActionRulePayload{
 				RuleType:  "UA",
 				Value:     ua,
 				Action:    string(rule.Action),
@@ -221,7 +221,7 @@ func (e *ActionRuleEngine) GetSnapshot() []dataType.ActionRulePayload {
 	}
 	for uri, rule := range e.uriRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
+			snapshot = append(snapshot, gossip.ActionRulePayload{
 				RuleType:  "URI",
 				Value:     uri,
 				Action:    string(rule.Action),

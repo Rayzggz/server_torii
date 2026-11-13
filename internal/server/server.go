@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"path"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
 	"time"
@@ -128,9 +128,9 @@ func (s *Server) Run(ctx context.Context) error {
 	return nil
 }
 
-func processRequestData(cfg *config.MainConfig, r *http.Request) dataType.UserRequest {
+func processRequestData(cfg *config.MainConfig, r *http.Request) request.UserRequest {
 
-	userRequest := dataType.UserRequest{
+	userRequest := request.UserRequest{
 		RemoteIP:       getClientIP(cfg, r),
 		Uri:            getReqURI(cfg, r),
 		FeatureControl: 0,

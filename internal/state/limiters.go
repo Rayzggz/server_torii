@@ -4,28 +4,28 @@ import (
 	"context"
 	"runtime"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
 	"sync/atomic"
 	"time"
 )
 
 // Limiters are the rate counters shared by every site. Each is nil until the first Resize.
 type Limiters struct {
-	HTTPFloodSpeedLimitCounter   atomic.Pointer[dataType.Counter]
-	HTTPFloodSameURILimitCounter atomic.Pointer[dataType.Counter]
-	HTTPFloodFailureLimitCounter atomic.Pointer[dataType.Counter]
-	CaptchaFailureLimitCounter   atomic.Pointer[dataType.Counter]
+	HTTPFloodSpeedLimitCounter   atomic.Pointer[ratelimit.Counter]
+	HTTPFloodSameURILimitCounter atomic.Pointer[ratelimit.Counter]
+	HTTPFloodFailureLimitCounter atomic.Pointer[ratelimit.Counter]
+	CaptchaFailureLimitCounter   atomic.Pointer[ratelimit.Counter]
 }
 
 // Resize makes every counter cover the given windows.
 // A counter whose window is unchanged keeps its records; a resized one starts empty.
 func (l *Limiters) Resize(w config.CounterWindows) {
 	bucketCount := max(runtime.NumCPU()*8, 16)
-	resize := func(p *atomic.Pointer[dataType.Counter], window int64) {
+	resize := func(p *atomic.Pointer[ratelimit.Counter], window int64) {
 		// At least one second: a zero-size counter would panic.
 		window = max(window, 1)
 		if c := p.Load(); c == nil || c.GetSegSize() != window {
-			p.Store(dataType.NewCounter(bucketCount, window))
+			p.Store(ratelimit.NewCounter(bucketCount, window))
 		}
 	}
 	resize(&l.HTTPFloodSpeedLimitCounter, w.HTTPFloodSpeed)
@@ -36,7 +36,7 @@ func (l *Limiters) Resize(w config.CounterWindows) {
 
 // GC drops expired records from every counter.
 func (l *Limiters) GC() {
-	for _, p := range []*atomic.Pointer[dataType.Counter]{
+	for _, p := range []*atomic.Pointer[ratelimit.Counter]{
 		&l.HTTPFloodSpeedLimitCounter,
 		&l.HTTPFloodSameURILimitCounter,
 		&l.HTTPFloodFailureLimitCounter,

@@ -1,12 +1,12 @@
 package server
 
 import (
+	"server_torii/internal/gossip"
 	"testing"
 	"time"
 
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 )
 
 func TestGossipManager_RNG_Seeding(t *testing.T) {
@@ -73,11 +73,11 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 	// Simulate concurrent access
 	done := make(chan bool)
 	go func() {
-		gm.epidemicBroadcast(dataType.GossipMessage{ID: "test"})
+		gm.epidemicBroadcast(gossip.GossipMessage{ID: "test"})
 		done <- true
 	}()
 	go func() {
-		gm.epidemicBroadcast(dataType.GossipMessage{ID: "test2"})
+		gm.epidemicBroadcast(gossip.GossipMessage{ID: "test2"})
 		done <- true
 	}()
 

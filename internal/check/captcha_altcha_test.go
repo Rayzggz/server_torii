@@ -7,7 +7,8 @@ import (
 	"net/url"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ func TestCheckCaptchaAltchaGood(t *testing.T) {
 func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
 	sessionTime := time.Now()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -61,7 +62,7 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	counter := dataType.NewCounter(1, 60)
+	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
 	rt.CaptchaFailureLimitCounter.Store(counter)
 
@@ -78,7 +79,7 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
 	sessionTime := time.Now()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -144,7 +145,7 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	counter := dataType.NewCounter(1, 60)
+	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
 	rt.CaptchaFailureLimitCounter.Store(counter)
 
@@ -160,7 +161,7 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 
 func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -182,7 +183,7 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 
 func testAltchaRuleSet() *config.RuleSet {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			Provider:                       CaptchaProviderAltcha,
 			SecretKey:                      "1234567890abcdef",
 			CaptchaValidateTime:            60,
@@ -196,8 +197,8 @@ func testAltchaRuleSet() *config.RuleSet {
 	return ruleSet
 }
 
-func testCaptchaRequestData(ruleSet *config.RuleSet) dataType.UserRequest {
-	reqData := dataType.UserRequest{
+func testCaptchaRequestData(ruleSet *config.RuleSet) request.UserRequest {
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -208,11 +209,11 @@ func testCaptchaRequestData(ruleSet *config.RuleSet) dataType.UserRequest {
 
 func testCaptchaRuntime() *state.Runtime {
 	rt := &state.Runtime{}
-	rt.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
+	rt.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	return rt
 }
 
-func solveAltchaPayload(t *testing.T, ruleSet *config.RuleSet, reqData dataType.UserRequest) string {
+func solveAltchaPayload(t *testing.T, ruleSet *config.RuleSet, reqData request.UserRequest) string {
 	t.Helper()
 
 	challenge, err := GenAltchaChallenge(*ruleSet, reqData)

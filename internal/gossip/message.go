@@ -1,4 +1,4 @@
-package dataType
+package gossip
 
 type GossipMessage struct {
 	Type       string `json:"type"`        // e.g., "ACTION_RULE", "SYNC"

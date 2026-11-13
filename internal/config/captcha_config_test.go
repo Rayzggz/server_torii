@@ -1,12 +1,11 @@
 package config
 
 import (
-	"server_torii/internal/dataType"
 	"testing"
 )
 
 func TestMapCaptchaRuleProviderDefaults(t *testing.T) {
-	dest := &dataType.CaptchaRule{}
+	dest := &CaptchaRule{}
 	err := mapCaptchaRule(&captchaRuleWrapper{
 		Enabled:                        true,
 		SecretKey:                      "1234567890abcdef",
@@ -31,7 +30,7 @@ func TestMapCaptchaRuleProviderDefaults(t *testing.T) {
 }
 
 func TestMapCaptchaRuleAltchaConfig(t *testing.T) {
-	dest := &dataType.CaptchaRule{}
+	dest := &CaptchaRule{}
 	err := mapCaptchaRule(&captchaRuleWrapper{
 		Enabled:                        true,
 		Provider:                       "altcha",

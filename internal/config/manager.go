@@ -3,7 +3,7 @@ package config
 import (
 	"fmt"
 	"log"
-	"server_torii/internal/utils"
+	"server_torii/internal/ratelimit"
 	"sync/atomic"
 )
 
@@ -25,10 +25,10 @@ type CounterWindows struct {
 func (s *SiteConfigSnapshot) CounterWindows() CounterWindows {
 	var w CounterWindows
 	for _, rules := range s.SiteRules {
-		w.HTTPFloodSpeed = max(w.HTTPFloodSpeed, utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit))
-		w.HTTPFloodSameURI = max(w.HTTPFloodSameURI, utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit))
-		w.HTTPFloodFailure = max(w.HTTPFloodFailure, utils.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodFailureLimit))
-		w.CaptchaFailure = max(w.CaptchaFailure, utils.FindMaxRateTime(rules.CAPTCHARule.CaptchaFailureLimit))
+		w.HTTPFloodSpeed = max(w.HTTPFloodSpeed, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit))
+		w.HTTPFloodSameURI = max(w.HTTPFloodSameURI, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit))
+		w.HTTPFloodFailure = max(w.HTTPFloodFailure, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodFailureLimit))
+		w.CaptchaFailure = max(w.CaptchaFailure, ratelimit.FindMaxRateTime(rules.CAPTCHARule.CaptchaFailureLimit))
 	}
 	return w
 }

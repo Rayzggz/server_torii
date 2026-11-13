@@ -3,7 +3,7 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 	"time"
@@ -17,7 +17,7 @@ func (m *recordingMarker) MarkVerified(ip string, _ time.Duration) {
 func (m *recordingMarker) MarkNeutral(ip string, _ time.Duration) { m.neutral = append(m.neutral, ip) }
 
 func allBotsRuleSet() *config.RuleSet {
-	return &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{
+	return &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{
 		Enabled:         true,
 		VerifyGoogleBot: true,
 		VerifyBingBot:   true,
@@ -36,15 +36,15 @@ func TestVerifyBotSkipsWithoutDNS(t *testing.T) {
 		ruleSet *config.RuleSet
 	}{
 		{"feature disabled", 0, "Googlebot/2.1", allBotsRuleSet()},
-		{"ordinary browser", dataType.FeatureVerifyBot, "Mozilla/5.0 (Windows NT 10.0) Chrome/120", allBotsRuleSet()},
-		{"empty user agent", dataType.FeatureVerifyBot, "", allBotsRuleSet()},
-		{"googlebot verification off", dataType.FeatureVerifyBot, "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{VerifyBingBot: true}}},
-		{"bingbot verification off", dataType.FeatureVerifyBot, "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{VerifyGoogleBot: true}}},
+		{"ordinary browser", request.FeatureVerifyBot, "Mozilla/5.0 (Windows NT 10.0) Chrome/120", allBotsRuleSet()},
+		{"empty user agent", request.FeatureVerifyBot, "", allBotsRuleSet()},
+		{"googlebot verification off", request.FeatureVerifyBot, "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{VerifyBingBot: true}}},
+		{"bingbot verification off", request.FeatureVerifyBot, "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{VerifyGoogleBot: true}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			marker := &recordingMarker{}
-			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
+			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
 			decision := action.NewDecision()
 			VerifyBot(reqData, tt.ruleSet, decision, &state.Runtime{TrafficMarker: marker})
 			if decision.State != action.Continue {
@@ -69,7 +69,7 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 	} {
 		t.Run(ua, func(t *testing.T) {
 			marker := &recordingMarker{}
-			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: dataType.FeatureVerifyBot}
+			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: request.FeatureVerifyBot}
 			decision := action.NewDecision()
 			VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{TrafficMarker: marker})
 			if decision.State != action.Done || decision.Verdict != action.VerdictBlock {

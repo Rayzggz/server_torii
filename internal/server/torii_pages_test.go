@@ -10,8 +10,10 @@ import (
 	"path/filepath"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
+	"server_torii/internal/version"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +29,7 @@ func newPagesConfig(t *testing.T) *config.MainConfig {
 	return &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"}
 }
 
-func serveTorii(path string, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *state.Runtime) *httptest.ResponseRecorder {
+func serveTorii(path string, reqData request.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *state.Runtime) *httptest.ResponseRecorder {
 	reqData.Uri = path
 	rec := httptest.NewRecorder()
 	NewServer(cfg, nil, sharedMem, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, path, nil), reqData, ruleSet, pagesFor(cfg))
@@ -36,7 +38,7 @@ func serveTorii(path string, reqData dataType.UserRequest, ruleSet *config.RuleS
 
 func TestCheckerPagesRenderTemplates(t *testing.T) {
 	cfg := newPagesConfig(t)
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.5", Host: "example.com"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Host: "example.com"}
 
 	tests := []struct {
 		path       string
@@ -70,7 +72,7 @@ func TestCheckerPagesMissingTemplates(t *testing.T) {
 		"/torii/not-an-endpoint",
 	} {
 		t.Run(path, func(t *testing.T) {
-			rec := serveTorii(path, dataType.UserRequest{}, ruleSet, cfg, &state.Runtime{})
+			rec := serveTorii(path, request.UserRequest{}, ruleSet, cfg, &state.Runtime{})
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("status = %d, want 500", rec.Code)
 			}
@@ -82,11 +84,11 @@ func TestCheckerPagesRespectWebPath(t *testing.T) {
 	cfg := newPagesConfig(t)
 	cfg.WebPath = "/custom"
 	// A checker page under the wrong prefix must not be served as one.
-	rec := serveTorii("/torii/checker_pages/429", dataType.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	rec := serveTorii("/torii/checker_pages/429", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}
-	rec = serveTorii("/custom/checker_pages/429", dataType.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	rec = serveTorii("/custom/checker_pages/429", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
 	if rec.Code != http.StatusTooManyRequests {
 		t.Fatalf("status = %d, want 429", rec.Code)
 	}
@@ -96,7 +98,7 @@ func TestHealthCheck(t *testing.T) {
 	cfg := newPagesConfig(t)
 	before := time.Now().Add(-time.Second)
 
-	rec := serveTorii("/torii/health_check", dataType.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	rec := serveTorii("/torii/health_check", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -113,11 +115,11 @@ func TestHealthCheck(t *testing.T) {
 		k, v, _ := strings.Cut(l, "=")
 		fields[k] = v
 	}
-	if fields["version"] != dataType.ServerToriiVersion {
-		t.Errorf("version = %q, want %q", fields["version"], dataType.ServerToriiVersion)
+	if fields["version"] != version.ServerToriiVersion {
+		t.Errorf("version = %q, want %q", fields["version"], version.ServerToriiVersion)
 	}
-	if fields["commit"] != dataType.ServerToriiCommit() || fields["commit"] == "" {
-		t.Errorf("commit = %q, want %q", fields["commit"], dataType.ServerToriiCommit())
+	if fields["commit"] != version.ServerToriiCommit() || fields["commit"] == "" {
+		t.Errorf("commit = %q, want %q", fields["commit"], version.ServerToriiCommit())
 	}
 	if fields["sliver"] != "node-a" {
 		t.Errorf("sliver = %q, want node-a", fields["sliver"])
@@ -134,14 +136,14 @@ func TestHealthCheck(t *testing.T) {
 func TestGossipEndpointDisabledFallsThroughTo403(t *testing.T) {
 	cfg := newPagesConfig(t)
 	cfg.EnableGossip = false
-	rec := serveTorii("/torii/gossip", dataType.UserRequest{RemoteIP: "203.0.113.5"}, &config.RuleSet{}, cfg, &state.Runtime{})
+	rec := serveTorii("/torii/gossip", request.UserRequest{RemoteIP: "203.0.113.5"}, &config.RuleSet{}, cfg, &state.Runtime{})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}
 }
 
 func testAltchaServerRuleSet() *config.RuleSet {
-	return &config.RuleSet{CAPTCHARule: &dataType.CaptchaRule{
+	return &config.RuleSet{CAPTCHARule: &config.CaptchaRule{
 		Provider:                       check.CaptchaProviderAltcha,
 		SecretKey:                      "1234567890abcdef",
 		CaptchaValidateTime:            600,
@@ -151,7 +153,7 @@ func testAltchaServerRuleSet() *config.RuleSet {
 	}}
 }
 
-func solveAltcha(t *testing.T, ruleSet *config.RuleSet, reqData dataType.UserRequest) string {
+func solveAltcha(t *testing.T, ruleSet *config.RuleSet, reqData request.UserRequest) string {
 	t.Helper()
 	challenge, err := check.GenAltchaChallenge(*ruleSet, reqData)
 	if err != nil {
@@ -168,7 +170,7 @@ func solveAltcha(t *testing.T, ruleSet *config.RuleSet, reqData dataType.UserReq
 	return base64.StdEncoding.EncodeToString(payload)
 }
 
-func postCaptcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMem *state.Runtime, altchaValue string) *httptest.ResponseRecorder {
+func postCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, sharedMem *state.Runtime, altchaValue string) *httptest.ResponseRecorder {
 	reqData.Uri = "/torii/captcha"
 	form := url.Values{"altcha": {altchaValue}}
 	req := httptest.NewRequest(http.MethodPost, "/torii/captcha", strings.NewReader(form.Encode()))
@@ -180,10 +182,10 @@ func postCaptcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, sharedMe
 
 func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 	ruleSet := testAltchaServerRuleSet()
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.77", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.77", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 	sharedMem := &state.Runtime{}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
+	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(analyzer)
 
@@ -211,9 +213,9 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 
 func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 	ruleSet := testAltchaServerRuleSet()
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.79", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.79", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	sharedMem := &state.Runtime{}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
+	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(analyzer)
 
@@ -249,7 +251,7 @@ func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 
 func TestCaptchaSuccessWithoutAnalyzer(t *testing.T) {
 	ruleSet := testAltchaServerRuleSet()
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.80", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.80", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 	sharedMem := &state.Runtime{}
 
@@ -266,10 +268,10 @@ func TestCaptchaVerifierErrorReturnsRetryableStatus(t *testing.T) {
 	brokenRuleSet.CAPTCHARule.SecretKey = ""
 	brokenRuleSet.CAPTCHARule.AltchaHMACSecret = ""
 
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.81", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.81", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *brokenRuleSet))
 	sharedMem := &state.Runtime{}
-	counter := dataType.NewCounter(1, 60)
+	counter := ratelimit.NewCounter(1, 60)
 	sharedMem.CaptchaFailureLimitCounter.Store(counter)
 
 	rec := postCaptcha(reqData, brokenRuleSet, sharedMem, solveAltcha(t, solveRuleSet, reqData))
@@ -287,7 +289,7 @@ func TestCaptchaVerifierErrorReturnsRetryableStatus(t *testing.T) {
 
 func TestCaptchaEndpointRejectsGet(t *testing.T) {
 	cfg := newPagesConfig(t)
-	rec := serveTorii("/torii/captcha", dataType.UserRequest{RemoteIP: "203.0.113.5"}, testAltchaServerRuleSet(), cfg, &state.Runtime{})
+	rec := serveTorii("/torii/captcha", request.UserRequest{RemoteIP: "203.0.113.5"}, testAltchaServerRuleSet(), cfg, &state.Runtime{})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}
@@ -339,7 +341,7 @@ func TestErrorPagesAreParsedOnce(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.ErrorPage, "403.html")); err != nil {
 		t.Fatal(err)
 	}
-	reqData := dataType.UserRequest{RemoteIP: "203.0.113.5", Uri: "/torii/checker_pages/403"}
+	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Uri: "/torii/checker_pages/403"}
 	rec := httptest.NewRecorder()
 	NewServer(cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, pages)
 	if rec.Code != http.StatusForbidden || rec.Body.String() != "403|node-a|203.0.113.5" {
@@ -349,7 +351,7 @@ func TestErrorPagesAreParsedOnce(t *testing.T) {
 
 func TestNilErrorPagesAnswer500(t *testing.T) {
 	cfg := newPagesConfig(t)
-	reqData := dataType.UserRequest{Uri: "/torii/checker_pages/403"}
+	reqData := request.UserRequest{Uri: "/torii/checker_pages/403"}
 	rec := httptest.NewRecorder()
 	NewServer(cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, nil)
 	if rec.Code != http.StatusInternalServerError {

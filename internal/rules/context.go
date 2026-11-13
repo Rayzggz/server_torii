@@ -4,16 +4,26 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"strings"
 )
+
+// CountryResolver maps an address to its ISO country code.
+type CountryResolver interface {
+	Country(netip.Addr) (string, error)
+}
+
+// BrowserEvidence reports whether an IP has recently behaved like a browser.
+type BrowserEvidence interface {
+	HasBrowserEvidence(ip string) bool
+}
 
 // Context holds one request plus lazily computed fields, so each field is parsed at most once
 // no matter how many rules read it.
 type Context struct {
-	req      *dataType.UserRequest
-	resolver dataType.CountryResolver
-	evidence dataType.BrowserEvidence
+	req      *request.UserRequest
+	resolver CountryResolver
+	evidence BrowserEvidence
 
 	ipDone bool
 	ip     netip.Addr
@@ -34,7 +44,7 @@ type Context struct {
 }
 
 // NewContext builds an evaluation context; resolver and evidence may be nil.
-func NewContext(req *dataType.UserRequest, resolver dataType.CountryResolver, evidence dataType.BrowserEvidence) *Context {
+func NewContext(req *request.UserRequest, resolver CountryResolver, evidence BrowserEvidence) *Context {
 	return &Context{req: req, resolver: resolver, evidence: evidence}
 }
 

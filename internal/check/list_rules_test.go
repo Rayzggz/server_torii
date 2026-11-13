@@ -5,30 +5,32 @@ import (
 	"regexp"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/iptrie"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
+	"server_torii/internal/urllist"
 	"testing"
 )
 
 func TestIPListRules(t *testing.T) {
-	trie := &dataType.TrieNode{}
+	trie := &iptrie.TrieNode{}
 	_, network, err := net.ParseCIDR("192.0.2.0/24")
 	if err != nil {
 		t.Fatal(err)
 	}
 	trie.Insert(network)
 	rules := &config.RuleSet{
-		IPAllowRule: &dataType.IPAllowRule{Trie: trie},
-		IPBlockRule: &dataType.IPBlockRule{Trie: trie},
+		IPAllowRule: &config.IPAllowRule{Trie: trie},
+		IPBlockRule: &config.IPBlockRule{Trie: trie},
 	}
 	for _, checker := range []struct {
 		name    string
 		feature uint16
 		code    string
-		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
+		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", dataType.FeatureIPAllow, "200", IPAllowList},
-		{"block", dataType.FeatureIPBlock, "403", IPBlockList},
+		{"allow", request.FeatureIPAllow, "200", IPAllowList},
+		{"block", request.FeatureIPBlock, "403", IPBlockList},
 	} {
 		for _, tc := range []struct {
 			name, ip        string
@@ -41,9 +43,9 @@ func TestIPListRules(t *testing.T) {
 			{"disabled", "192.0.2.42", true, false},
 		} {
 			t.Run(checker.name+"/"+tc.name, func(t *testing.T) {
-				req := dataType.UserRequest{RemoteIP: tc.ip, FeatureControl: checker.feature}
+				req := request.UserRequest{RemoteIP: tc.ip, FeatureControl: checker.feature}
 				if tc.disabled {
-					req.FeatureControl = dataType.FeatureVerifyBot
+					req.FeatureControl = request.FeatureVerifyBot
 				}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)
@@ -60,21 +62,21 @@ func TestIPListRules(t *testing.T) {
 }
 
 func TestURLListRules(t *testing.T) {
-	list := &dataType.URLRuleList{}
-	list.Append(&dataType.URLRule{Pattern: "/admin"})
-	list.Append(&dataType.URLRule{IsRegex: true, Regex: regexp.MustCompile(`^/private/.*$`)})
+	list := &urllist.URLRuleList{}
+	list.Append(&urllist.URLRule{Pattern: "/admin"})
+	list.Append(&urllist.URLRule{IsRegex: true, Regex: regexp.MustCompile(`^/private/.*$`)})
 	rules := &config.RuleSet{
-		URLAllowRule: &dataType.URLAllowRule{List: list},
-		URLBlockRule: &dataType.URLBlockRule{List: list},
+		URLAllowRule: &config.URLAllowRule{List: list},
+		URLBlockRule: &config.URLBlockRule{List: list},
 	}
 	for _, checker := range []struct {
 		name    string
 		feature uint16
 		code    string
-		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
+		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", dataType.FeatureURLAllow, "200", URLAllowList},
-		{"block", dataType.FeatureURLBlock, "403", URLBlockList},
+		{"allow", request.FeatureURLAllow, "200", URLAllowList},
+		{"block", request.FeatureURLBlock, "403", URLBlockList},
 	} {
 		for _, tc := range []struct {
 			name, uri       string
@@ -85,9 +87,9 @@ func TestURLListRules(t *testing.T) {
 			{"disabled", "/admin", true, false},
 		} {
 			t.Run(checker.name+"/"+tc.name, func(t *testing.T) {
-				req := dataType.UserRequest{Uri: tc.uri, FeatureControl: checker.feature}
+				req := request.UserRequest{Uri: tc.uri, FeatureControl: checker.feature}
 				if tc.disabled {
-					req.FeatureControl = dataType.FeatureVerifyBot
+					req.FeatureControl = request.FeatureVerifyBot
 				}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)

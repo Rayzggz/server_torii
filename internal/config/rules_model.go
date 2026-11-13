@@ -1,99 +1,9 @@
-package dataType
+package config
 
 import (
-	"net/http"
-	"net/netip"
-	"runtime/debug"
-	"sync"
-	"time"
+	"server_torii/internal/iptrie"
+	"server_torii/internal/urllist"
 )
-
-const ServerToriiVersion string = "2.0.0-beta"
-
-// buildCommit is injected at build time, e.g.
-//
-//	go build -ldflags "-X server_torii/internal/dataType.buildCommit=$(git rev-parse --short HEAD)"
-//
-// It must stay a plain string var (not a const) for -X to work.
-var buildCommit string
-
-// ServerToriiCommit returns the git commit the binary was built from: the
-// -ldflags value if set, otherwise the VCS info the Go toolchain embeds when
-// building inside a git checkout, otherwise "unknown".
-var ServerToriiCommit = sync.OnceValue(func() string {
-	if buildCommit != "" {
-		return buildCommit
-	}
-	info, ok := debug.ReadBuildInfo()
-	if !ok {
-		return "unknown"
-	}
-	var revision string
-	var modified bool
-	for _, s := range info.Settings {
-		switch s.Key {
-		case "vcs.revision":
-			revision = s.Value
-		case "vcs.modified":
-			modified = s.Value == "true"
-		}
-	}
-	if revision == "" {
-		return "unknown"
-	}
-	if len(revision) > 7 {
-		revision = revision[:7]
-	}
-	if modified {
-		revision += "-dirty"
-	}
-	return revision
-})
-
-// Feature Control Bit Positions (0-based from right)
-const (
-	FeatureBitIPAllow           = 0  // bit 0
-	FeatureBitIPBlock           = 1  // bit 1
-	FeatureBitURLAllow          = 2  // bit 2
-	FeatureBitURLBlock          = 3  // bit 3
-	FeatureBitVerifyBot         = 4  // bit 4
-	FeatureBitHTTPFlood         = 5  // bit 5
-	FeatureBitCaptcha           = 6  // bit 6
-	FeatureBitExternalMigration = 7  // bit 7
-	FeatureBitCountryRule       = 8  // bit 8
-	FeatureBitIPCAPTCHA         = 9  // bit 9
-	FeatureBitURLCAPTCHA        = 10 // bit 10
-	FeatureBitCustomRules       = 11 // bit 11
-	// Bits 12-15 reserved for future features
-)
-
-// Feature Control Values
-const (
-	FeatureIPAllow           = 1 << FeatureBitIPAllow           // 0000000000000001
-	FeatureIPBlock           = 1 << FeatureBitIPBlock           // 0000000000000010
-	FeatureURLAllow          = 1 << FeatureBitURLAllow          // 0000000000000100
-	FeatureURLBlock          = 1 << FeatureBitURLBlock          // 0000000000001000
-	FeatureVerifyBot         = 1 << FeatureBitVerifyBot         // 0000000000010000
-	FeatureHTTPFlood         = 1 << FeatureBitHTTPFlood         // 0000000000100000
-	FeatureCaptcha           = 1 << FeatureBitCaptcha           // 0000000001000000
-	FeatureExternalMigration = 1 << FeatureBitExternalMigration // 0000000010000000
-	FeatureCountryRule       = 1 << FeatureBitCountryRule       // 0000000100000000
-	FeatureIPCAPTCHA         = 1 << FeatureBitIPCAPTCHA         // 0000001000000000
-	FeatureURLCAPTCHA        = 1 << FeatureBitURLCAPTCHA
-	FeatureCustomRules       = 1 << FeatureBitCustomRules
-)
-
-type UserRequest struct {
-	RemoteIP       string
-	Uri            string
-	FeatureControl uint16
-	ToriiClearance string
-	ToriiSessionID string
-	UserAgent      string
-	Host           string
-	Method         string
-	Headers        http.Header // original request headers inherited by the subrequest
-}
 
 type CaptchaRule struct {
 	Enabled                        bool            `yaml:"enabled"`
@@ -195,32 +105,32 @@ type ExternalMigrationRule struct {
 
 type IPAllowRule struct {
 	Enabled bool `yaml:"enabled"`
-	Trie    *TrieNode
+	Trie    *iptrie.TrieNode
 }
 
 type IPCAPTCHARule struct {
-	Enabled bool      `yaml:"enabled"`
-	Trie    *TrieNode `yaml:"-"`
+	Enabled bool             `yaml:"enabled"`
+	Trie    *iptrie.TrieNode `yaml:"-"`
 }
 
 type IPBlockRule struct {
 	Enabled bool `yaml:"enabled"`
-	Trie    *TrieNode
+	Trie    *iptrie.TrieNode
 }
 
 type URLAllowRule struct {
 	Enabled bool `yaml:"enabled"`
-	List    *URLRuleList
+	List    *urllist.URLRuleList
 }
 
 type URLCAPTCHARule struct {
-	Enabled bool         `yaml:"enabled"`
-	List    *URLRuleList `yaml:"-"`
+	Enabled bool                 `yaml:"enabled"`
+	List    *urllist.URLRuleList `yaml:"-"`
 }
 
 type URLBlockRule struct {
 	Enabled bool `yaml:"enabled"`
-	List    *URLRuleList
+	List    *urllist.URLRuleList
 }
 
 type CountryAction string
@@ -236,19 +146,4 @@ type CountryRule struct {
 	DefaultAction CountryAction
 	UnknownAction CountryAction
 	Countries     map[string]CountryAction
-}
-
-type CountryResolver interface {
-	Country(netip.Addr) (string, error)
-}
-
-// TrafficMarker lets request handlers report clients the traffic analyzer must not punish.
-type TrafficMarker interface {
-	MarkVerified(ip string, ttl time.Duration)
-	MarkNeutral(ip string, ttl time.Duration)
-}
-
-// BrowserEvidence reports whether the traffic analyzer has recently seen an IP behave like a browser.
-type BrowserEvidence interface {
-	HasBrowserEvidence(ip string) bool
 }

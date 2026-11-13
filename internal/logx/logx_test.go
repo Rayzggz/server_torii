@@ -1,9 +1,9 @@
-package utils
+package logx
 
 import (
 	"os"
 	"path/filepath"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"strings"
 	"testing"
 )
@@ -21,11 +21,11 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 	})
 	InitLogx(base)
 
-	req := dataType.UserRequest{RemoteIP: "203.0.113.9", Host: "example.com", Uri: "/path", UserAgent: "test-agent"}
+	req := request.UserRequest{RemoteIP: "203.0.113.9", Host: "example.com", Uri: "/path", UserAgent: "test-agent"}
 	LogInfo(req, "info-message", "info-extra")
 	LogError(req, "error-message", "error-extra")
 	LogDebug(req, "debug-message", "debug-extra")
-	LogInfo(dataType.UserRequest{Host: "other.example.com"}, "other-host", "")
+	LogInfo(request.UserRequest{Host: "other.example.com"}, "other-host", "")
 
 	read := func(host, name string) string {
 		t.Helper()
@@ -69,7 +69,7 @@ func TestLogxUninitializedDoesNotPanic(t *testing.T) {
 	logger = nil
 	t.Cleanup(func() { logger = prev })
 
-	req := dataType.UserRequest{Host: "example.com"}
+	req := request.UserRequest{Host: "example.com"}
 	LogInfo(req, "a", "b")
 	LogError(req, "a", "b")
 	LogDebug(req, "a", "b")

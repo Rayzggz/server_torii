@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
+	"server_torii/internal/iptrie"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 )
@@ -27,18 +29,18 @@ func TestCheckMainIPAllowBypassesCountryRule(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseCIDR returned error: %v", err)
 	}
-	trie := &dataType.TrieNode{}
+	trie := &iptrie.TrieNode{}
 	trie.Insert(allowedNetwork)
 	ruleSet := &config.RuleSet{
-		IPAllowRule: &dataType.IPAllowRule{Enabled: true, Trie: trie},
-		CountryRule: &dataType.CountryRule{
+		IPAllowRule: &config.IPAllowRule{Enabled: true, Trie: trie},
+		CountryRule: &config.CountryRule{
 			Enabled:   true,
-			Countries: map[string]dataType.CountryAction{"US": dataType.CountryBlock},
+			Countries: map[string]config.CountryAction{"US": config.CountryBlock},
 		},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:       "8.8.8.8",
-		FeatureControl: dataType.FeatureIPAllow | dataType.FeatureCountryRule,
+		FeatureControl: request.FeatureIPAllow | request.FeatureCountryRule,
 	}
 	recorder := httptest.NewRecorder()
 
@@ -56,14 +58,14 @@ func TestProcessFeatureControlCountryRuleBit(t *testing.T) {
 	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 
 	baseline := processFeatureControl(cfg, httptest.NewRequest("GET", "/", nil), ruleSet)
-	if baseline&dataType.FeatureCountryRule == 0 {
+	if baseline&request.FeatureCountryRule == 0 {
 		t.Fatal("CountryRule baseline bit is disabled, want enabled")
 	}
 
 	disableRequest := httptest.NewRequest("GET", "/", nil)
 	disableRequest.Header.Set("X-Features", "________0")
 	disabled := processFeatureControl(cfg, disableRequest, ruleSet)
-	if disabled&dataType.FeatureCountryRule != 0 {
+	if disabled&request.FeatureCountryRule != 0 {
 		t.Fatal("CountryRule bit remains enabled after position 8 override")
 	}
 
@@ -71,7 +73,7 @@ func TestProcessFeatureControlCountryRuleBit(t *testing.T) {
 	enableRequest := httptest.NewRequest("GET", "/", nil)
 	enableRequest.Header.Set("X-Features", "________1")
 	enabled := processFeatureControl(cfg, enableRequest, ruleSet)
-	if enabled&dataType.FeatureCountryRule == 0 {
+	if enabled&request.FeatureCountryRule == 0 {
 		t.Fatal("CountryRule bit remains disabled after position 8 override")
 	}
 }
@@ -88,18 +90,18 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 	defer database.CloseOrWarn()
 
 	ruleSet := featureControlRuleSet()
-	ruleSet.CountryRule = &dataType.CountryRule{
+	ruleSet.CountryRule = &config.CountryRule{
 		Enabled:   true,
-		Countries: map[string]dataType.CountryAction{"US": dataType.CountryCaptcha, "CN": dataType.CountryBlock},
+		Countries: map[string]config.CountryAction{"US": config.CountryCaptcha, "CN": config.CountryBlock},
 	}
-	ruleSet.CAPTCHARule = &dataType.CaptchaRule{
+	ruleSet.CAPTCHARule = &config.CaptchaRule{
 		SecretKey:                      "1234567890abcdef",
 		CaptchaValidateTime:            60,
 		CaptchaChallengeSessionTimeout: 120,
 		CaptchaFailureLimit:            map[int64]int64{},
 	}
 	sharedMem := &state.Runtime{CountryResolver: database}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 
 	tests := []struct {
 		name        string
@@ -124,9 +126,9 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 			}
 
 			recorder := httptest.NewRecorder()
-			NewServer(&config.MainConfig{}, nil, sharedMem, nil).CheckMain(recorder, dataType.UserRequest{
+			NewServer(&config.MainConfig{}, nil, sharedMem, nil).CheckMain(recorder, request.UserRequest{
 				RemoteIP:       tt.remoteIP,
-				FeatureControl: dataType.FeatureCountryRule,
+				FeatureControl: request.FeatureCountryRule,
 			}, ruleSet)
 
 			if recorder.Code != tt.wantStatus {
@@ -141,14 +143,14 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		IPAllowRule:           &dataType.IPAllowRule{},
-		IPBlockRule:           &dataType.IPBlockRule{},
-		URLAllowRule:          &dataType.URLAllowRule{},
-		URLBlockRule:          &dataType.URLBlockRule{},
-		VerifyBotRule:         &dataType.VerifyBotRule{},
-		HTTPFloodRule:         &dataType.HTTPFloodRule{},
-		CAPTCHARule:           &dataType.CaptchaRule{},
-		ExternalMigrationRule: &dataType.ExternalMigrationRule{},
-		CountryRule:           &dataType.CountryRule{Enabled: true},
+		IPAllowRule:           &config.IPAllowRule{},
+		IPBlockRule:           &config.IPBlockRule{},
+		URLAllowRule:          &config.URLAllowRule{},
+		URLBlockRule:          &config.URLBlockRule{},
+		VerifyBotRule:         &config.VerifyBotRule{},
+		HTTPFloodRule:         &config.HTTPFloodRule{},
+		CAPTCHARule:           &config.CaptchaRule{},
+		ExternalMigrationRule: &config.ExternalMigrationRule{},
+		CountryRule:           &config.CountryRule{Enabled: true},
 	}
 }

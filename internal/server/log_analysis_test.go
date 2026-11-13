@@ -6,8 +6,10 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/gossip"
+	"server_torii/internal/iptrie"
 	"server_torii/internal/state"
+	"server_torii/internal/urllist"
 	"testing"
 	"time"
 )
@@ -25,18 +27,18 @@ type detectorHarness struct {
 }
 
 // newDetectorHarness uses small thresholds so scenarios stay readable.
-func newDetectorHarness(t *testing.T, mutate func(r *dataType.AdaptiveTrafficAnalyzerRule)) *detectorHarness {
+func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnalyzerRule)) *detectorHarness {
 	t.Helper()
-	rule := &dataType.AdaptiveTrafficAnalyzerRule{
+	rule := &config.AdaptiveTrafficAnalyzerRule{
 		Enabled: true,
 		Tag:     "test",
-		URIDetection: dataType.URIDetectionRule{
+		URIDetection: config.URIDetectionRule{
 			MinRequests: 30, MinDistinctIPs: 10,
-			Baseline: dataType.BaselineRule{Warmup: 1, MinReferenceRequests: 20},
+			Baseline: config.BaselineRule{Warmup: 1, MinReferenceRequests: 20},
 		},
-		IPDetection: dataType.IPDetectionRule{
+		IPDetection: config.IPDetectionRule{
 			Enabled: true,
-			Action:  dataType.AnalyzerCaptcha,
+			Action:  config.AnalyzerCaptcha,
 		},
 	}
 	if mutate != nil {
@@ -49,8 +51,8 @@ func newDetectorHarness(t *testing.T, mutate func(r *dataType.AdaptiveTrafficAna
 		t: t,
 		rules: &config.RuleSet{
 			AdaptiveTrafficAnalyzerRule: rule,
-			IPAllowRule:                 &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
-			URLAllowRule:                &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
+			IPAllowRule:                 &config.IPAllowRule{Trie: &iptrie.TrieNode{}},
+			URLAllowRule:                &config.URLAllowRule{List: &urllist.URLRuleList{}},
 		},
 		state:    newSiteState(start),
 		marks:    newIPExpiry(maxMarkedClients),
@@ -186,10 +188,10 @@ func TestDetectorSustainedAttack(t *testing.T) {
 }
 
 func TestDetectorURIActionAndExemptions(t *testing.T) {
-	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) {
-		r.URIDetection.Action = dataType.AnalyzerCaptcha
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
+		r.URIDetection.Action = config.AnalyzerCaptcha
 	})
-	h.rules.URLAllowRule.List.Append(&dataType.URLRule{Pattern: "/api/feed"})
+	h.rules.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/api/feed"})
 	_, allowNet, _ := net.ParseCIDR("192.168.5.0/24")
 	h.rules.IPAllowRule.Trie.Insert(allowNet)
 	h.marks.set("10.2.0.1", h.now.Add(time.Hour)) // verified crawler or CAPTCHA pass
@@ -223,7 +225,7 @@ func TestDetectorURIActionAndExemptions(t *testing.T) {
 }
 
 func TestDetectorWarmupFallback(t *testing.T) {
-	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) {
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
 		r.URIDetection.Baseline.Warmup = 3600
 		r.URIDetection.FallbackShare = 0.7
 	})
@@ -253,7 +255,7 @@ func TestDetectorWarmupFallback(t *testing.T) {
 // because it clears min_requests and min_distinct_ips, while a real attack still must.
 func TestDetectorZeroBaselineMix(t *testing.T) {
 	// A short half-life lets the baseline settle within the test.
-	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) { r.URIDetection.Baseline.HalfLife = 120 })
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.URIDetection.Baseline.HalfLife = 120 })
 	humansOnly := func(tick int) []LogEntry {
 		var logs []LogEntry
 		for _, e := range humanTraffic(tick) {
@@ -300,7 +302,7 @@ func TestDetectorZeroBaselineMix(t *testing.T) {
 
 func TestDetectorHotURIMustBeSustained(t *testing.T) {
 	// Production-sized min_requests so each interval must carry a real share of the traffic.
-	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) { r.URIDetection.MinRequests = 300 })
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.URIDetection.MinRequests = 300 })
 	for i := 0; i < 60; i++ {
 		h.run(humanTraffic(h.tick))
 	}
@@ -373,15 +375,15 @@ func TestDetectorActions(t *testing.T) {
 		return logs
 	}
 	for _, tc := range []struct {
-		act  dataType.AnalyzerAction
+		act  config.AnalyzerAction
 		want action.ActionType
 	}{
-		{dataType.AnalyzerObserve, action.ActionNone},
-		{dataType.AnalyzerCaptcha, action.ActionCaptcha},
-		{dataType.AnalyzerBlock, action.ActionBlock},
+		{config.AnalyzerObserve, action.ActionNone},
+		{config.AnalyzerCaptcha, action.ActionCaptcha},
+		{config.AnalyzerBlock, action.ActionBlock},
 	} {
 		t.Run(string(tc.act), func(t *testing.T) {
-			h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) { r.IPDetection.Action = tc.act })
+			h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.IPDetection.Action = tc.act })
 			h.run(scanner())
 			if got := h.ipAction("1.1.1.1"); got != tc.want {
 				t.Fatalf("got %v, want %v", got, tc.want)
@@ -400,8 +402,8 @@ func TestDetectorActions(t *testing.T) {
 }
 
 func TestDetectorEscalation(t *testing.T) {
-	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) {
-		r.IPDetection.Action = dataType.AnalyzerObserve
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
+		r.IPDetection.Action = config.AnalyzerObserve
 		r.IPDetection.BlockDuration = 60
 		r.IPDetection.MaxBlockDuration = 200
 	})
@@ -427,17 +429,17 @@ func TestDetectorEscalation(t *testing.T) {
 func TestEnforcerBroadcastLimit(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossip := make(chan dataType.GossipMessage, 10)
-	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossip}, 2)
+	gossipCh := make(chan gossip.GossipMessage, 10)
+	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, 2)
 	for i := 0; i < 5; i++ {
-		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), dataType.AnalyzerBlock, time.Minute, true)
+		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), config.AnalyzerBlock, time.Minute, true)
 	}
-	e.apply("URI", "/search", dataType.AnalyzerCaptchaUnverified, time.Minute, false)
+	e.apply("URI", "/search", config.AnalyzerCaptchaUnverified, time.Minute, false)
 	if got := engine.Check("", "", "/search"); got != action.ActionCaptchaUnverified {
 		t.Fatalf("URI rule %v, want CAPTCHA_UNVERIFIED", got)
 	}
-	if len(gossip) != 3 || e.suppressed != 3 {
-		t.Fatalf("broadcasts %d, suppressed %d; want 3 and 3", len(gossip), e.suppressed)
+	if len(gossipCh) != 3 || e.suppressed != 3 {
+		t.Fatalf("broadcasts %d, suppressed %d; want 3 and 3", len(gossipCh), e.suppressed)
 	}
 	for i := 0; i < 5; i++ {
 		if !engine.HasIPRule(fmt.Sprintf("9.9.9.%d", i)) {
@@ -495,13 +497,13 @@ func TestAnalyzerStatsHelpers(t *testing.T) {
 }
 
 func TestNormalizeAnalyzerRule(t *testing.T) {
-	r := &dataType.AdaptiveTrafficAnalyzerRule{
-		BrowserEvidence: dataType.BrowserEvidenceRule{AssetExtensions: []string{"JS", ".css"}},
-		IPDetection:     dataType.IPDetectionRule{Action: "Bogus"},
-		URIDetection:    dataType.URIDetectionRule{Action: "Captcha_Unverified"},
+	r := &config.AdaptiveTrafficAnalyzerRule{
+		BrowserEvidence: config.BrowserEvidenceRule{AssetExtensions: []string{"JS", ".css"}},
+		IPDetection:     config.IPDetectionRule{Action: "Bogus"},
+		URIDetection:    config.URIDetectionRule{Action: "Captcha_Unverified"},
 	}
 	config.NormalizeAdaptiveTrafficAnalyzerRule(r)
-	if r.IPDetection.Action != dataType.AnalyzerObserve || r.URIDetection.Action != dataType.AnalyzerCaptchaUnverified {
+	if r.IPDetection.Action != config.AnalyzerObserve || r.URIDetection.Action != config.AnalyzerCaptchaUnverified {
 		t.Errorf("actions: %q %q", r.IPDetection.Action, r.URIDetection.Action)
 	}
 	if len(r.BrowserEvidence.AssetExtensions) != 2 || r.BrowserEvidence.AssetExtensions[0] != ".js" {
@@ -514,7 +516,7 @@ func TestNormalizeAnalyzerRule(t *testing.T) {
 
 func TestHotHitThresholdsFollowRealUsers(t *testing.T) {
 	now := time.Unix(1_700_000_000, 0)
-	rule := dataType.AdaptiveTrafficAnalyzerRule{IPDetection: dataType.IPDetectionRule{HotURIMinHits: 3}}
+	rule := config.AdaptiveTrafficAnalyzerRule{IPDetection: config.IPDetectionRule{HotURIMinHits: 3}}
 	config.NormalizeAdaptiveTrafficAnalyzerRule(&rule)
 	det := &detection{ctx: &analysisContext{Evidence: newIPExpiry(100)}, rule: rule, state: newSiteState(now), now: now}
 	win := make(map[string]*ipWindow)
@@ -540,7 +542,7 @@ func TestHotHitThresholdsFollowRealUsers(t *testing.T) {
 func TestRecordEvidenceAtIngest(t *testing.T) {
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{
-		"site": {AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{Enabled: true, Tag: "nginx"}},
+		"site": {AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{Enabled: true, Tag: "nginx"}},
 	}})
 	a := NewAdaptiveTrafficAnalyzer(nil, configs)
 	for _, tc := range []struct {
@@ -561,7 +563,7 @@ func TestRecordEvidenceAtIngest(t *testing.T) {
 }
 
 func TestGossipAcceptsCaptchaUnverified(t *testing.T) {
-	payload := dataType.ActionRulePayload{RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
+	payload := gossip.ActionRulePayload{RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
 		ExpiresAt: time.Now().Add(time.Minute).Unix()}
 	if err := validateActionRule(payload, time.Now()); err != nil {
 		t.Fatal(err)

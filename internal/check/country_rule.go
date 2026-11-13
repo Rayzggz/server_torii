@@ -4,16 +4,16 @@ import (
 	"net/netip"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"strings"
 )
 
 // CountryRule applies a country override, default policy, or unknown policy.
-func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func CountryRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	rule := ruleSet.CountryRule
-	if reqData.FeatureControl&dataType.FeatureCountryRule == 0 || rule == nil {
+	if reqData.FeatureControl&request.FeatureCountryRule == 0 || rule == nil {
 		decision.Set(action.Continue)
 		return
 	}
@@ -41,12 +41,12 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		}
 	}
 	switch selected {
-	case dataType.CountryBlock:
-		utils.LogInfo(reqData, "", "CountryRule BLOCK "+reason)
+	case config.CountryBlock:
+		logx.LogInfo(reqData, "", "CountryRule BLOCK "+reason)
 		decision.SetVerdict(action.Done, action.VerdictBlock)
-	case dataType.CountryCaptcha:
-		utils.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
-		reqData.FeatureControl |= dataType.FeatureCaptcha
+	case config.CountryCaptcha:
+		logx.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
+		reqData.FeatureControl |= request.FeatureCaptcha
 		Captcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)

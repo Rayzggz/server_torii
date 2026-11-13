@@ -8,8 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"server_torii/internal/dataType"
+	"server_torii/internal/iptrie"
 	"server_torii/internal/rules"
+	"server_torii/internal/urllist"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -25,18 +26,18 @@ func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
 	rs := RuleSet{
-		IPAllowRule:                 &dataType.IPAllowRule{Trie: &dataType.TrieNode{}},
-		IPBlockRule:                 &dataType.IPBlockRule{Trie: &dataType.TrieNode{}},
-		IPCAPTCHARule:               &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}},
-		URLAllowRule:                &dataType.URLAllowRule{List: &dataType.URLRuleList{}},
-		URLBlockRule:                &dataType.URLBlockRule{List: &dataType.URLRuleList{}},
-		URLCAPTCHARule:              &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}},
-		CAPTCHARule:                 &dataType.CaptchaRule{},
-		VerifyBotRule:               &dataType.VerifyBotRule{},
-		HTTPFloodRule:               &dataType.HTTPFloodRule{},
-		ExternalMigrationRule:       &dataType.ExternalMigrationRule{},
-		AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{},
-		CountryRule:                 &dataType.CountryRule{DefaultAction: dataType.CountryContinue, UnknownAction: dataType.CountryContinue, Countries: make(map[string]dataType.CountryAction)},
+		IPAllowRule:                 &IPAllowRule{Trie: &iptrie.TrieNode{}},
+		IPBlockRule:                 &IPBlockRule{Trie: &iptrie.TrieNode{}},
+		IPCAPTCHARule:               &IPCAPTCHARule{Trie: &iptrie.TrieNode{}},
+		URLAllowRule:                &URLAllowRule{List: &urllist.URLRuleList{}},
+		URLBlockRule:                &URLBlockRule{List: &urllist.URLRuleList{}},
+		URLCAPTCHARule:              &URLCAPTCHARule{List: &urllist.URLRuleList{}},
+		CAPTCHARule:                 &CaptchaRule{},
+		VerifyBotRule:               &VerifyBotRule{},
+		HTTPFloodRule:               &HTTPFloodRule{},
+		ExternalMigrationRule:       &ExternalMigrationRule{},
+		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
+		CountryRule:                 &CountryRule{DefaultAction: CountryContinue, UnknownAction: CountryContinue, Countries: make(map[string]CountryAction)},
 		CustomRules:                 &rules.CustomRules{},
 	}
 
@@ -108,10 +109,10 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	}
 
 	if rs.IPCAPTCHARule == nil {
-		rs.IPCAPTCHARule = &dataType.IPCAPTCHARule{Trie: &dataType.TrieNode{}}
+		rs.IPCAPTCHARule = &IPCAPTCHARule{Trie: &iptrie.TrieNode{}}
 	}
 	if rs.URLCAPTCHARule == nil {
-		rs.URLCAPTCHARule = &dataType.URLCAPTCHARule{List: &dataType.URLRuleList{}}
+		rs.URLCAPTCHARule = &URLCAPTCHARule{List: &urllist.URLRuleList{}}
 	}
 
 	if wrapper.IPAllowRule != nil {
@@ -231,7 +232,7 @@ func isSkippableListLine(line string) bool {
 }
 
 // loadIPRules read the IP rule file and insert the rules into the trie
-func loadIPRules(filePath string, trie *dataType.TrieNode) error {
+func loadIPRules(filePath string, trie *iptrie.TrieNode) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -277,7 +278,7 @@ func parseIPRule(line string) (*net.IPNet, bool) {
 }
 
 // loadURLRules Load URL rules from the specified file
-func loadURLRules(filePath string, list *dataType.URLRuleList) error {
+func loadURLRules(filePath string, list *urllist.URLRuleList) error {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return err
@@ -305,7 +306,7 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 				continue
 			}
 		}
-		rule := &dataType.URLRule{
+		rule := &urllist.URLRule{
 			Pattern: line,
 			IsRegex: isRegex,
 			Regex:   compiled,

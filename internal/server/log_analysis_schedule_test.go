@@ -3,7 +3,6 @@ package server
 import (
 	"fmt"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
 	"sync"
 	"testing"
 	"time"
@@ -29,7 +28,7 @@ func (r *recordingAnalyzer) Analyze(ctx *analysisContext) {
 }
 
 func scheduledRule(tag string, interval int64) *config.RuleSet {
-	return &config.RuleSet{AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{
+	return &config.RuleSet{AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{
 		Enabled: true, Tag: tag, AnalysisInterval: interval,
 	}}
 }

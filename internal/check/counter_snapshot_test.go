@@ -4,7 +4,7 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 )
@@ -13,16 +13,16 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	decision := action.NewDecision()
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		HTTPFloodRule: &dataType.HTTPFloodRule{
+		HTTPFloodRule: &config.HTTPFloodRule{
 			HTTPFloodSpeedLimit:   map[int64]int64{1: 1},
 			HTTPFloodSameURILimit: map[int64]int64{1: 1},
 			HTTPFloodFailureLimit: map[int64]int64{1: 1},
 		},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:       "127.0.0.1",
 		Uri:            "/test",
-		FeatureControl: dataType.FeatureHTTPFlood,
+		FeatureControl: request.FeatureHTTPFlood,
 	}
 
 	HTTPFlood(reqData, ruleSet, decision, rt)
@@ -36,13 +36,13 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 	decision := action.NewDecision()
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			CaptchaFailureLimit: map[int64]int64{1: 1},
 		},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:       "127.0.0.1",
-		FeatureControl: dataType.FeatureCaptcha,
+		FeatureControl: request.FeatureCaptcha,
 	}
 
 	Captcha(reqData, ruleSet, decision, rt)
@@ -56,9 +56,9 @@ func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	decision := action.NewDecision()
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{},
+		CAPTCHARule: &config.CaptchaRule{},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP: "127.0.0.1",
 	}
 	req := httptest.NewRequest("POST", "/captcha", nil)

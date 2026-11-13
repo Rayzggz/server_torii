@@ -1,4 +1,4 @@
-package dataType
+package urllist
 
 import (
 	"regexp"

@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 	"strings"
 	"testing"
 	"time"
@@ -16,34 +15,34 @@ import (
 
 func testExternalRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		ExternalMigrationRule: &dataType.ExternalMigrationRule{
+		ExternalMigrationRule: &config.ExternalMigrationRule{
 			Enabled:        true,
 			RedirectUrl:    "https://mitigation.invalid/verify",
 			SecretKey:      "external-secret-0123456789",
 			SessionTimeout: 600,
 		},
-		CAPTCHARule: &dataType.CaptchaRule{SecretKey: "external-secret-0123456789"},
+		CAPTCHARule: &config.CaptchaRule{SecretKey: "external-secret-0123456789"},
 	}
 }
 
-func testExternalRequest() dataType.UserRequest {
-	return dataType.UserRequest{
+func testExternalRequest() request.UserRequest {
+	return request.UserRequest{
 		RemoteIP:       "203.0.113.10",
 		Host:           "example.com",
 		UserAgent:      "Mozilla/5.0 test-agent",
 		Uri:            "/protected",
-		FeatureControl: dataType.FeatureExternalMigration,
+		FeatureControl: request.FeatureExternalMigration,
 	}
 }
 
 // signExternalClearance builds a clearance with an arbitrary timestamp, so expiry can be tested.
-func signExternalClearance(reqData dataType.UserRequest, secret string, ts int64) string {
+func signExternalClearance(reqData request.UserRequest, secret string, ts int64) string {
 	mac := hmac.New(sha512.New, []byte(secret))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", ts, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE", ts, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return fmt.Sprintf("%d:%x", ts, mac.Sum(nil))
 }
 
-func runExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet) *action.Decision {
+func runExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet) *action.Decision {
 	decision := action.NewDecision()
 	ExternalMigration(reqData, ruleSet, decision, &state.Runtime{})
 	return decision
@@ -73,37 +72,37 @@ func TestExternalMigrationClearance(t *testing.T) {
 
 	tests := []struct {
 		name      string
-		mutate    func(r *dataType.UserRequest)
+		mutate    func(r *request.UserRequest)
 		wantClear bool
 	}{
-		{"valid clearance", func(r *dataType.UserRequest) { r.ToriiClearance = valid }, true},
-		{"missing clearance", func(r *dataType.UserRequest) {}, false},
-		{"no separator", func(r *dataType.UserRequest) { r.ToriiClearance = ts + hash }, false},
-		{"extra separator", func(r *dataType.UserRequest) { r.ToriiClearance = valid + ":x" }, false},
-		{"non-numeric timestamp", func(r *dataType.UserRequest) { r.ToriiClearance = "abc:" + hash }, false},
-		{"tampered hash", func(r *dataType.UserRequest) { r.ToriiClearance = ts + ":" + flipped + hash[1:] }, false},
-		{"timestamp moved", func(r *dataType.UserRequest) { r.ToriiClearance = fmt.Sprintf("%d:%s", now-1, hash) }, false},
-		{"other host", func(r *dataType.UserRequest) {
+		{"valid clearance", func(r *request.UserRequest) { r.ToriiClearance = valid }, true},
+		{"missing clearance", func(r *request.UserRequest) {}, false},
+		{"no separator", func(r *request.UserRequest) { r.ToriiClearance = ts + hash }, false},
+		{"extra separator", func(r *request.UserRequest) { r.ToriiClearance = valid + ":x" }, false},
+		{"non-numeric timestamp", func(r *request.UserRequest) { r.ToriiClearance = "abc:" + hash }, false},
+		{"tampered hash", func(r *request.UserRequest) { r.ToriiClearance = ts + ":" + flipped + hash[1:] }, false},
+		{"timestamp moved", func(r *request.UserRequest) { r.ToriiClearance = fmt.Sprintf("%d:%s", now-1, hash) }, false},
+		{"other host", func(r *request.UserRequest) {
 			r.ToriiClearance = valid
 			r.Host = "other.example.com"
 		}, false},
-		{"other user agent family", func(r *dataType.UserRequest) {
+		{"other user agent family", func(r *request.UserRequest) {
 			r.ToriiClearance = valid
 			r.UserAgent = "curl/8.0"
 		}, false},
-		{"within timeout", func(r *dataType.UserRequest) {
+		{"within timeout", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, ruleSet.ExternalMigrationRule.SecretKey, now-timeout+5)
 		}, true},
-		{"expired", func(r *dataType.UserRequest) {
+		{"expired", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, ruleSet.ExternalMigrationRule.SecretKey, now-timeout-5)
 		}, false},
-		{"signed with another key", func(r *dataType.UserRequest) {
+		{"signed with another key", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, "another-secret-0123456789", now)
 		}, false},
-		{"CAPTCHA clearance with the same key", func(r *dataType.UserRequest) {
+		{"CAPTCHA clearance with the same key", func(r *request.UserRequest) {
 			r.ToriiClearance = string(GenClearance(*r, *ruleSet))
 		}, false},
-		{"external session id is not a clearance", func(r *dataType.UserRequest) {
+		{"external session id is not a clearance", func(r *request.UserRequest) {
 			r.ToriiClearance = string(GenExternalMigrationSessionID(*r, *ruleSet))
 		}, false},
 	}
@@ -134,24 +133,24 @@ func TestExternalMigrationSessionID(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		mutate  func(r *dataType.UserRequest)
+		mutate  func(r *request.UserRequest)
 		wantOK  bool
 		keyOver string
 	}{
-		{"valid session", func(r *dataType.UserRequest) { r.ToriiSessionID = valid }, true, ""},
-		{"missing session", func(r *dataType.UserRequest) {}, false, ""},
-		{"malformed session", func(r *dataType.UserRequest) { r.ToriiSessionID = hash }, false, ""},
-		{"non-numeric timestamp", func(r *dataType.UserRequest) { r.ToriiSessionID = "x:" + hash }, false, ""},
-		{"timestamp moved", func(r *dataType.UserRequest) { r.ToriiSessionID = ts + "1:" + hash }, false, ""},
-		{"other host", func(r *dataType.UserRequest) {
+		{"valid session", func(r *request.UserRequest) { r.ToriiSessionID = valid }, true, ""},
+		{"missing session", func(r *request.UserRequest) {}, false, ""},
+		{"malformed session", func(r *request.UserRequest) { r.ToriiSessionID = hash }, false, ""},
+		{"non-numeric timestamp", func(r *request.UserRequest) { r.ToriiSessionID = "x:" + hash }, false, ""},
+		{"timestamp moved", func(r *request.UserRequest) { r.ToriiSessionID = ts + "1:" + hash }, false, ""},
+		{"other host", func(r *request.UserRequest) {
 			r.ToriiSessionID = valid
 			r.Host = "other.example.com"
 		}, false, ""},
-		{"other key", func(r *dataType.UserRequest) { r.ToriiSessionID = valid }, false, "another-secret-0123456789"},
-		{"clearance is not a session", func(r *dataType.UserRequest) {
+		{"other key", func(r *request.UserRequest) { r.ToriiSessionID = valid }, false, "another-secret-0123456789"},
+		{"clearance is not a session", func(r *request.UserRequest) {
 			r.ToriiSessionID = string(GenExternalMigrationClearance(*r, *ruleSet))
 		}, false, ""},
-		{"CAPTCHA session is not an external session", func(r *dataType.UserRequest) {
+		{"CAPTCHA session is not an external session", func(r *request.UserRequest) {
 			r.ToriiSessionID = string(GenSessionID(*r, *ruleSet))
 		}, false, ""},
 	}

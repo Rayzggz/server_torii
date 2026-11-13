@@ -4,14 +4,14 @@ import (
 	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 )
 
-func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func IPBlockList(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if IPBlock feature is enabled using binary operation
-	if (reqData.FeatureControl & dataType.FeatureIPBlock) == 0 {
+	if (reqData.FeatureControl & request.FeatureIPBlock) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
@@ -23,7 +23,7 @@ func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		return
 	}
 	if trie.Search(ip) {
-		utils.LogInfo(reqData, "", "IPBlockList")
+		logx.LogInfo(reqData, "", "IPBlockList")
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	} else {
 		decision.Set(action.Continue)

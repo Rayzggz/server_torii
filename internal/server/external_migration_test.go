@@ -9,7 +9,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strconv"
 	"strings"
@@ -65,7 +65,7 @@ func TestValidateInternalRedirectPath(t *testing.T) {
 type externalFixture struct {
 	ruleSet *config.RuleSet
 	cfg     *config.MainConfig
-	reqData dataType.UserRequest
+	reqData request.UserRequest
 }
 
 func newExternalFixture(t *testing.T) *externalFixture {
@@ -73,18 +73,18 @@ func newExternalFixture(t *testing.T) *externalFixture {
 	dir := t.TempDir()
 	writePage(t, dir, "error.html", "{{.ErrorCode}}|{{.ErrorTitle}}|{{.ErrorMessage}}|{{.EdgeTag}}|{{.ConnectIP}}")
 	f := &externalFixture{
-		ruleSet: &config.RuleSet{ExternalMigrationRule: &dataType.ExternalMigrationRule{
+		ruleSet: &config.RuleSet{ExternalMigrationRule: &config.ExternalMigrationRule{
 			Enabled:        true,
 			RedirectUrl:    "https://mitigation.invalid/verify",
 			SecretKey:      "external-secret-0123456789",
 			SessionTimeout: 600,
 		}},
 		cfg: &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"},
-		reqData: dataType.UserRequest{
+		reqData: request.UserRequest{
 			RemoteIP:       "203.0.113.10",
 			Host:           "example.com",
 			UserAgent:      "Mozilla/5.0 test-agent",
-			FeatureControl: dataType.FeatureExternalMigration,
+			FeatureControl: request.FeatureExternalMigration,
 		},
 	}
 	f.reqData.ToriiSessionID = string(check.GenExternalMigrationSessionID(f.reqData, *f.ruleSet))
@@ -99,7 +99,7 @@ func writePage(t *testing.T, dir, name, body string) {
 }
 
 // migrate calls the callback endpoint the mitigation provider redirects back to.
-func (f *externalFixture) migrate(t *testing.T, reqData dataType.UserRequest, q url.Values) *httptest.ResponseRecorder {
+func (f *externalFixture) migrate(t *testing.T, reqData request.UserRequest, q url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	target := "/torii/external_migration?" + q.Encode()
 	reqData.Uri = target
@@ -160,7 +160,7 @@ func TestExternalMigrationCallbackRejections(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		reqData func() dataType.UserRequest
+		reqData func() request.UserRequest
 		query   func() url.Values
 		wantMsg string
 	}{
@@ -201,13 +201,13 @@ func TestExternalMigrationCallbackRejections(t *testing.T) {
 		},
 		{
 			name:    "missing session",
-			reqData: func() dataType.UserRequest { r := f.reqData; r.ToriiSessionID = ""; return r },
+			reqData: func() request.UserRequest { r := f.reqData; r.ToriiSessionID = ""; return r },
 			query:   func() url.Values { return f.signedQuery("/r", now) },
 			wantMsg: "Invalid session",
 		},
 		{
 			name:    "session from another host",
-			reqData: func() dataType.UserRequest { r := f.reqData; r.Host = "other.example.com"; return r },
+			reqData: func() request.UserRequest { r := f.reqData; r.Host = "other.example.com"; return r },
 			query:   func() url.Values { return f.signedQuery("/r", now) },
 			wantMsg: "Invalid session",
 		},

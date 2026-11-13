@@ -1,7 +1,6 @@
 package config
 
 import (
-	"server_torii/internal/dataType"
 	"strings"
 )
 
@@ -36,20 +35,20 @@ var DefaultATAAssetExtensions = []string{
 }
 
 // NormalizeAnalyzerAction lowercases a configured action. Unknown values fall back to observe.
-func NormalizeAnalyzerAction(a dataType.AnalyzerAction) (dataType.AnalyzerAction, bool) {
-	switch v := dataType.AnalyzerAction(strings.ToLower(strings.TrimSpace(string(a)))); v {
-	case dataType.AnalyzerObserve, dataType.AnalyzerCaptchaUnverified, dataType.AnalyzerCaptcha, dataType.AnalyzerBlock:
+func NormalizeAnalyzerAction(a AnalyzerAction) (AnalyzerAction, bool) {
+	switch v := AnalyzerAction(strings.ToLower(strings.TrimSpace(string(a)))); v {
+	case AnalyzerObserve, AnalyzerCaptchaUnverified, AnalyzerCaptcha, AnalyzerBlock:
 		return v, true
 	case "":
-		return dataType.AnalyzerObserve, true
+		return AnalyzerObserve, true
 	default:
-		return dataType.AnalyzerObserve, false
+		return AnalyzerObserve, false
 	}
 }
 
 // NormalizeAdaptiveTrafficAnalyzerRule fills defaults and normalizes lists in place.
 // It is idempotent, so the analyzer may call it on rules built outside the loader.
-func NormalizeAdaptiveTrafficAnalyzerRule(r *dataType.AdaptiveTrafficAnalyzerRule) {
+func NormalizeAdaptiveTrafficAnalyzerRule(r *AdaptiveTrafficAnalyzerRule) {
 	setDefault(&r.AnalysisInterval, DefaultATAAnalysisInterval)
 	setDefault(&r.WindowBuckets, DefaultATAWindowBuckets)
 	setDefault(&r.BrowserEvidence.TTL, DefaultATAEvidenceTTL)

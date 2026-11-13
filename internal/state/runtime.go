@@ -3,15 +3,14 @@ package state
 
 import (
 	"server_torii/internal/action"
-	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
+	"server_torii/internal/gossip"
 	"time"
 )
 
 // Analyzer is what request handlers need from the traffic analyzer.
 type Analyzer interface {
-	dataType.TrafficMarker
-	dataType.BrowserEvidence
+	TrafficMarker
+	BrowserEvidence
 }
 
 // Runtime is created once at startup and shared for the life of the process.
@@ -20,15 +19,15 @@ type Runtime struct {
 	Limiters
 
 	ActionRuleEngine *action.ActionRuleEngine
-	CountryResolver  dataType.CountryResolver
+	CountryResolver  CountryResolver
 
 	// TrafficMarker and BrowserEvidence are both served by the traffic analyzer once it runs.
-	TrafficMarker   dataType.TrafficMarker
-	BrowserEvidence dataType.BrowserEvidence
+	TrafficMarker   TrafficMarker
+	BrowserEvidence BrowserEvidence
 
 	// NodeName and GossipChan are used to share action rules with peers; a nil channel keeps rules local.
 	NodeName   string
-	GossipChan chan dataType.GossipMessage
+	GossipChan chan gossip.GossipMessage
 }
 
 // SetAnalyzer registers the running traffic analyzer.
@@ -74,7 +73,7 @@ func (rt *Runtime) ApplyRule(target, value string, act action.ActionType, ttl ti
 		rt.ActionRuleEngine.AddURIRule(value, act, ttl)
 	}
 	if broadcast {
-		utils.BroadcastActionRule(rt.NodeName, target, value, string(act), ttl, rt.GossipChan)
+		gossip.BroadcastActionRule(rt.NodeName, target, value, string(act), ttl, rt.GossipChan)
 	}
 	return true
 }

@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
 
@@ -17,7 +17,7 @@ import (
 
 func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			Provider:                       check.CaptchaProviderAltcha,
 			SecretKey:                      "1234567890abcdef",
 			CaptchaChallengeSessionTimeout: 120,
@@ -26,7 +26,7 @@ func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Uri:       "/torii/captcha/challenge",
 		Host:      "example.com",
@@ -62,7 +62,7 @@ func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 
 func TestCheckToriiAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			Provider:                       check.CaptchaProviderAltcha,
 			SecretKey:                      "1234567890abcdef",
 			CaptchaChallengeSessionTimeout: 120,
@@ -71,7 +71,7 @@ func TestCheckToriiAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP: "127.0.0.1",
 		Uri:      "/torii/captcha/challenge",
 	}
@@ -123,7 +123,7 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ruleSet := captchaPageRuleSet(tt.provider)
 			cfg := &config.MainConfig{WebPath: "/torii", ErrorPage: errorPageDir}
-			reqData := dataType.UserRequest{
+			reqData := request.UserRequest{
 				RemoteIP:  "127.0.0.1",
 				Uri:       "/torii/checker_pages/CAPTCHA",
 				Host:      "example.com",
@@ -167,7 +167,7 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 
 func captchaPageRuleSet(provider string) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			Provider:                       provider,
 			SecretKey:                      "1234567890abcdef",
 			CaptchaChallengeSessionTimeout: 120,

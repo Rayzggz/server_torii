@@ -1,4 +1,4 @@
-package dataType
+package ratelimit
 
 import (
 	"cmp"

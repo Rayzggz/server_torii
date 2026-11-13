@@ -11,7 +11,7 @@ tidy:
 # health check. Empty outside a git checkout; the binary then falls back to
 # the VCS info Go embeds, or "unknown". Override with `make COMMIT=...`.
 COMMIT ?= $(shell h=$$(git rev-parse --short=7 HEAD 2>/dev/null) && { git diff --quiet HEAD 2>/dev/null || h="$$h-dirty"; echo "$$h"; })
-LDFLAGS := -X server_torii/internal/dataType.buildCommit=$(COMMIT)
+LDFLAGS := -X server_torii/internal/version.buildCommit=$(COMMIT)
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o server_torii .

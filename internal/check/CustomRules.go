@@ -3,16 +3,16 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"server_torii/internal/rules"
 	"server_torii/internal/state"
-	"server_torii/internal/utils"
 )
 
 // CustomRules evaluates the site's expression rules in order and applies the first terminating action.
-func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	customRules := ruleSet.CustomRules
-	if reqData.FeatureControl&dataType.FeatureCustomRules == 0 || customRules == nil || len(customRules.Rules) == 0 {
+	if reqData.FeatureControl&request.FeatureCustomRules == 0 || customRules == nil || len(customRules.Rules) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
@@ -21,7 +21,7 @@ func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		if !rule.Program.Eval(ctx) {
 			continue
 		}
-		utils.LogInfo(reqData, "", "CustomRule "+rule.String())
+		logx.LogInfo(reqData, "", "CustomRule "+rule.String())
 		switch rule.Action {
 		case rules.ActionAllow:
 			decision.SetVerdict(action.Done, action.VerdictAllow)
@@ -30,11 +30,11 @@ func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 			decision.SetVerdict(action.Done, action.VerdictBlock)
 			return
 		case rules.ActionCaptcha:
-			reqData.FeatureControl |= dataType.FeatureCaptcha
+			reqData.FeatureControl |= request.FeatureCaptcha
 			Captcha(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionExternal:
-			reqData.FeatureControl |= dataType.FeatureExternalMigration
+			reqData.FeatureControl |= request.FeatureExternalMigration
 			ExternalMigration(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionContinue:

@@ -1,4 +1,4 @@
-package dataType
+package iptrie
 
 import "net"
 

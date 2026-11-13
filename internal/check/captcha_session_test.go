@@ -5,8 +5,7 @@ import (
 	"crypto/sha512"
 	"fmt"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
+	"server_torii/internal/request"
 	"testing"
 	"time"
 )
@@ -67,7 +66,7 @@ func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
 
 func testCaptchaSessionRuleSet(provider string) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
+		CAPTCHARule: &config.CaptchaRule{
 			Provider:                       provider,
 			SecretKey:                      "1234567890abcdef",
 			CaptchaChallengeSessionTimeout: 120,
@@ -75,16 +74,16 @@ func testCaptchaSessionRuleSet(provider string) *config.RuleSet {
 	}
 }
 
-func testCaptchaSessionRequestData() dataType.UserRequest {
-	return dataType.UserRequest{
+func testCaptchaSessionRequestData() request.UserRequest {
+	return request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
 	}
 }
 
-func genSessionIDAt(reqData dataType.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
+func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", timestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", timestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return fmt.Sprintf("%d:%x", timestamp, mac.Sum(nil))
 }
