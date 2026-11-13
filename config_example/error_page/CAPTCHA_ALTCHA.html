@@ -169,17 +169,7 @@
             });
         }
 
-        function checkCaptchaRender() {
-            const captchaDiv = document.querySelector("altcha-widget");
-
-            if (captchaDiv && captchaDiv.children.length > 0) {
-            } else {
-                document.getElementById("toriiVerifyBox").innerHTML = "Loading CAPTCHA failed, please check your internet connection and try again.";
-            }
-        }
-
         window.addEventListener("load", setupAltcha);
-        setTimeout(checkCaptchaRender, 5000);
     </script>
 </head>
 <body>
