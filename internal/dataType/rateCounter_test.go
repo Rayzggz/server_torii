@@ -5,8 +5,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/cespare/xxhash/v2"
 )
 
 func TestCounterElementWindowAndRollover(t *testing.T) {
@@ -74,10 +72,12 @@ func TestCounterGarbageCollection(t *testing.T) {
 	for key, timestamp := range map[string]int64{"expired": now - 120, "active": now} {
 		element := newCounterElement(60)
 		element.counterElementAdd(timestamp, 7)
-		c.getBucket(key).counters[xxhash.Sum64String(key)] = element
+		bucket, h := c.getBucket(key)
+		bucket.counters[h] = element
 	}
 	c.GC()
-	if _, ok := c.getBucket("expired").counters[xxhash.Sum64String("expired")]; ok {
+	bucket, h := c.getBucket("expired")
+	if _, ok := bucket.counters[h]; ok {
 		t.Fatal("expired counter retained")
 	}
 	if got := c.Query("active", 60); got != 7 {

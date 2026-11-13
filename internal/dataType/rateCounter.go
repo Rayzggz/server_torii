@@ -128,18 +128,18 @@ func (tc *Counter) GetSegSize() int64 {
 	return tc.segSize
 }
 
-func (tc *Counter) getBucket(key string) *CounterBucket {
+// getBucket hashes key once and returns its bucket along with the hash,
+// which is also the key used inside the bucket's map.
+func (tc *Counter) getBucket(key string) (*CounterBucket, uint64) {
 	h := xxhash.Sum64String(key)
-	idx := h % tc.bucketCount
-	return tc.buckets[idx]
+	return tc.buckets[h%tc.bucketCount], h
 }
 
 func (tc *Counter) Add(key string, value int64) {
 	now := time.Now().Unix()
-	bucket := tc.getBucket(key)
+	bucket, hashKey := tc.getBucket(key)
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
-	hashKey := xxhash.Sum64String(key)
 	counter, exists := bucket.counters[hashKey]
 	if !exists {
 		counter = newCounterElement(int(tc.segSize))
@@ -150,10 +150,9 @@ func (tc *Counter) Add(key string, value int64) {
 
 func (tc *Counter) Query(key string, lastN int64) int64 {
 	now := time.Now().Unix()
-	bucket := tc.getBucket(key)
+	bucket, hashKey := tc.getBucket(key)
 	bucket.mu.RLock()
 	defer bucket.mu.RUnlock()
-	hashKey := xxhash.Sum64String(key)
 	if counter, exists := bucket.counters[hashKey]; exists {
 		return counter.counterElementQuery(lastN, now)
 	}
@@ -161,19 +160,17 @@ func (tc *Counter) Query(key string, lastN int64) int64 {
 }
 
 func (tc *Counter) Reset(key string) {
-	bucket := tc.getBucket(key)
+	bucket, hashKey := tc.getBucket(key)
 	bucket.mu.Lock()
 	defer bucket.mu.Unlock()
-	hashKey := xxhash.Sum64String(key)
 	delete(bucket.counters, hashKey)
 }
 
 func (tc *Counter) QueryBatch(key string, lastN []int64) []int64 {
 	now := time.Now().Unix()
-	bucket := tc.getBucket(key)
+	bucket, hashKey := tc.getBucket(key)
 	bucket.mu.RLock()
 	defer bucket.mu.RUnlock()
-	hashKey := xxhash.Sum64String(key)
 	if counter, exists := bucket.counters[hashKey]; exists {
 		return counter.counterElementQueryBatch(lastN, now)
 	}
