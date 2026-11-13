@@ -3,6 +3,7 @@ package config
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -222,6 +223,13 @@ func validateListCaptchaDependencies(captcha *captchaRuleWrapper, rs *RuleSet) e
 	return nil
 }
 
+// isSkippableListLine reports whether a trimmed list-file line carries no rule:
+// blank lines and "#" comments. URL patterns cannot legitimately start with "#"
+// because fragments are never sent to the server.
+func isSkippableListLine(line string) bool {
+	return line == "" || strings.HasPrefix(line, "#")
+}
+
 // loadIPRules read the IP rule file and insert the rules into the trie
 func loadIPRules(filePath string, trie *dataType.TrieNode) error {
 	file, err := os.Open(filePath)
@@ -231,14 +239,17 @@ func loadIPRules(filePath string, trie *dataType.TrieNode) error {
 	defer func() { _ = file.Close() }() // read-only; a Close error cannot lose data
 
 	scanner := bufio.NewScanner(file)
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		if isSkippableListLine(line) {
 			continue
 		}
 
 		ipNet, ok := parseIPRule(line)
 		if !ok {
+			log.Printf("[WARNING] %s:%d: invalid IP or CIDR %q, line ignored", filePath, lineNo, line)
 			continue
 		}
 		trie.Insert(ipNet)
@@ -274,9 +285,11 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 	defer func() { _ = file.Close() }() // read-only; a Close error cannot lose data
 
 	scanner := bufio.NewScanner(file)
+	lineNo := 0
 	for scanner.Scan() {
+		lineNo++
 		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
+		if isSkippableListLine(line) {
 			continue
 		}
 		// check if the line is a regex
@@ -288,7 +301,7 @@ func loadURLRules(filePath string, list *dataType.URLRuleList) error {
 		if isRegex {
 			compiled, err = regexp.Compile(line)
 			if err != nil {
-				// skip invalid regex
+				log.Printf("[WARNING] %s:%d: invalid regex %q, line ignored: %v", filePath, lineNo, line, err)
 				continue
 			}
 		}
