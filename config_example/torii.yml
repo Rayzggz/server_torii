@@ -13,6 +13,8 @@ connecting_uri_headers:
   - "Torii-Original-URI"
 connecting_feature_control_headers:
   - "Torii-Feature-Control"
+connecting_method_headers:
+  - "Torii-Original-Method"
 
 sites:
   - host: "default_site"
