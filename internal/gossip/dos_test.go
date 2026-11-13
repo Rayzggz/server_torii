@@ -1,4 +1,4 @@
-package server
+package gossip
 
 import (
 	"bytes"
@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"server_torii/internal/config"
-	"server_torii/internal/gossip"
 	"strings"
 	"testing"
 	"time"
@@ -97,11 +96,11 @@ func TestGossipManager_HandleGossip_DoS(t *testing.T) {
 }
 
 func createSignedGossipRequest(t *testing.T, cfg *config.MainConfig, bodyStr string) *http.Request {
-	payload, _ := json.Marshal(gossip.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-	msg := gossip.GossipMessage{
+	payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+	msg := GossipMessage{
 		ID:         "test-id",
 		OriginNode: "KnownPeer",
-		Type:       gossip.GossipTypeActionRule,
+		Type:       GossipTypeActionRule,
 		Content:    string(payload),
 		Timestamp:  time.Now().Unix(),
 	}

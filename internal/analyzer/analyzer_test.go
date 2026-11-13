@@ -1,4 +1,4 @@
-package server
+package analyzer
 
 import (
 	"fmt"
@@ -559,14 +559,6 @@ func TestRecordEvidenceAtIngest(t *testing.T) {
 		if got := a.HasBrowserEvidence(tc.entry.IP); got != tc.want {
 			t.Errorf("%+v: evidence %v, want %v", tc.entry, got, tc.want)
 		}
-	}
-}
-
-func TestGossipAcceptsCaptchaUnverified(t *testing.T) {
-	payload := gossip.ActionRulePayload{RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
-		ExpiresAt: time.Now().Add(time.Minute).Unix()}
-	if err := validateActionRule(payload, time.Now()); err != nil {
-		t.Fatal(err)
 	}
 }
 

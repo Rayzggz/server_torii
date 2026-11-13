@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"server_torii/internal/analyzer"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
@@ -186,8 +187,8 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 	sharedMem := &state.Runtime{}
 	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
-	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
-	sharedMem.SetAnalyzer(analyzer)
+	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
+	sharedMem.SetAnalyzer(ata)
 
 	rec := postCaptcha(reqData, ruleSet, sharedMem, solveAltcha(t, ruleSet, reqData))
 
@@ -199,14 +200,14 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 		t.Fatal("no clearance cookie set")
 	}
 	now := time.Now()
-	if !analyzer.marks.active(reqData.RemoteIP, now) {
+	if !ata.Marked(reqData.RemoteIP, now) {
 		t.Fatal("solving the CAPTCHA did not exempt the IP from traffic analysis")
 	}
 	ttl := time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime) * time.Second
-	if analyzer.marks.active(reqData.RemoteIP, now.Add(ttl+time.Second)) {
+	if ata.Marked(reqData.RemoteIP, now.Add(ttl+time.Second)) {
 		t.Fatal("verified mark outlives the CAPTCHA validate time")
 	}
-	if analyzer.marks.active("203.0.113.78", now) {
+	if ata.Marked("203.0.113.78", now) {
 		t.Fatal("another IP was marked")
 	}
 }
@@ -216,8 +217,8 @@ func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 	reqData := request.UserRequest{RemoteIP: "203.0.113.79", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	sharedMem := &state.Runtime{}
 	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
-	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
-	sharedMem.SetAnalyzer(analyzer)
+	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
+	sharedMem.SetAnalyzer(ata)
 
 	tests := []struct {
 		name     string
@@ -242,7 +243,7 @@ func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 			if clearanceFrom(t, rec) != "" {
 				t.Fatal("clearance set after a failed CAPTCHA")
 			}
-			if analyzer.marks.active(r.RemoteIP, time.Now()) {
+			if ata.Marked(r.RemoteIP, time.Now()) {
 				t.Fatal("failed CAPTCHA exempted the IP")
 			}
 		})
@@ -305,18 +306,18 @@ func TestRuntimeMarksReachAnalyzer(t *testing.T) {
 		}
 	}
 
-	analyzer := NewAdaptiveTrafficAnalyzer(nil, nil)
+	ata := analyzer.NewAdaptiveTrafficAnalyzer(nil, nil)
 	rt := &state.Runtime{}
-	rt.SetAnalyzer(analyzer)
+	rt.SetAnalyzer(ata)
 
 	now := time.Now()
 	rt.MarkVerified("198.51.100.1", time.Minute)
 	rt.MarkNeutral("198.51.100.2", time.Minute)
 	for _, ip := range []string{"198.51.100.1", "198.51.100.2"} {
-		if !analyzer.marks.active(ip, now) {
+		if !ata.Marked(ip, now) {
 			t.Errorf("%s not marked", ip)
 		}
-		if analyzer.marks.active(ip, now.Add(2*time.Minute)) {
+		if ata.Marked(ip, now.Add(2*time.Minute)) {
 			t.Errorf("%s mark did not expire", ip)
 		}
 	}

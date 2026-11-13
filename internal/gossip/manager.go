@@ -1,4 +1,4 @@
-package server
+package gossip
 
 import (
 	"bytes"
@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/gossip"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -56,7 +55,7 @@ func NewGossipManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEng
 	}
 }
 
-func (gm *GossipManager) Start(gossipChan <-chan gossip.GossipMessage) {
+func (gm *GossipManager) Start(gossipChan <-chan GossipMessage) {
 	log.Printf("GossipManager started, listening for events...")
 
 	// Start anti-entropy ticker
@@ -176,7 +175,7 @@ func (gm *GossipManager) cleanupSeenMessages() {
 	}
 }
 
-func (gm *GossipManager) epidemicBroadcast(msg gossip.GossipMessage) {
+func (gm *GossipManager) epidemicBroadcast(msg GossipMessage) {
 	// Fanout: Select k random peers
 	k := 3 // Fanout factor
 	peers := gm.cfg.Peers
@@ -225,37 +224,42 @@ func (gm *GossipManager) startAntiEntropy() {
 		snapshot := gm.actionEngine.GetSnapshot()
 
 		// Chunking logic for large snapshots
-		var batch []gossip.ActionRulePayload
+		var batch []ActionRulePayload
 		count := 0
 
 		for _, rule := range snapshot {
-			batch = append(batch, rule)
+			batch = append(batch, ActionRulePayload{
+				RuleType:  rule.RuleType,
+				Value:     rule.Value,
+				Action:    string(rule.Action),
+				ExpiresAt: rule.ExpiresAt.Unix(),
+			})
 			count++
 
 			if count >= maxSyncEntriesBatch {
-				gm.sendSyncBatch(peer, gossip.ActionRuleSyncPayload{Rules: batch})
+				gm.sendSyncBatch(peer, ActionRuleSyncPayload{Rules: batch})
 				// Reset batch
-				batch = make([]gossip.ActionRulePayload, 0, maxSyncEntriesBatch)
+				batch = make([]ActionRulePayload, 0, maxSyncEntriesBatch)
 				count = 0
 			}
 		}
 
 		// Send remaining
 		if len(batch) > 0 {
-			gm.sendSyncBatch(peer, gossip.ActionRuleSyncPayload{Rules: batch})
+			gm.sendSyncBatch(peer, ActionRuleSyncPayload{Rules: batch})
 		}
 	}
 }
 
-func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch gossip.ActionRuleSyncPayload) {
+func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) {
 	content, err := json.Marshal(batch)
 	if err != nil {
 		log.Printf("[ERROR] Failed to marshal snapshot batch for anti-entropy: %v", err)
 		return
 	}
 
-	msg := gossip.GossipMessage{
-		Type:       gossip.GossipTypeSync,
+	msg := GossipMessage{
+		Type:       GossipTypeSync,
 		ID:         uuid.New().String(),
 		OriginNode: gm.cfg.NodeName,
 		Timestamp:  time.Now().Unix(),
@@ -265,7 +269,7 @@ func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch gossip.ActionRule
 	go gm.sendGossip(peer, msg)
 }
 
-func (gm *GossipManager) sendGossip(p config.Peer, msg gossip.GossipMessage) {
+func (gm *GossipManager) sendGossip(p config.Peer, msg GossipMessage) {
 	url := p.Address + gm.cfg.WebPath + "/gossip"
 
 	data, err := json.Marshal(msg)
@@ -330,7 +334,7 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg gossip.GossipMessage
+	var msg GossipMessage
 	if err := json.Unmarshal(body, &msg); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -445,7 +449,7 @@ func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Reques
 	return body, true
 }
 
-func (gm *GossipManager) processRemoteMessage(msg gossip.GossipMessage) {
+func (gm *GossipManager) processRemoteMessage(msg GossipMessage) {
 	// Deduplication
 	if gm.checkAndMarkSeen(msg.ID) {
 		return
@@ -453,15 +457,15 @@ func (gm *GossipManager) processRemoteMessage(msg gossip.GossipMessage) {
 	now := time.Now()
 
 	switch msg.Type {
-	case gossip.GossipTypeActionRule:
+	case GossipTypeActionRule:
 		gm.processActionRule(msg, now)
-	case gossip.GossipTypeSync:
+	case GossipTypeSync:
 		gm.processSync(msg, now)
 	}
 }
 
-func (gm *GossipManager) processActionRule(msg gossip.GossipMessage, now time.Time) {
-	var payload gossip.ActionRulePayload
+func (gm *GossipManager) processActionRule(msg GossipMessage, now time.Time) {
+	var payload ActionRulePayload
 	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
 		log.Printf("[ERROR] Failed to unmarshal action rule gossip: %v", err)
 		return
@@ -490,9 +494,9 @@ func (gm *GossipManager) processActionRule(msg gossip.GossipMessage, now time.Ti
 	gm.epidemicBroadcast(msg)
 }
 
-func (gm *GossipManager) processSync(msg gossip.GossipMessage, now time.Time) {
+func (gm *GossipManager) processSync(msg GossipMessage, now time.Time) {
 	log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
-	var syncPayload gossip.ActionRuleSyncPayload
+	var syncPayload ActionRuleSyncPayload
 	if err := json.Unmarshal([]byte(msg.Content), &syncPayload); err != nil {
 		log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
 		return
@@ -537,7 +541,7 @@ func (gm *GossipManager) processSync(msg gossip.GossipMessage, now time.Time) {
 
 const maxGossipBlockDuration = 7 * 24 * time.Hour
 
-func validateActionRule(payload gossip.ActionRulePayload, now time.Time) error {
+func validateActionRule(payload ActionRulePayload, now time.Time) error {
 	trimmed := strings.TrimSpace(payload.Value)
 	if trimmed == "" {
 		return fmt.Errorf("empty rule value")

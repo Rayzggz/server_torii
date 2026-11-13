@@ -1,7 +1,6 @@
-package server
+package gossip
 
 import (
-	"server_torii/internal/gossip"
 	"testing"
 	"time"
 
@@ -73,11 +72,11 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 	// Simulate concurrent access
 	done := make(chan bool)
 	go func() {
-		gm.epidemicBroadcast(gossip.GossipMessage{ID: "test"})
+		gm.epidemicBroadcast(GossipMessage{ID: "test"})
 		done <- true
 	}()
 	go func() {
-		gm.epidemicBroadcast(gossip.GossipMessage{ID: "test2"})
+		gm.epidemicBroadcast(GossipMessage{ID: "test2"})
 		done <- true
 	}()
 

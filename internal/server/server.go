@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"path"
+	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
+	"server_torii/internal/gossip"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
@@ -46,12 +48,12 @@ type Server struct {
 	cfg     *config.MainConfig
 	configs *config.ConfigManager
 	rt      *state.Runtime
-	gossip  *GossipManager // nil when gossip is disabled
+	gossip  *gossip.GossipManager // nil when gossip is disabled
 }
 
 // NewServer wires a server to its configuration and shared state; gossip may be nil.
-func NewServer(cfg *config.MainConfig, configs *config.ConfigManager, rt *state.Runtime, gossip *GossipManager) *Server {
-	return &Server{cfg: cfg, configs: configs, rt: rt, gossip: gossip}
+func NewServer(cfg *config.MainConfig, configs *config.ConfigManager, rt *state.Runtime, gossipManager *gossip.GossipManager) *Server {
+	return &Server{cfg: cfg, configs: configs, rt: rt, gossip: gossipManager}
 }
 
 // ServeHTTP resolves the site rules for the request and dispatches it.
@@ -88,13 +90,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // A graceful stop returns nil.
 func (s *Server) Run(ctx context.Context) error {
 	// Start AdaptiveTrafficAnalyzer
-	analyzer := NewAdaptiveTrafficAnalyzer(s.rt, s.configs)
-	s.rt.SetAnalyzer(analyzer)
-	analyzer.Start()
-	defer analyzer.Stop()
+	ata := analyzer.NewAdaptiveTrafficAnalyzer(s.rt, s.configs)
+	s.rt.SetAnalyzer(ata)
+	ata.Start()
+	defer ata.Stop()
 
 	// Start Syslog UDP Listener
-	syslogListener := NewSyslogListener(s.cfg.Port, analyzer)
+	syslogListener := analyzer.NewSyslogListener(s.cfg.Port, ata)
 	if err := syslogListener.Start(); err != nil {
 		log.Printf("[ERROR] Failed to start Syslog UDP listener: %v", err)
 	} else {

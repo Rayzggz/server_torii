@@ -4,6 +4,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/state"
@@ -85,22 +86,22 @@ func crawlerHeader(ip, ua string) http.Header {
 	}
 }
 
-func newVerifyBotEnv() (*config.MainConfig, *state.Runtime, *AdaptiveTrafficAnalyzer) {
+func newVerifyBotEnv() (*config.MainConfig, *state.Runtime, *analyzer.AdaptiveTrafficAnalyzer) {
 	cfg := config.DefaultMainConfig()
 	cfg.WebPath = "/torii"
 	sharedMem := &state.Runtime{}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
 	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
-	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
-	sharedMem.SetAnalyzer(analyzer)
-	return cfg, sharedMem, analyzer
+	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
+	sharedMem.SetAnalyzer(ata)
+	return cfg, sharedMem, ata
 }
 
 func TestVerifyBotLiveAcceptsRealCrawlers(t *testing.T) {
 	for _, c := range liveCrawlers {
 		t.Run(c.name, func(t *testing.T) {
 			requireCrawlerDNS(t, c.ip)
-			cfg, sharedMem, analyzer := newVerifyBotEnv()
+			cfg, sharedMem, ata := newVerifyBotEnv()
 
 			// Nginx connects from a private address; the crawler IP only arrives in the header.
 			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(c.ip, c.ua), "10.0.0.2:40000")
@@ -108,10 +109,10 @@ func TestVerifyBotLiveAcceptsRealCrawlers(t *testing.T) {
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d Torii-Action=%q, want 200", rec.Code, rec.Header().Get("Torii-Action"))
 			}
-			if !analyzer.marks.active(c.ip, time.Now()) {
+			if !ata.Marked(c.ip, time.Now()) {
 				t.Fatal("verified crawler was not exempted from traffic analysis")
 			}
-			if analyzer.marks.active("10.0.0.2", time.Now()) {
+			if ata.Marked("10.0.0.2", time.Now()) {
 				t.Fatal("the proxy address was marked instead of the crawler")
 			}
 		})
@@ -154,12 +155,12 @@ func TestVerifyBotLiveRejectsMismatchedCrawlers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, sharedMem, analyzer := newVerifyBotEnv()
+			cfg, sharedMem, ata := newVerifyBotEnv()
 			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(tt.ip, tt.ua), "10.0.0.2:40000")
 			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
 				t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
 			}
-			if analyzer.marks.active(tt.ip, time.Now()) {
+			if ata.Marked(tt.ip, time.Now()) {
 				t.Fatal("rejected client was exempted from traffic analysis")
 			}
 		})
@@ -184,7 +185,7 @@ func TestVerifyBotLiveFeatureControl(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, sharedMem, analyzer := newVerifyBotEnv()
+			cfg, sharedMem, ata := newVerifyBotEnv()
 			rs := verifyBotRuleSet()
 			rs.VerifyBotRule.Enabled = tt.enabled
 			header := crawlerHeader(c.ip, c.ua)
@@ -196,7 +197,7 @@ func TestVerifyBotLiveFeatureControl(t *testing.T) {
 			if rec.Code != tt.wantStatus || rec.Header().Get("Torii-Action") != tt.wantAction {
 				t.Fatalf("got %d %q, want %d %q", rec.Code, rec.Header().Get("Torii-Action"), tt.wantStatus, tt.wantAction)
 			}
-			if marked := analyzer.marks.active(c.ip, time.Now()); marked != (tt.wantStatus == http.StatusOK) {
+			if marked := ata.Marked(c.ip, time.Now()); marked != (tt.wantStatus == http.StatusOK) {
 				t.Fatalf("marked = %v", marked)
 			}
 		})
@@ -251,12 +252,12 @@ func TestVerifyBotLiveBlocksFakeCrawlers(t *testing.T) {
 
 	for _, f := range fakeCrawlers {
 		t.Run(f.name, func(t *testing.T) {
-			cfg, sharedMem, analyzer := newVerifyBotEnv()
+			cfg, sharedMem, ata := newVerifyBotEnv()
 			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(f.ip, f.ua), "10.0.0.2:40000")
 			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
 				t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
 			}
-			if analyzer.marks.active(f.ip, time.Now()) {
+			if ata.Marked(f.ip, time.Now()) {
 				t.Fatal("fake crawler was exempted from traffic analysis")
 			}
 		})
@@ -276,12 +277,12 @@ func TestVerifyBotLiveLookalikeUserAgentsGetNoBypass(t *testing.T) {
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36",
 	} {
 		t.Run(ua, func(t *testing.T) {
-			cfg, sharedMem, analyzer := newVerifyBotEnv()
+			cfg, sharedMem, ata := newVerifyBotEnv()
 			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(liveCrawlers[0].ip, ua), "10.0.0.2:40000")
 			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "CAPTCHA" {
 				t.Fatalf("got %d %q, want 445 CAPTCHA", rec.Code, rec.Header().Get("Torii-Action"))
 			}
-			if analyzer.marks.active(liveCrawlers[0].ip, time.Now()) {
+			if ata.Marked(liveCrawlers[0].ip, time.Now()) {
 				t.Fatal("unverified client was exempted from traffic analysis")
 			}
 		})

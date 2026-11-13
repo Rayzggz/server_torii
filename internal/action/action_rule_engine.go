@@ -1,7 +1,6 @@
 package action
 
 import (
-	"server_torii/internal/gossip"
 	"server_torii/internal/request"
 	"sync"
 	"time"
@@ -191,41 +190,49 @@ func (e *ActionRuleEngine) cleanup() {
 	}
 }
 
+// RuleSnapshot is one active rule as reported by GetSnapshot.
+type RuleSnapshot struct {
+	RuleType  string // "IP", "UA" or "URI"
+	Value     string
+	Action    ActionType
+	ExpiresAt time.Time
+}
+
 // GetSnapshot returns a copy of the active action rules.
-func (e *ActionRuleEngine) GetSnapshot() []gossip.ActionRulePayload {
+func (e *ActionRuleEngine) GetSnapshot() []RuleSnapshot {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	var snapshot []gossip.ActionRulePayload
+	var snapshot []RuleSnapshot
 	now := time.Now()
 
 	for ip, rule := range e.ipRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, gossip.ActionRulePayload{
+			snapshot = append(snapshot, RuleSnapshot{
 				RuleType:  "IP",
 				Value:     ip,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
+				Action:    rule.Action,
+				ExpiresAt: rule.ExpiresAt,
 			})
 		}
 	}
 	for ua, rule := range e.uaRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, gossip.ActionRulePayload{
+			snapshot = append(snapshot, RuleSnapshot{
 				RuleType:  "UA",
 				Value:     ua,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
+				Action:    rule.Action,
+				ExpiresAt: rule.ExpiresAt,
 			})
 		}
 	}
 	for uri, rule := range e.uriRules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, gossip.ActionRulePayload{
+			snapshot = append(snapshot, RuleSnapshot{
 				RuleType:  "URI",
 				Value:     uri,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
+				Action:    rule.Action,
+				ExpiresAt: rule.ExpiresAt,
 			})
 		}
 	}

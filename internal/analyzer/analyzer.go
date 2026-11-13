@@ -1,4 +1,4 @@
-package server
+package analyzer
 
 import (
 	"log"
@@ -181,6 +181,11 @@ func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *config.AdaptiveTraff
 // HasBrowserEvidence reports whether the IP recently loaded assets, revalidated a page, or browsed several pages.
 func (ata *AdaptiveTrafficAnalyzer) HasBrowserEvidence(ip string) bool {
 	return ata.evidence.active(ip, time.Now())
+}
+
+// Marked reports whether the IP is exempt from analysis at the given time.
+func (ata *AdaptiveTrafficAnalyzer) Marked(ip string, at time.Time) bool {
+	return ata.marks.active(ip, at)
 }
 
 // MarkVerified exempts an IP that solved a CAPTCHA.

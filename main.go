@@ -61,10 +61,10 @@ func run() int {
 		return 1
 	}
 
-	var gossipManager *server.GossipManager
+	var gossipManager *gossip.GossipManager
 	if cfg.EnableGossip {
 		rt.GossipChan = make(chan gossip.GossipMessage, 1000)
-		gossipManager = server.NewGossipManager(cfg, engine)
+		gossipManager = gossip.NewGossipManager(cfg, engine)
 		go gossipManager.Start(rt.GossipChan)
 	}
 

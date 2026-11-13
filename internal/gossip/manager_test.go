@@ -1,4 +1,4 @@
-package server
+package gossip
 
 import (
 	"bytes"
@@ -8,8 +8,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/gossip"
 	"testing"
 	"time"
 
@@ -60,11 +60,11 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
-		payload, _ := json.Marshal(gossip.ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-		msg := gossip.GossipMessage{
+		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		msg := GossipMessage{
 			ID:         msgID,
 			OriginNode: originNode,
-			Type:       gossip.GossipTypeActionRule,
+			Type:       GossipTypeActionRule,
 			Content:    string(payload),
 			Timestamp:  time.Now().Unix(),
 		}
@@ -99,5 +99,13 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	if w2.Code != http.StatusOK {
 		t.Errorf("Expected 200 for known peer, got %d. Body: %s", w2.Code, w2.Body.String())
+	}
+}
+
+func TestGossipAcceptsCaptchaUnverified(t *testing.T) {
+	payload := ActionRulePayload{RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
+		ExpiresAt: time.Now().Add(time.Minute).Unix()}
+	if err := validateActionRule(payload, time.Now()); err != nil {
+		t.Fatal(err)
 	}
 }
