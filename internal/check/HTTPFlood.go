@@ -5,20 +5,21 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"time"
 )
 
-func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if HTTPFlood feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureHTTPFlood) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
 
-	speedCounter := sharedMem.HTTPFloodSpeedLimitCounter.Load()
-	sameURICounter := sharedMem.HTTPFloodSameURILimitCounter.Load()
-	failureCounter := sharedMem.HTTPFloodFailureLimitCounter.Load()
+	speedCounter := rt.HTTPFloodSpeedLimitCounter.Load()
+	sameURICounter := rt.HTTPFloodSameURILimitCounter.Load()
+	failureCounter := rt.HTTPFloodFailureLimitCounter.Load()
 	if speedCounter == nil || sameURICounter == nil || failureCounter == nil {
 		utils.LogError(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
 		decision.Set(action.Continue)
@@ -35,11 +36,8 @@ func HTTPFlood(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
 		if failureCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
-				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
-					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second)
-					utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
-				} else {
-					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
+				if !rt.BlockIP(ipKey, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second) {
+					utils.LogError(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				failureCounter.Reset(ipKey)

@@ -36,15 +36,13 @@ func scheduledRule(tag string, interval int64) *config.RuleSet {
 
 func scheduleFixture(t *testing.T, rules map[string]*config.RuleSet) (*AdaptiveTrafficAnalyzer, *recordingAnalyzer, time.Time) {
 	t.Helper()
-	previous := config.Manager
-	config.Manager = &config.ConfigManager{}
-	config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: rules})
-	a := NewAdaptiveTrafficAnalyzer(nil)
+	configs := config.NewManager()
+	configs.Set(&config.SiteConfigSnapshot{SiteRules: rules})
+	a := NewAdaptiveTrafficAnalyzer(nil, configs)
 	r := &recordingAnalyzer{}
 	a.analyzers = []Analyzer{r}
 	t.Cleanup(func() {
 		a.Stop()
-		config.Manager = previous
 	})
 	start := time.Unix(1000, 0)
 	a.processBatchAt(start)
@@ -103,7 +101,7 @@ func TestAnalysisReloadIntervalsAndRules(t *testing.T) {
 			a.processBatchAt(start.Add(time.Second))
 			updated := scheduledRule("tag", tc.updated)
 			updated.AdaptiveTrafficAnalyzerRule.IPDetection.ScoreThreshold = 123
-			config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
+			a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 			a.processBatchAt(start.Add(time.Duration(tc.reload) * time.Second))
 			if tc.reload < tc.due {
 				if len(recorder.calls) != 0 {
@@ -135,13 +133,13 @@ func TestAnalysisReloadSiteLifecycle(t *testing.T) {
 			if change == "removed" {
 				delete(rules, "site")
 			}
-			config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: rules})
+			a.configs.Set(&config.SiteConfigSnapshot{SiteRules: rules})
 			a.processBatchAt(start.Add(2 * time.Second)) // Reload during idle traffic.
 			if change != "retagged" {
 				if len(a.windows) != 0 {
 					t.Fatal("inactive site retained pending state")
 				}
-				config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": scheduledRule("new", 10)}})
+				a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": scheduledRule("new", 10)}})
 				a.processBatchAt(start.Add(2 * time.Second))
 			}
 			a.AddLog(LogEntry{Tag: "old", IP: "ignored"})
@@ -195,7 +193,7 @@ func TestAnalysisFallbackAndMissingSnapshot(t *testing.T) {
 	if len(recorder.calls) != 1 {
 		t.Fatal("fallback did not run at 10 seconds")
 	}
-	config.Manager.Set(nil)
+	a.configs.Set(nil)
 	a.processBatchAt(start.Add(11 * time.Second))
 	if len(a.windows) != 0 {
 		t.Fatal("missing snapshot retained state")
@@ -249,7 +247,7 @@ func TestAnalysisBatchUsesOneSnapshot(t *testing.T) {
 	updated := scheduledRule("tag", 10)
 	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": old})
 	a.analyzers = []Analyzer{analyzerFunc(func(_ *analysisContext) {
-		config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
+		a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 	}), recorder}
 	a.AddLog(LogEntry{Tag: "tag"})
 	a.processBatchAt(start.Add(10 * time.Second))

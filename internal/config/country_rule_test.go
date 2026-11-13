@@ -92,13 +92,12 @@ func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
 	writeRuleFiles(t, dir, map[string]string{"IP_AllowList.conf": "", "IP_BlockList.conf": "", "URL_AllowList.conf": "", "URL_BlockList.conf": "", "Server.yml": "CountryRule: { default_action: block }"})
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: dir}}}
 	manager := &ConfigManager{}
-	shared := &dataType.SharedMemory{}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	before := manager.Get()
 	writeFile(t, filepath.Join(dir, "Server.yml"), "CountryRule: { default_action: invalid }")
-	if err := manager.Reload(cfg, shared); err == nil {
+	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("invalid reload succeeded")
 	}
 	if manager.Get() != before {

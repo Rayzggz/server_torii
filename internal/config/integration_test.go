@@ -88,14 +88,14 @@ sites:
 		t.Fatalf("LogPath = %q, want default %q", cfg.LogPath, DefaultLogPath)
 	}
 
-	sharedMem := &dataType.SharedMemory{}
-	if err := InitManager(cfg, sharedMem); err != nil {
-		t.Fatalf("InitManager returned unexpected error: %v", err)
+	manager := NewManager()
+	if err := manager.Reload(cfg); err != nil {
+		t.Fatalf("Reload returned unexpected error: %v", err)
 	}
 
-	snapshot := Manager.Get()
+	snapshot := manager.Get()
 	if snapshot == nil {
-		t.Fatal("Manager.Get() returned nil snapshot")
+		t.Fatal("manager.Get() returned nil snapshot")
 	}
 
 	rules := GetSiteRules(snapshot.SiteRules, "unknown.example.com")
@@ -146,29 +146,8 @@ sites:
 		t.Fatal("ExternalMigrationRule.Enabled = false, want true")
 	}
 
-	if got := sharedMem.HTTPFloodSpeedLimitCounter.Load(); got == nil || got.GetSegSize() != 120 {
-		if got == nil {
-			t.Fatal("HTTPFloodSpeedLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodSpeedLimitCounter segSize = %d, want 120", got.GetSegSize())
-	}
-	if got := sharedMem.HTTPFloodSameURILimitCounter.Load(); got == nil || got.GetSegSize() != 45 {
-		if got == nil {
-			t.Fatal("HTTPFloodSameURILimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodSameURILimitCounter segSize = %d, want 45", got.GetSegSize())
-	}
-	if got := sharedMem.HTTPFloodFailureLimitCounter.Load(); got == nil || got.GetSegSize() != 300 {
-		if got == nil {
-			t.Fatal("HTTPFloodFailureLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodFailureLimitCounter segSize = %d, want 300", got.GetSegSize())
-	}
-	if got := sharedMem.CaptchaFailureLimitCounter.Load(); got == nil || got.GetSegSize() != 120 {
-		if got == nil {
-			t.Fatal("CaptchaFailureLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("CaptchaFailureLimitCounter segSize = %d, want 120", got.GetSegSize())
+	if got, want := snapshot.CounterWindows(), (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, CaptchaFailure: 120}); got != want {
+		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
 	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `IPAllow:
@@ -199,13 +178,13 @@ HTTPFlood:
   failure_block_duration: 600
 `)
 
-	if err := Manager.Reload(cfg, sharedMem); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatalf("Reload returned unexpected error: %v", err)
 	}
 
-	reloaded := Manager.Get()
+	reloaded := manager.Get()
 	if reloaded == nil {
-		t.Fatal("Manager.Get() returned nil snapshot after reload")
+		t.Fatal("manager.Get() returned nil snapshot after reload")
 	}
 
 	reloadedRules := reloaded.SiteRules["default_site"]
@@ -218,16 +197,7 @@ HTTPFlood:
 	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
 		t.Fatal("CountryRule should remain present and disabled when omitted")
 	}
-	if got := sharedMem.HTTPFloodSpeedLimitCounter.Load().GetSegSize(); got != 240 {
-		t.Fatalf("HTTPFloodSpeedLimitCounter segSize after reload = %d, want 240", got)
-	}
-	if got := sharedMem.HTTPFloodSameURILimitCounter.Load().GetSegSize(); got != 60 {
-		t.Fatalf("HTTPFloodSameURILimitCounter segSize after reload = %d, want 60", got)
-	}
-	if got := sharedMem.HTTPFloodFailureLimitCounter.Load().GetSegSize(); got != 900 {
-		t.Fatalf("HTTPFloodFailureLimitCounter segSize after reload = %d, want 900", got)
-	}
-	if got := sharedMem.CaptchaFailureLimitCounter.Load().GetSegSize(); got != 240 {
-		t.Fatalf("CaptchaFailureLimitCounter segSize after reload = %d, want 240", got)
+	if got, want := reloaded.CounterWindows(), (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, CaptchaFailure: 240}); got != want {
+		t.Fatalf("CounterWindows after reload = %+v, want %+v", got, want)
 	}
 }

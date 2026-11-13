@@ -6,6 +6,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"strings"
 	"time"
@@ -14,7 +15,7 @@ import (
 // verifiedBotMarkTTL keeps verified crawlers out of traffic analysis.
 const verifiedBotMarkTTL = time.Hour
 
-func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if VerifyBot feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureVerifyBot) == 0 {
 		decision.Set(action.Continue)
@@ -53,9 +54,7 @@ func VerifyBot(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *
 
 	verified, fresh, err := defaultBotVerifier.verify(ip, bot, exptractRDNS)
 	if verified {
-		if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok {
-			marker.MarkNeutral(reqData.RemoteIP, verifiedBotMarkTTL)
-		}
+		rt.MarkNeutral(reqData.RemoteIP, verifiedBotMarkTTL)
 		decision.Set(action.Done)
 		return
 	}

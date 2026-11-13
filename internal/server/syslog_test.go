@@ -6,6 +6,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"sync"
 	"testing"
 	"time"
@@ -16,7 +17,7 @@ import (
 // We rely on the fact that we implemented a constrained worker pool.
 func TestSyslogConcurrency(t *testing.T) {
 	// Setup dependencies
-	mockSharedMem := &dataType.SharedMemory{
+	mockSharedMem := &state.Runtime{
 		ActionRuleEngine: action.NewActionRuleEngine(time.Minute),
 	}
 	siteRules := make(map[string]*config.RuleSet)
@@ -28,17 +29,12 @@ func TestSyslogConcurrency(t *testing.T) {
 		},
 	}
 
-	// Install a test-local config manager and restore the prior global after the test.
-	prevManager := config.Manager
-	config.Manager = &config.ConfigManager{}
-	t.Cleanup(func() {
-		config.Manager = prevManager
-	})
-	config.Manager.Set(&config.SiteConfigSnapshot{
+	configs := config.NewManager()
+	configs.Set(&config.SiteConfigSnapshot{
 		SiteRules: siteRules,
 	})
 
-	analyzer := NewAdaptiveTrafficAnalyzer(mockSharedMem)
+	analyzer := NewAdaptiveTrafficAnalyzer(mockSharedMem, configs)
 
 	// Find a free port
 	conn, err := net.ListenPacket("udp", ":0")

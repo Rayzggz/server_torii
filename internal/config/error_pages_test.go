@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"testing"
 )
 
@@ -46,8 +45,7 @@ func TestReloadErrorPages(t *testing.T) {
 	writeFile(t, page, "v1")
 	cfg := &MainConfig{ErrorPage: pagesDir, Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: rules}}}
 	manager := &ConfigManager{}
-	shared := &dataType.SharedMemory{}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	render := func() string {
@@ -66,7 +64,7 @@ func TestReloadErrorPages(t *testing.T) {
 	if got := render(); got != "v1" {
 		t.Fatalf("page = %q before reload, want v1", got)
 	}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	if got := render(); got != "v2" {
@@ -75,7 +73,7 @@ func TestReloadErrorPages(t *testing.T) {
 
 	current := manager.Get()
 	writeFile(t, page, "{{.Broken")
-	if err := manager.Reload(cfg, shared); err == nil {
+	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("broken template accepted on reload")
 	}
 	if manager.Get() != current {
@@ -85,7 +83,7 @@ func TestReloadErrorPages(t *testing.T) {
 	if err := os.Remove(page); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatalf("missing page rejected: %v", err)
 	}
 	if manager.Get().Pages.Get(PageForbidden) != nil {

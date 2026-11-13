@@ -8,10 +8,11 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/rules"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 )
 
-type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
+type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 
 // checkStep pairs a check with the rules.Skip* bit that lets a custom skip rule bypass it.
 type checkStep struct {
@@ -19,7 +20,8 @@ type checkStep struct {
 	fn   CheckFunc
 }
 
-func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
+// CheckMain runs the check pipeline and answers the auth_request subrequest.
+func (s *Server) CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet) {
 	decision := action.NewDecision()
 
 	checkSteps := []checkStep{
@@ -42,7 +44,7 @@ func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, rule
 		if decision.SkipMask&step.skip != 0 {
 			continue
 		}
-		step.fn(userRequestData, ruleSet, decision, sharedMem)
+		step.fn(userRequestData, ruleSet, decision, s.rt)
 		if decision.State == action.Done {
 			break
 		}

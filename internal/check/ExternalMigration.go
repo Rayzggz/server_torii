@@ -7,13 +7,14 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"strconv"
 	"strings"
 	"time"
 )
 
-func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func ExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if ExternalMigration feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureExternalMigration) == 0 {
 		decision.Set(action.Continue)

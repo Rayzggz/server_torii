@@ -92,17 +92,13 @@ func TestEval(t *testing.T) {
 		{`http.host eq "www.example.com" ^^ ip.src eq 8.8.8.8`, false},
 		{`http.request.uri.path wildcard "/wp-*" and not ip.src in {10.0.0.0/8}`, true},
 	}
-	sharedMem := &dataType.SharedMemory{
-		CountryResolver:         stubResolver{country: "us"},
-		AdaptiveTrafficAnalyzer: stubEvidence{ip: "8.8.8.8"},
-	}
 	for _, tc := range cases {
 		prog, err := Compile(tc.expr)
 		if err != nil {
 			t.Errorf("Compile(%q) error: %v", tc.expr, err)
 			continue
 		}
-		if got := prog.Eval(NewContext(testRequest(), sharedMem)); got != tc.want {
+		if got := prog.Eval(NewContext(testRequest(), stubResolver{country: "us"}, stubEvidence{ip: "8.8.8.8"})); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
 	}
@@ -128,7 +124,7 @@ func TestEvalMissingData(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Compile(%q) error: %v", tc.expr, err)
 		}
-		if got := prog.Eval(NewContext(req, nil)); got != tc.want {
+		if got := prog.Eval(NewContext(req, nil, nil)); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
 	}
@@ -140,7 +136,7 @@ func TestIPv4MappedAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := &dataType.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
-	if !prog.Eval(NewContext(req, nil)) {
+	if !prog.Eval(NewContext(req, nil, nil)) {
 		t.Error("IPv4-mapped address should match its IPv4 prefix")
 	}
 }

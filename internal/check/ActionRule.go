@@ -4,15 +4,12 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 )
 
-func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	if sharedMem.ActionRuleEngine == nil {
-		decision.Set(action.Continue)
-		return
-	}
-	engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine)
-	if !ok {
+func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+	engine := rt.ActionRuleEngine
+	if engine == nil {
 		decision.Set(action.Continue)
 		return
 	}
@@ -24,14 +21,14 @@ func ActionRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision 
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case action.ActionCaptcha:
 		reqData.FeatureControl |= dataType.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, sharedMem)
+		Captcha(reqData, ruleSet, decision, rt)
 	case action.ActionCaptchaUnverified:
-		if ev, ok := dataType.BrowserEvidenceOf(sharedMem); ok && ev.HasBrowserEvidence(reqData.RemoteIP) {
+		if rt.HasBrowserEvidence(reqData.RemoteIP) {
 			decision.Set(action.Continue)
 			return
 		}
 		reqData.FeatureControl |= dataType.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, sharedMem)
+		Captcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)
 	}

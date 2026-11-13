@@ -10,6 +10,7 @@ import (
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"strconv"
 	"strings"
 	"testing"
@@ -103,7 +104,7 @@ func (f *externalFixture) migrate(t *testing.T, reqData dataType.UserRequest, q 
 	target := "/torii/external_migration?" + q.Encode()
 	reqData.Uri = target
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, pagesFor(f.cfg))
 	return rec
 }
 
@@ -147,7 +148,7 @@ func TestExternalMigrationCallbackGrantsClearance(t *testing.T) {
 	next := f.reqData
 	next.ToriiClearance = clearance
 	decision := action.NewDecision()
-	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
+	check.ExternalMigration(next, f.ruleSet, decision, &state.Runtime{})
 	if decision.State != action.Continue {
 		t.Fatalf("clearance rejected: state=%v code=%q", decision.State, decision.Verdict)
 	}
@@ -273,7 +274,7 @@ func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
 	reqData.Uri = "/protected"
 
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -319,7 +320,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	reqData.Uri = "/protected"
 
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
 	loc, _ := url.Parse(rec.Header().Get("Location"))
 	provider := loc.Query()
 
@@ -338,7 +339,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	next := f.reqData
 	next.ToriiClearance = clearanceFrom(t, cb)
 	decision := action.NewDecision()
-	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
+	check.ExternalMigration(next, f.ruleSet, decision, &state.Runtime{})
 	if decision.State != action.Continue {
 		t.Fatalf("clearance rejected after round trip: %v %q", decision.State, decision.Verdict)
 	}
@@ -376,7 +377,7 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 			reqData.Uri = tt.uri
 
 			rec := httptest.NewRecorder()
-			CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+			NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
 
 			loc, err := url.Parse(rec.Header().Get("Location"))
 			if err != nil {

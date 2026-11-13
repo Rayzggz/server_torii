@@ -4,6 +4,7 @@ import (
 	"log"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"sync"
 	"time"
 )
@@ -50,20 +51,21 @@ type Analyzer interface {
 
 // analysisContext carries one site's due window to an Analyzer.
 type analysisContext struct {
-	Logs      []LogEntry
-	Rule      *config.RuleSet
-	State     *siteState
-	SharedMem *dataType.SharedMemory
-	Marks     *ipExpiry // exempt clients
-	Evidence  *ipExpiry // browser-like clients
-	Now       time.Time
-	Interval  time.Duration
+	Logs     []LogEntry
+	Rule     *config.RuleSet
+	State    *siteState
+	Runtime  *state.Runtime
+	Marks    *ipExpiry // exempt clients
+	Evidence *ipExpiry // browser-like clients
+	Now      time.Time
+	Interval time.Duration
 }
 
 type AdaptiveTrafficAnalyzer struct {
 	buffer      *LogBuffer
 	analyzers   []Analyzer
-	sharedMem   *dataType.SharedMemory
+	rt          *state.Runtime
+	configs     *config.ConfigManager
 	stopCh      chan struct{}
 	startOnce   sync.Once
 	stopOnce    sync.Once
@@ -92,11 +94,14 @@ type analysisWindow struct {
 	state    *siteState
 }
 
-func NewAdaptiveTrafficAnalyzer(sharedMem *dataType.SharedMemory) *AdaptiveTrafficAnalyzer {
+// NewAdaptiveTrafficAnalyzer builds an analyzer that reads site rules from configs and enforces through rt.
+// Either may be nil: without configs nothing is analyzed, without rt detections are only logged.
+func NewAdaptiveTrafficAnalyzer(rt *state.Runtime, configs *config.ConfigManager) *AdaptiveTrafficAnalyzer {
 	return &AdaptiveTrafficAnalyzer{
 		buffer:    NewLogBuffer(),
 		analyzers: []Analyzer{&trafficDetector{}},
-		sharedMem: sharedMem,
+		rt:        rt,
+		configs:   configs,
 		stopCh:    make(chan struct{}),
 		windows:   make(map[string]*analysisWindow),
 		marks:     newIPExpiry(maxMarkedClients),
@@ -209,10 +214,7 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 		ata.ingest.Clear() // drop settings of replaced rules
 		ata.lastSweep = now
 	}
-	var snap *config.SiteConfigSnapshot
-	if config.Manager != nil {
-		snap = config.Manager.Get()
-	}
+	snap := ata.configs.Get()
 	if snap == nil {
 		clear(ata.windows)
 		return
@@ -255,14 +257,14 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 		}
 		if len(window.logs) > 0 {
 			ctx := &analysisContext{
-				Logs:      window.logs,
-				Rule:      rules,
-				State:     window.state,
-				SharedMem: ata.sharedMem,
-				Marks:     ata.marks,
-				Evidence:  ata.evidence,
-				Now:       now,
-				Interval:  interval,
+				Logs:     window.logs,
+				Rule:     rules,
+				State:    window.state,
+				Runtime:  ata.rt,
+				Marks:    ata.marks,
+				Evidence: ata.evidence,
+				Now:      now,
+				Interval: interval,
 			}
 			for _, analyzer := range ata.analyzers {
 				analyzer.Analyze(ctx)
@@ -277,10 +279,7 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 
 // findRuleByTag looks up the RuleSet that matches the given tag from the current snapshot
 func (ata *AdaptiveTrafficAnalyzer) findRuleByTag(tag string) *config.RuleSet {
-	if config.Manager == nil {
-		return nil
-	}
-	snap := config.Manager.Get()
+	snap := ata.configs.Get()
 	if snap == nil {
 		return nil
 	}

@@ -8,6 +8,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"sort"
 	"strings"
@@ -59,7 +60,7 @@ func (d *trafficDetector) Analyze(ctx *analysisContext) {
 		window:   ctx.Interval * time.Duration(rule.WindowBuckets),
 		halfLife: time.Duration(rule.URIDetection.Baseline.HalfLife) * time.Second,
 		assets:   toSet(rule.BrowserEvidence.AssetExtensions),
-		enforce:  newEnforcer(ctx.SharedMem, rule.IPDetection.MaxBroadcastPerTick),
+		enforce:  newEnforcer(ctx.Runtime, rule.IPDetection.MaxBroadcastPerTick),
 	}
 	det.run()
 }
@@ -534,24 +535,26 @@ func (det *detection) logf(format string, args ...any) {
 
 // enforcer turns detections into action rules and gossip broadcasts.
 type enforcer struct {
-	engine       *action.ActionRuleEngine
-	gossip       chan dataType.GossipMessage
+	rt           *state.Runtime
 	maxBroadcast int
 	broadcasts   int
 	suppressed   int
 }
 
-func newEnforcer(sharedMem *dataType.SharedMemory, maxBroadcast int) *enforcer {
-	e := &enforcer{maxBroadcast: maxBroadcast}
-	if sharedMem != nil {
-		e.engine, _ = sharedMem.ActionRuleEngine.(*action.ActionRuleEngine)
-		e.gossip = sharedMem.GossipChan
+func newEnforcer(rt *state.Runtime, maxBroadcast int) *enforcer {
+	return &enforcer{rt: rt, maxBroadcast: maxBroadcast}
+}
+
+func (e *enforcer) engine() *action.ActionRuleEngine {
+	if e.rt == nil {
+		return nil
 	}
-	return e
+	return e.rt.ActionRuleEngine
 }
 
 func (e *enforcer) hasIPRule(ip string) bool {
-	return e.engine != nil && e.engine.HasIPRule(ip)
+	engine := e.engine()
+	return engine != nil && engine.HasIPRule(ip)
 }
 
 // apply records the rule. limited broadcasts count toward maxBroadcast; the rest stay local.
@@ -567,26 +570,19 @@ func (e *enforcer) apply(ruleType, value string, act dataType.AnalyzerAction, du
 	default:
 		return
 	}
-	if e.engine == nil {
+	if e.engine() == nil {
 		return
 	}
-	if ruleType == "IP" {
-		e.engine.AddIPRule(value, at, dur)
-	} else {
-		e.engine.AddURIRule(value, at, dur)
-	}
+	broadcast := true
 	if limited {
 		if e.broadcasts >= e.maxBroadcast {
 			e.suppressed++
-			return
+			broadcast = false
+		} else {
+			e.broadcasts++
 		}
-		e.broadcasts++
 	}
-	nodeName := ""
-	if config.GlobalConfig != nil {
-		nodeName = config.GlobalConfig.NodeName
-	}
-	utils.BroadcastActionRule(nodeName, ruleType, value, string(at), dur, e.gossip)
+	e.rt.ApplyRule(ruleType, value, at, dur, broadcast)
 }
 
 func actionVerb(act dataType.AnalyzerAction) string {

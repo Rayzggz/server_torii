@@ -4,6 +4,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
@@ -21,7 +22,7 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 	}}
 	for _, tc := range []struct {
 		name     string
-		analyzer any
+		analyzer dataType.BrowserEvidence
 		ip       string
 		wantDone bool
 	}{
@@ -30,7 +31,7 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 		{"no analyzer is challenged", nil, "8.8.8.8", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			shared := &dataType.SharedMemory{ActionRuleEngine: engine, AdaptiveTrafficAnalyzer: tc.analyzer}
+			shared := &state.Runtime{ActionRuleEngine: engine, BrowserEvidence: tc.analyzer}
 			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 			decision := action.NewDecision()
 			ActionRule(dataType.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)

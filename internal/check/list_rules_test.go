@@ -6,6 +6,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func TestIPListRules(t *testing.T) {
 		name    string
 		feature uint16
 		code    string
-		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
+		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
 		{"allow", dataType.FeatureIPAllow, "200", IPAllowList},
 		{"block", dataType.FeatureIPBlock, "403", IPBlockList},
@@ -70,7 +71,7 @@ func TestURLListRules(t *testing.T) {
 		name    string
 		feature uint16
 		code    string
-		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
+		run     func(dataType.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
 		{"allow", dataType.FeatureURLAllow, "200", URLAllowList},
 		{"block", dataType.FeatureURLBlock, "403", URLBlockList},

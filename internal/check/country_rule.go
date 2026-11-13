@@ -5,12 +5,13 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"strings"
 )
 
 // CountryRule applies a country override, default policy, or unknown policy.
-func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	rule := ruleSet.CountryRule
 	if reqData.FeatureControl&dataType.FeatureCountryRule == 0 || rule == nil {
 		decision.Set(action.Continue)
@@ -24,10 +25,10 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 		reason = "unknown=invalid_ip"
 	case !addr.IsGlobalUnicast() || addr.IsPrivate():
 		reason = "unknown=non_routable_ip"
-	case sharedMem.CountryResolver == nil:
+	case rt.CountryResolver == nil:
 		reason = "unknown=missing_resolver"
 	default:
-		country, err := sharedMem.CountryResolver.Country(addr)
+		country, err := rt.CountryResolver.Country(addr)
 		if err != nil {
 			reason = "unknown=lookup_error"
 		} else if country != "" {
@@ -46,7 +47,7 @@ func CountryRule(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 	case dataType.CountryCaptcha:
 		utils.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
 		reqData.FeatureControl |= dataType.FeatureCaptcha
-		Captcha(reqData, ruleSet, decision, sharedMem)
+		Captcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)
 	}

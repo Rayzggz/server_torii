@@ -5,17 +5,18 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/rules"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 )
 
 // CustomRules evaluates the site's expression rules in order and applies the first terminating action.
-func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	customRules := ruleSet.CustomRules
 	if reqData.FeatureControl&dataType.FeatureCustomRules == 0 || customRules == nil || len(customRules.Rules) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
-	ctx := rules.NewContext(&reqData, sharedMem)
+	ctx := rules.NewContext(&reqData, rt.CountryResolver, rt.BrowserEvidence)
 	for _, rule := range customRules.Rules {
 		if !rule.Program.Eval(ctx) {
 			continue
@@ -30,11 +31,11 @@ func CustomRules(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision
 			return
 		case rules.ActionCaptcha:
 			reqData.FeatureControl |= dataType.FeatureCaptcha
-			Captcha(reqData, ruleSet, decision, sharedMem)
+			Captcha(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionExternal:
 			reqData.FeatureControl |= dataType.FeatureExternalMigration
-			ExternalMigration(reqData, ruleSet, decision, sharedMem)
+			ExternalMigration(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionContinue:
 			decision.Set(action.Continue)

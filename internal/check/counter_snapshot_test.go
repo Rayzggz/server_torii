@@ -5,12 +5,13 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 )
 
 func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		HTTPFloodRule: &dataType.HTTPFloodRule{
 			HTTPFloodSpeedLimit:   map[int64]int64{1: 1},
@@ -24,7 +25,7 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 		FeatureControl: dataType.FeatureHTTPFlood,
 	}
 
-	HTTPFlood(reqData, ruleSet, decision, sharedMem)
+	HTTPFlood(reqData, ruleSet, decision, rt)
 
 	if decision.State != action.Continue {
 		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
@@ -33,7 +34,7 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 
 func TestCaptchaNilCounterContinue(t *testing.T) {
 	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		CAPTCHARule: &dataType.CaptchaRule{
 			CaptchaFailureLimit: map[int64]int64{1: 1},
@@ -44,7 +45,7 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 		FeatureControl: dataType.FeatureCaptcha,
 	}
 
-	Captcha(reqData, ruleSet, decision, sharedMem)
+	Captcha(reqData, ruleSet, decision, rt)
 
 	if decision.State != action.Continue {
 		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
@@ -53,7 +54,7 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 
 func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		CAPTCHARule: &dataType.CaptchaRule{},
 	}
@@ -62,7 +63,7 @@ func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	}
 	req := httptest.NewRequest("POST", "/captcha", nil)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, reqData, ruleSet, decision, rt)
 
 	if decision.State != action.Done {
 		t.Fatalf("expected done decision, got state=%v", decision.State)

@@ -7,6 +7,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"strings"
 	"testing"
@@ -44,7 +45,7 @@ func signExternalClearance(reqData dataType.UserRequest, secret string, ts int64
 
 func runExternalMigration(reqData dataType.UserRequest, ruleSet *config.RuleSet) *action.Decision {
 	decision := action.NewDecision()
-	ExternalMigration(reqData, ruleSet, decision, &dataType.SharedMemory{})
+	ExternalMigration(reqData, ruleSet, decision, &state.Runtime{})
 	return decision
 }
 

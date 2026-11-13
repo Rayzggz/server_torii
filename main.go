@@ -12,6 +12,7 @@ import (
 	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
 	"server_torii/internal/server"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"syscall"
 	"time"
@@ -33,7 +34,6 @@ func run() int {
 	if err != nil {
 		log.Printf("[WARNING] Load config failed: %v. Using default config.", err)
 	}
-	config.GlobalConfig = cfg
 
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
@@ -43,73 +43,47 @@ func run() int {
 	)
 	defer countryDatabase.CloseOrWarn()
 
-	sharedMem := &dataType.SharedMemory{
+	rt := &state.Runtime{
 		ActionRuleEngine: engine,
 		CountryResolver:  countryDatabase,
+		NodeName:         cfg.NodeName,
 	}
 
-	err = config.InitManager(cfg, sharedMem)
-	if err != nil {
+	// The rate counters must cover the new limits before any request sees the new rules.
+	configs := config.NewManager()
+	reload := func() error {
+		return configs.Reload(cfg, func(snap *config.SiteConfigSnapshot) {
+			rt.Resize(snap.CounterWindows())
+		})
+	}
+	if err := reload(); err != nil {
 		log.Printf("[ERROR] Failed to initialize config manager: %v", err)
 		return 1
 	}
 
+	var gossipManager *server.GossipManager
 	if cfg.EnableGossip {
-		sharedMem.GossipChan = make(chan dataType.GossipMessage, 1000)
-
-		// Initialize GossipManager
-		gossipManager := server.NewGossipManager(cfg, engine)
-		sharedMem.GossipManager = gossipManager
-		go gossipManager.Start(sharedMem.GossipChan)
+		rt.GossipChan = make(chan dataType.GossipMessage, 1000)
+		gossipManager = server.NewGossipManager(cfg, engine)
+		go gossipManager.Start(rt.GossipChan)
 	}
 
-	//GC
-	gcStopCh := make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(time.Minute)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if sharedMem != nil {
-					if c := sharedMem.HTTPFloodSpeedLimitCounter.Load(); c != nil {
-						c.GC()
-					}
-					if c := sharedMem.HTTPFloodSameURILimitCounter.Load(); c != nil {
-						c.GC()
-					}
-					if c := sharedMem.HTTPFloodFailureLimitCounter.Load(); c != nil {
-						c.GC()
-					}
-					if c := sharedMem.CaptchaFailureLimitCounter.Load(); c != nil {
-						c.GC()
-					}
-				}
-			case <-gcStopCh:
-				return
-			}
-		}
-	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go rt.RunGC(ctx, time.Minute)
 
 	// Initialize log system
 	utils.InitLogx(cfg.LogPath)
 
 	log.Printf("Ready to start server on port %s", cfg.Port)
 
-	//set default log file
-	defaultLogPath := filepath.Join(cfg.LogPath, "server_torii.log")
-	logFile, err := os.OpenFile(defaultLogPath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	closeLog, err := logToFile(filepath.Join(cfg.LogPath, "server_torii.log"))
 	if err != nil {
 		log.Printf("[ERROR] Failed to open log file: %v", err)
 		return 1
 	}
-	defer func() {
-		log.SetOutput(os.Stderr)
-		if err := logFile.Close(); err != nil {
-			log.Printf("[WARNING] Failed to close log file: %v", err)
-		}
-	}()
-	log.SetOutput(logFile)
+	defer closeLog()
 
 	//log startup information and time
 	log.Printf("%s - Server starting...", time.Now().Format(time.RFC3339))
@@ -118,14 +92,10 @@ func run() int {
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(stop)
 
-	defer close(gcStopCh)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
+	srv := server.NewServer(cfg, configs, rt, gossipManager)
 	serverErr := make(chan error, 1)
 	go func() {
-		serverErr <- server.StartServer(ctx, cfg, sharedMem)
+		serverErr <- srv.Run(ctx)
 	}()
 
 	for {
@@ -135,14 +105,14 @@ func run() int {
 			case syscall.SIGHUP:
 				log.Println("Reloading site rules...")
 				countryDatabase.ReloadOrWarn()
-				if err := config.Manager.Reload(cfg, sharedMem); err != nil {
+				if err := reload(); err != nil {
 					log.Printf("[ERROR] Reload failed: %v", err)
 				}
 				continue
 			case syscall.SIGINT, syscall.SIGTERM:
 				log.Printf("Received %v, stopping server...", sig)
 				cancel()
-				// Wait for StartServer to finish Shutdown and run its defers.
+				// Wait for Run to finish Shutdown and run its defers.
 				if err := <-serverErr; err != nil {
 					log.Printf("[ERROR] Server shutdown error: %v", err)
 					return 1
@@ -159,4 +129,19 @@ func run() int {
 			return 0
 		}
 	}
+}
+
+// logToFile sends the standard logger to path. The returned function restores stderr and closes the file.
+func logToFile(path string) (func(), error) {
+	logFile, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0640)
+	if err != nil {
+		return nil, err
+	}
+	log.SetOutput(logFile)
+	return func() {
+		log.SetOutput(os.Stderr)
+		if err := logFile.Close(); err != nil {
+			log.Printf("[WARNING] Failed to close log file: %v", err)
+		}
+	}, nil
 }

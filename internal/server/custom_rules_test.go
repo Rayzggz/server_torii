@@ -7,6 +7,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/rules"
+	"server_torii/internal/state"
 	"testing"
 )
 
@@ -24,7 +25,7 @@ func customRule(t *testing.T, id string, act rules.Action, expr string, skip ...
 }
 
 func TestCheckMainCustomRules(t *testing.T) {
-	floodLimited := func(rs *config.RuleSet, shared *dataType.SharedMemory) {
+	floodLimited := func(rs *config.RuleSet, shared *state.Runtime) {
 		rs.HTTPFloodRule.HTTPFloodSpeedLimit = map[int64]int64{1: 0}
 		shared.HTTPFloodSpeedLimitCounter.Store(dataType.NewCounter(16, 1))
 		shared.HTTPFloodSameURILimitCounter.Store(dataType.NewCounter(16, 1))
@@ -33,7 +34,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 	for _, tc := range []struct {
 		name       string
 		rules      func(t *testing.T) []*rules.Rule
-		setup      func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory)
+		setup      func(rs *config.RuleSet, req *dataType.UserRequest, shared *state.Runtime)
 		wantStatus int
 		wantAction string
 	}{
@@ -70,7 +71,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionCaptcha, `ip.src in {192.0.2.0/24}`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *state.Runtime) {
 				req.ToriiClearance = string(check.GenClearance(*req, *rs))
 			},
 			wantStatus: 200,
@@ -87,7 +88,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionAllow, `http.user_agent contains "Monitor"`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= dataType.FeatureHTTPFlood | dataType.FeatureCountryRule
 				rs.CountryRule.UnknownAction = dataType.CountryBlock
@@ -99,7 +100,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `starts_with(http.request.uri.path, "/login")`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= dataType.FeatureHTTPFlood
 			},
@@ -110,7 +111,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `true`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= dataType.FeatureHTTPFlood | dataType.FeatureCountryRule
 				rs.CountryRule.UnknownAction = dataType.CountryBlock
@@ -122,7 +123,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `http.request.uri.path eq "/other"`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= dataType.FeatureHTTPFlood
 			},
@@ -173,7 +174,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "a", rules.ActionContinue, `true`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *state.Runtime) {
 				req.FeatureControl |= dataType.FeatureCountryRule
 				rs.CountryRule.UnknownAction = dataType.CountryBlock
 			},
@@ -184,7 +185,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `true`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *state.Runtime) {
 				rs.URLAllowRule.List = &dataType.URLRuleList{}
 				rs.URLAllowRule.List.Append(&dataType.URLRule{Pattern: "/login?next=/"})
 				req.FeatureControl |= dataType.FeatureURLAllow
@@ -196,7 +197,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `true`)}
 			},
-			setup: func(_ *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
+			setup: func(_ *config.RuleSet, req *dataType.UserRequest, _ *state.Runtime) {
 				req.FeatureControl &^= dataType.FeatureCustomRules
 			},
 			wantStatus: 200,
@@ -218,13 +219,13 @@ func TestCheckMainCustomRules(t *testing.T) {
 				Headers:        headers,
 				FeatureControl: dataType.FeatureCustomRules,
 			}
-			shared := &dataType.SharedMemory{}
+			shared := &state.Runtime{}
 			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 			if tc.setup != nil {
 				tc.setup(rs, &req, shared)
 			}
 			recorder := httptest.NewRecorder()
-			CheckMain(recorder, req, rs, &config.MainConfig{}, shared)
+			NewServer(&config.MainConfig{}, nil, shared, nil).CheckMain(recorder, req, rs)
 			if recorder.Code != tc.wantStatus || recorder.Header().Get("Torii-Action") != tc.wantAction {
 				t.Fatalf("got %d %q, want %d %q", recorder.Code, recorder.Header().Get("Torii-Action"), tc.wantStatus, tc.wantAction)
 			}

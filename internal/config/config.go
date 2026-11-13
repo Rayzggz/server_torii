@@ -5,8 +5,6 @@ import (
 	"path/filepath"
 )
 
-var GlobalConfig *MainConfig
-
 // LoadMainConfig reads the configuration file and returns the configuration object.
 func LoadMainConfig(basePath string) (*MainConfig, error) {
 	configPath := resolveConfigPath(basePath)

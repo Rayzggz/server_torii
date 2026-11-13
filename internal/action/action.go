@@ -5,7 +5,6 @@ type checkState int
 const (
 	Continue checkState = iota
 	Done
-	Jump
 )
 
 // Verdict is the outcome a check assigns to a request.
@@ -64,15 +63,14 @@ func (r CaptchaResult) String() string {
 
 // Decision saves the result of the decision
 type Decision struct {
-	Verdict   Verdict
-	State     checkState
-	Captcha   CaptchaResult
-	JumpIndex int
-	SkipMask  uint32 // checks to skip for the rest of the request, set by custom skip rules
+	Verdict  Verdict
+	State    checkState
+	Captcha  CaptchaResult
+	SkipMask uint32 // checks to skip for the rest of the request, set by custom skip rules
 }
 
 func NewDecision() *Decision {
-	return &Decision{Verdict: VerdictAllow, State: Continue, Captcha: CaptchaNone, JumpIndex: -1}
+	return &Decision{Verdict: VerdictAllow, State: Continue, Captcha: CaptchaNone}
 }
 
 func (d *Decision) Set(state checkState) {
@@ -88,10 +86,4 @@ func (d *Decision) SetCaptchaResult(state checkState, verdict Verdict, result Ca
 	d.State = state
 	d.Verdict = verdict
 	d.Captcha = result
-}
-
-func (d *Decision) SetJump(state checkState, verdict Verdict, jumpIndex int) {
-	d.State = state
-	d.Verdict = verdict
-	d.JumpIndex = jumpIndex
 }

@@ -5,10 +5,11 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 )
 
-func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func IPBlockList(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if IPBlock feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureIPBlock) == 0 {
 		decision.Set(action.Continue)

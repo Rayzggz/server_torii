@@ -18,27 +18,28 @@ import (
 	"time"
 )
 
-func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory, pages *config.ErrorPages) {
+// CheckTorii serves every Torii endpoint other than the checker; unknown paths get the 403 page.
+func (s *Server) CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	decision := action.NewDecision()
 
 	decision.SetVerdict(action.Continue, action.VerdictBlock)
-	if strings.HasPrefix(r.URL.Path, cfg.WebPath+"/checker_pages/") {
-		handleCheckerPages(w, r, reqData, ruleSet, cfg, pages)
+	if strings.HasPrefix(r.URL.Path, s.cfg.WebPath+"/checker_pages/") {
+		s.handleCheckerPages(w, r, reqData, ruleSet, pages)
 		return
-	} else if reqData.Uri == cfg.WebPath+"/captcha/challenge" {
+	} else if reqData.Uri == s.cfg.WebPath+"/captcha/challenge" {
 		handleCaptchaChallenge(w, r, reqData, ruleSet)
 		return
-	} else if reqData.Uri == cfg.WebPath+"/captcha" {
-		check.CheckCaptcha(r, reqData, ruleSet, decision, sharedMem)
-	} else if reqData.Uri == cfg.WebPath+"/health_check" {
-		handleHealthCheck(w, r, reqData, ruleSet, cfg)
+	} else if reqData.Uri == s.cfg.WebPath+"/captcha" {
+		check.CheckCaptcha(r, reqData, ruleSet, decision, s.rt)
+	} else if reqData.Uri == s.cfg.WebPath+"/health_check" {
+		s.handleHealthCheck(w, reqData)
 		return
-	} else if strings.HasPrefix(reqData.Uri, cfg.WebPath+"/external_migration") {
-		handleExternalMigration(w, r, reqData, ruleSet, cfg, pages)
+	} else if strings.HasPrefix(reqData.Uri, s.cfg.WebPath+"/external_migration") {
+		s.handleExternalMigration(w, r, reqData, ruleSet, pages)
 		return
-	} else if r.URL.Path == cfg.WebPath+"/gossip" {
-		if cfg.EnableGossip && sharedMem.GossipManager != nil {
-			sharedMem.GossipManager.HandleGossip(w, r)
+	} else if r.URL.Path == s.cfg.WebPath+"/gossip" {
+		if s.cfg.EnableGossip && s.gossip != nil {
+			s.gossip.HandleGossip(w, r)
 			return
 		}
 	}
@@ -60,8 +61,8 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			}
 			return
 		case action.CaptchaGood:
-			if marker, ok := dataType.TrafficMarkerOf(sharedMem); ok && ruleSet.CAPTCHARule != nil {
-				marker.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
+			if ruleSet.CAPTCHARule != nil {
+				s.rt.MarkVerified(reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
 			}
 			setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 			w.WriteHeader(http.StatusOK)
@@ -87,7 +88,7 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   s.cfg.NodeName,
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
@@ -129,7 +130,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData data
 	}
 }
 
-func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig) {
+func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData dataType.UserRequest) {
 
 	var builder strings.Builder
 	builder.WriteString("ok\n")
@@ -146,7 +147,7 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 	builder.WriteString(strconv.FormatFloat(float64(time.Now().UnixNano())/1e9, 'f', 3, 64))
 	builder.WriteString("\n")
 	builder.WriteString("sliver=")
-	builder.WriteString(cfg.NodeName)
+	builder.WriteString(s.cfg.NodeName)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -157,11 +158,11 @@ func handleHealthCheck(w http.ResponseWriter, r *http.Request, reqData dataType.
 	}
 }
 
-func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, pages *config.ErrorPages) {
+func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
 	if err != nil {
 		utils.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
-		showExternalMigrationError(w, reqData, cfg, pages, "Invalid Original URI")
+		s.showExternalMigrationError(w, reqData, pages, "Invalid Original URI")
 		return
 	}
 
@@ -170,34 +171,34 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 
 	if timestampStr == "" || hmacParam == "" {
 		utils.LogInfo(reqData, "Missing required parameters for external migration", "handleExternalMigration")
-		showExternalMigrationError(w, reqData, cfg, pages, "Missing required parameters")
+		s.showExternalMigrationError(w, reqData, pages, "Missing required parameters")
 		return
 	}
 
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
 		utils.LogInfo(reqData, "Invalid timestamp format", fmt.Sprintf("handleExternalMigration: %v", err))
-		showExternalMigrationError(w, reqData, cfg, pages, "Invalid timestamp format")
+		s.showExternalMigrationError(w, reqData, pages, "Invalid timestamp format")
 		return
 	}
 
 	currentTime := time.Now().Unix()
 	if currentTime-timestamp > 30 {
 		utils.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: 30s", currentTime-timestamp), "handleExternalMigration")
-		showExternalMigrationError(w, reqData, cfg, pages, "Migration link has expired")
+		s.showExternalMigrationError(w, reqData, pages, "Migration link has expired")
 		return
 	}
 
 	if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
 		utils.LogInfo(reqData, "Session verification failed for external migration", "handleExternalMigration")
-		showExternalMigrationError(w, reqData, cfg, pages, "Invalid session")
+		s.showExternalMigrationError(w, reqData, pages, "Invalid session")
 		return
 	}
 
 	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.ExternalMigrationRule.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
 		utils.LogInfo(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
-		showExternalMigrationError(w, reqData, cfg, pages, "Invalid migration signature")
+		s.showExternalMigrationError(w, reqData, pages, "Invalid migration signature")
 		return
 	}
 
@@ -205,7 +206,7 @@ func handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData dat
 	http.Redirect(w, r, originalURI, http.StatusFound)
 }
 
-func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest, cfg *config.MainConfig, pages *config.ErrorPages, errorMsg string) {
+func (s *Server) showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest, pages *config.ErrorPages, errorMsg string) {
 	tpl := pages.Get(config.PageError)
 	if tpl == nil {
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
@@ -223,7 +224,7 @@ func showExternalMigrationError(w http.ResponseWriter, data dataType.UserRequest
 		ErrorCode:    "400",
 		ErrorTitle:   "Migration Error",
 		ErrorMessage: errorMsg,
-		EdgeTag:      cfg.NodeName,
+		EdgeTag:      s.cfg.NodeName,
 		ConnectIP:    data.RemoteIP,
 		Date:         time.Now().Format("2006-01-02 15:04:05"),
 	}
@@ -302,9 +303,9 @@ func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacV
 		"&hmac=" + url.QueryEscape(hmacValue)
 }
 
-func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, pages *config.ErrorPages) {
+func (s *Server) handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	switch r.URL.Path {
-	case cfg.WebPath + "/checker_pages/403":
+	case s.cfg.WebPath + "/checker_pages/403":
 		tpl := pages.Get(config.PageForbidden)
 		if tpl == nil {
 			utils.LogError(reqData, "Error page 403.html is not loaded", "CheckMain")
@@ -317,7 +318,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   s.cfg.NodeName,
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
@@ -329,7 +330,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 		writeHTML(w, reqData, http.StatusForbidden, body, "CheckMain")
 
-	case cfg.WebPath + "/checker_pages/CAPTCHA":
+	case s.cfg.WebPath + "/checker_pages/CAPTCHA":
 		captchaPage := config.PageCaptcha
 		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
 			captchaPage = config.PageCaptchaAltcha
@@ -349,7 +350,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
 		writeHTML(w, reqData, http.StatusServiceUnavailable, body, "CheckMain")
 
-	case cfg.WebPath + "/checker_pages/429":
+	case s.cfg.WebPath + "/checker_pages/429":
 		tpl := pages.Get(config.PageTooManyRequests)
 		if tpl == nil {
 			utils.LogError(reqData, "Error page 429.html is not loaded", "CheckMain")
@@ -361,7 +362,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   s.cfg.NodeName,
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}
@@ -373,7 +374,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 		}
 		writeHTML(w, reqData, http.StatusTooManyRequests, body, "CheckMain")
 
-	case cfg.WebPath + "/checker_pages/EXTERNAL":
+	case s.cfg.WebPath + "/checker_pages/EXTERNAL":
 		externalMigrationSessionID := check.GenExternalMigrationSessionID(reqData, *ruleSet)
 
 		setToriiCookie(w, "__torii_session_id", string(externalMigrationSessionID), http.SameSiteLaxMode)
@@ -409,7 +410,7 @@ func handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData dataType
 			ConnectIP string
 			Date      string
 		}{
-			EdgeTag:   cfg.NodeName,
+			EdgeTag:   s.cfg.NodeName,
 			ConnectIP: reqData.RemoteIP,
 			Date:      time.Now().Format("2006-01-02 15:04:05"),
 		}

@@ -12,6 +12,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"server_torii/internal/utils"
 	"strconv"
 	"strings"
@@ -43,14 +44,14 @@ const (
 	captchaVerificationSessionMismatch
 )
 
-func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
+func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	// Check if Captcha feature is enabled using binary operation
 	if (reqData.FeatureControl & dataType.FeatureCaptcha) == 0 {
 		decision.Set(action.Continue)
 		return
 	}
 
-	failureCounter := sharedMem.CaptchaFailureLimitCounter.Load()
+	failureCounter := rt.CaptchaFailureLimitCounter.Load()
 	if failureCounter == nil {
 		utils.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha rate checks")
 		decision.Set(action.Continue)
@@ -65,11 +66,8 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 		if count > limitCount {
 
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
-				if engine, ok := sharedMem.ActionRuleEngine.(*action.ActionRuleEngine); ok {
-					engine.AddIPRule(ipKey, action.ActionBlock, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second)
-					utils.BroadcastActionRule(config.GlobalConfig.NodeName, "IP", ipKey, string(action.ActionBlock), time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second, sharedMem.GossipChan)
-				} else {
-					utils.LogError(reqData, "", "Failed to cast ActionRuleEngine, skipping block and broadcast")
+				if !rt.BlockIP(ipKey, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second) {
+					utils.LogError(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
 				utils.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
 				failureCounter.Reset(ipKey)
@@ -89,8 +87,8 @@ func Captcha(reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *ac
 
 }
 
-func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, sharedMem *dataType.SharedMemory) {
-	failureCounter := sharedMem.CaptchaFailureLimitCounter.Load()
+func CheckCaptcha(r *http.Request, reqData dataType.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
+	failureCounter := rt.CaptchaFailureLimitCounter.Load()
 
 	if r.Method != "POST" {
 		decision.SetVerdict(action.Done, action.VerdictBlock)

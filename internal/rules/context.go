@@ -33,16 +33,9 @@ type Context struct {
 	hasEvidence  bool
 }
 
-// NewContext builds an evaluation context; sharedMem may be nil.
-func NewContext(req *dataType.UserRequest, sharedMem *dataType.SharedMemory) *Context {
-	ctx := &Context{req: req}
-	if sharedMem != nil {
-		ctx.resolver = sharedMem.CountryResolver
-		if ev, ok := dataType.BrowserEvidenceOf(sharedMem); ok {
-			ctx.evidence = ev
-		}
-	}
-	return ctx
+// NewContext builds an evaluation context; resolver and evidence may be nil.
+func NewContext(req *dataType.UserRequest, resolver dataType.CountryResolver, evidence dataType.BrowserEvidence) *Context {
+	return &Context{req: req, resolver: resolver, evidence: evidence}
 }
 
 func (c *Context) header(name string) string {

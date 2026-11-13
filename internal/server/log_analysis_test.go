@@ -7,6 +7,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
@@ -18,7 +19,7 @@ type detectorHarness struct {
 	marks    *ipExpiry
 	evidence *ipExpiry
 	engine   *action.ActionRuleEngine
-	shared   *dataType.SharedMemory
+	shared   *state.Runtime
 	now      time.Time
 	tick     int
 }
@@ -55,7 +56,7 @@ func newDetectorHarness(t *testing.T, mutate func(r *dataType.AdaptiveTrafficAna
 		marks:    newIPExpiry(maxMarkedClients),
 		evidence: newIPExpiry(maxEvidenceEntries),
 		engine:   engine,
-		shared:   &dataType.SharedMemory{ActionRuleEngine: engine},
+		shared:   &state.Runtime{ActionRuleEngine: engine},
 		now:      start,
 	}
 }
@@ -64,7 +65,7 @@ func (h *detectorHarness) run(logs []LogEntry) {
 	h.tick++
 	h.now = h.now.Add(10 * time.Second)
 	(&trafficDetector{}).Analyze(&analysisContext{
-		Logs: logs, Rule: h.rules, State: h.state, SharedMem: h.shared,
+		Logs: logs, Rule: h.rules, State: h.state, Runtime: h.shared,
 		Marks: h.marks, Evidence: h.evidence, Now: h.now, Interval: 10 * time.Second,
 	})
 }
@@ -427,7 +428,7 @@ func TestEnforcerBroadcastLimit(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 	gossip := make(chan dataType.GossipMessage, 10)
-	e := newEnforcer(&dataType.SharedMemory{ActionRuleEngine: engine, GossipChan: gossip}, 2)
+	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossip}, 2)
 	for i := 0; i < 5; i++ {
 		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), dataType.AnalyzerBlock, time.Minute, true)
 	}
@@ -537,13 +538,11 @@ func TestHotHitThresholdsFollowRealUsers(t *testing.T) {
 }
 
 func TestRecordEvidenceAtIngest(t *testing.T) {
-	prev := config.Manager
-	config.Manager = &config.ConfigManager{}
-	t.Cleanup(func() { config.Manager = prev })
-	config.Manager.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{
+	configs := config.NewManager()
+	configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{
 		"site": {AdaptiveTrafficAnalyzerRule: &dataType.AdaptiveTrafficAnalyzerRule{Enabled: true, Tag: "nginx"}},
 	}})
-	a := NewAdaptiveTrafficAnalyzer(nil)
+	a := NewAdaptiveTrafficAnalyzer(nil, configs)
 	for _, tc := range []struct {
 		entry LogEntry
 		want  bool

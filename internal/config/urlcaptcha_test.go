@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"testing"
 )
 
@@ -61,8 +60,7 @@ func TestURLCaptchaReloadAndIsolation(t *testing.T) {
 	writeFile(t, file, "/login")
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: first}, {Host: "other.example", RulePath: second}}}
 	manager := &ConfigManager{}
-	shared := &dataType.SharedMemory{}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	before := manager.Get()
@@ -70,7 +68,7 @@ func TestURLCaptchaReloadAndIsolation(t *testing.T) {
 		t.Fatal("cross-site list leak")
 	}
 	writeFile(t, file, "/admin")
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	current := manager.Get()
@@ -84,7 +82,7 @@ func TestURLCaptchaReloadAndIsolation(t *testing.T) {
 	if err := os.Remove(file); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Reload(cfg, shared); err == nil {
+	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("missing enabled list accepted")
 	}
 	if manager.Get() != current {

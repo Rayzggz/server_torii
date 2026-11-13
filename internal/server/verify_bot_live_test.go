@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"strings"
 	"testing"
 	"time"
@@ -62,8 +63,8 @@ func verifyBotRuleSet() *config.RuleSet {
 	return rs
 }
 
-// serveChecker mirrors the StartServer handler for the nginx auth_request endpoint.
-func serveChecker(cfg *config.MainConfig, rs *config.RuleSet, sharedMem *dataType.SharedMemory, header http.Header, remoteAddr string) *httptest.ResponseRecorder {
+// serveChecker mirrors Server.ServeHTTP for the nginx auth_request endpoint.
+func serveChecker(cfg *config.MainConfig, rs *config.RuleSet, sharedMem *state.Runtime, header http.Header, remoteAddr string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(http.MethodGet, "/torii/checker", nil)
 	r.RemoteAddr = remoteAddr
 	for k, v := range header {
@@ -72,7 +73,7 @@ func serveChecker(cfg *config.MainConfig, rs *config.RuleSet, sharedMem *dataTyp
 	reqData := processRequestData(cfg, r)
 	reqData.FeatureControl = processFeatureControl(cfg, r, rs)
 	rec := httptest.NewRecorder()
-	CheckMain(rec, reqData, rs, cfg, sharedMem)
+	NewServer(cfg, nil, sharedMem, nil).CheckMain(rec, reqData, rs)
 	return rec
 }
 
@@ -84,14 +85,14 @@ func crawlerHeader(ip, ua string) http.Header {
 	}
 }
 
-func newVerifyBotEnv() (*config.MainConfig, *dataType.SharedMemory, *AdaptiveTrafficAnalyzer) {
+func newVerifyBotEnv() (*config.MainConfig, *state.Runtime, *AdaptiveTrafficAnalyzer) {
 	cfg := config.DefaultMainConfig()
 	cfg.WebPath = "/torii"
-	sharedMem := &dataType.SharedMemory{}
+	sharedMem := &state.Runtime{}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
 	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
-	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem)
-	sharedMem.AdaptiveTrafficAnalyzer = analyzer
+	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem, nil)
+	sharedMem.SetAnalyzer(analyzer)
 	return cfg, sharedMem, analyzer
 }
 

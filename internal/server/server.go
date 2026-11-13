@@ -9,6 +9,7 @@ import (
 	"path"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"strings"
 	"time"
 )
@@ -40,58 +41,70 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
-// StartServer starts the HTTP server and blocks until it stops. When ctx is
+// Server answers the nginx auth_request checker and serves Torii's own pages.
+type Server struct {
+	cfg     *config.MainConfig
+	configs *config.ConfigManager
+	rt      *state.Runtime
+	gossip  *GossipManager // nil when gossip is disabled
+}
+
+// NewServer wires a server to its configuration and shared state; gossip may be nil.
+func NewServer(cfg *config.MainConfig, configs *config.ConfigManager, rt *state.Runtime, gossip *GossipManager) *Server {
+	return &Server{cfg: cfg, configs: configs, rt: rt, gossip: gossip}
+}
+
+// ServeHTTP resolves the site rules for the request and dispatches it.
+func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	userRequestData := processRequestData(s.cfg, r)
+
+	snap := s.configs.Get()
+	if snap == nil {
+		http.Error(w, "Service Unavailable: Configuration not loaded", http.StatusServiceUnavailable)
+		return
+	}
+
+	// Get site-specific rules based on the Host header
+	ruleSet := config.GetSiteRules(snap.SiteRules, userRequestData.Host)
+	if ruleSet == nil {
+		log.Printf("[ERROR] No rules found for host: %s", userRequestData.Host)
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Process feature control after ruleSet is loaded
+	userRequestData.FeatureControl = processFeatureControl(s.cfg, r, ruleSet)
+
+	if r.URL.Path == path.Join(s.cfg.WebPath, "/checker") {
+		s.CheckMain(w, userRequestData, ruleSet)
+	} else {
+		s.CheckTorii(w, r, userRequestData, ruleSet, snap.Pages)
+	}
+}
+
+// Run starts the HTTP server and blocks until it stops. When ctx is
 // cancelled the server is shut down gracefully (in-flight requests get up to
 // shutdownTimeout to finish) and the analyzer / syslog listener are stopped.
 // A graceful stop returns nil.
-func StartServer(ctx context.Context, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) error {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-
-		userRequestData := processRequestData(cfg, r)
-
-		snap := config.Manager.Get()
-		if snap == nil {
-			http.Error(w, "Service Unavailable: Configuration not loaded", http.StatusServiceUnavailable)
-			return
-		}
-
-		// Get site-specific rules based on the Host header
-		ruleSet := config.GetSiteRules(snap.SiteRules, userRequestData.Host)
-		if ruleSet == nil {
-			log.Printf("[ERROR] No rules found for host: %s", userRequestData.Host)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		// Process feature control after ruleSet is loaded
-		userRequestData.FeatureControl = processFeatureControl(cfg, r, ruleSet)
-
-		if r.URL.Path == path.Join(cfg.WebPath, "/checker") {
-			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
-		} else {
-			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem, snap.Pages)
-		}
-
-	})
-
+func (s *Server) Run(ctx context.Context) error {
 	// Start AdaptiveTrafficAnalyzer
-	analyzer := NewAdaptiveTrafficAnalyzer(sharedMem)
-	sharedMem.AdaptiveTrafficAnalyzer = analyzer
+	analyzer := NewAdaptiveTrafficAnalyzer(s.rt, s.configs)
+	s.rt.SetAnalyzer(analyzer)
 	analyzer.Start()
 	defer analyzer.Stop()
 
 	// Start Syslog UDP Listener
-	syslogListener := NewSyslogListener(cfg.Port, analyzer)
+	syslogListener := NewSyslogListener(s.cfg.Port, analyzer)
 	if err := syslogListener.Start(); err != nil {
 		log.Printf("[ERROR] Failed to start Syslog UDP listener: %v", err)
 	} else {
 		defer syslogListener.Stop()
 	}
 
-	srv := newHTTPServer(":"+cfg.Port, nil)
+	srv := newHTTPServer(":"+s.cfg.Port, s)
 	listenErr := make(chan error, 1)
 	go func() {
-		log.Printf("HTTP Server listening on :%s ...", cfg.Port)
+		log.Printf("HTTP Server listening on :%s ...", s.cfg.Port)
 		listenErr <- srv.ListenAndServe()
 	}()
 

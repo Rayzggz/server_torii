@@ -4,6 +4,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
@@ -45,7 +46,7 @@ func TestVerifyBotSkipsWithoutDNS(t *testing.T) {
 			marker := &recordingMarker{}
 			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
 			decision := action.NewDecision()
-			VerifyBot(reqData, tt.ruleSet, decision, &dataType.SharedMemory{AdaptiveTrafficAnalyzer: marker})
+			VerifyBot(reqData, tt.ruleSet, decision, &state.Runtime{TrafficMarker: marker})
 			if decision.State != action.Continue {
 				t.Fatalf("state = %v, want Continue", decision.State)
 			}
@@ -70,7 +71,7 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 			marker := &recordingMarker{}
 			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: dataType.FeatureVerifyBot}
 			decision := action.NewDecision()
-			VerifyBot(reqData, allBotsRuleSet(), decision, &dataType.SharedMemory{AdaptiveTrafficAnalyzer: marker})
+			VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{TrafficMarker: marker})
 			if decision.State != action.Done || decision.Verdict != action.VerdictBlock {
 				t.Fatalf("decision = (%v, %q), want (Done, 403)", decision.State, decision.Verdict)
 			}

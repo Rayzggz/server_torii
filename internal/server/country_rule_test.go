@@ -10,6 +10,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
+	"server_torii/internal/state"
 	"testing"
 )
 
@@ -41,9 +42,9 @@ func TestCheckMainIPAllowBypassesCountryRule(t *testing.T) {
 	}
 	recorder := httptest.NewRecorder()
 
-	CheckMain(recorder, reqData, ruleSet, &config.MainConfig{}, &dataType.SharedMemory{
+	NewServer(&config.MainConfig{}, nil, &state.Runtime{
 		CountryResolver: serverCountryResolver{country: "US"},
-	})
+	}, nil).CheckMain(recorder, reqData, ruleSet)
 
 	if recorder.Code != 200 {
 		t.Fatalf("response status = %d, want 200 allowlist bypass", recorder.Code)
@@ -97,7 +98,7 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 		CaptchaChallengeSessionTimeout: 120,
 		CaptchaFailureLimit:            map[int64]int64{},
 	}
-	sharedMem := &dataType.SharedMemory{CountryResolver: database}
+	sharedMem := &state.Runtime{CountryResolver: database}
 	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 
 	tests := []struct {
@@ -123,10 +124,10 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 			}
 
 			recorder := httptest.NewRecorder()
-			CheckMain(recorder, dataType.UserRequest{
+			NewServer(&config.MainConfig{}, nil, sharedMem, nil).CheckMain(recorder, dataType.UserRequest{
 				RemoteIP:       tt.remoteIP,
 				FeatureControl: dataType.FeatureCountryRule,
-			}, ruleSet, &config.MainConfig{}, sharedMem)
+			}, ruleSet)
 
 			if recorder.Code != tt.wantStatus {
 				t.Fatalf("response status = %d, want %d", recorder.Code, tt.wantStatus)

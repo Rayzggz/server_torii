@@ -4,7 +4,7 @@ import "testing"
 
 func TestDecisionTransitions(t *testing.T) {
 	d := NewDecision()
-	if d.State != Continue || d.Verdict != VerdictAllow || d.Captcha != CaptchaNone || d.JumpIndex != -1 {
+	if d.State != Continue || d.Verdict != VerdictAllow || d.Captcha != CaptchaNone {
 		t.Fatalf("unexpected default: %+v", d)
 	}
 	d.Set(Done)
@@ -19,12 +19,8 @@ func TestDecisionTransitions(t *testing.T) {
 	if d.State != Done || d.Verdict != VerdictAllow || d.Captcha != CaptchaGood {
 		t.Fatalf("SetCaptchaResult: %+v", d)
 	}
-	d.SetJump(Jump, VerdictAllow, 4)
-	if d.State != Jump || d.Verdict != VerdictAllow || d.JumpIndex != 4 {
-		t.Fatalf("SetJump: %+v", d)
-	}
 	other := NewDecision()
-	if other.State != Continue || other.JumpIndex != -1 || other.Captcha != CaptchaNone {
+	if other.State != Continue || other.Captcha != CaptchaNone {
 		t.Fatalf("decisions share state: %+v", other)
 	}
 }

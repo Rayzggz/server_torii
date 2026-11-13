@@ -4,7 +4,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"server_torii/internal/dataType"
 	"testing"
 )
 
@@ -79,8 +78,7 @@ func TestIPCaptchaReloadAndSiteIsolation(t *testing.T) {
 	writeFile(t, list, "192.0.2.10")
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: first}, {Host: "other.example", RulePath: second}}}
 	manager := &ConfigManager{}
-	shared := &dataType.SharedMemory{}
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	old := manager.Get()
@@ -88,7 +86,7 @@ func TestIPCaptchaReloadAndSiteIsolation(t *testing.T) {
 		t.Fatal("list leaked across sites")
 	}
 	writeFile(t, list, "192.0.2.11")
-	if err := manager.Reload(cfg, shared); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	current := manager.Get()
@@ -102,7 +100,7 @@ func TestIPCaptchaReloadAndSiteIsolation(t *testing.T) {
 	if err := os.Remove(list); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Reload(cfg, shared); err == nil {
+	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("missing enabled list accepted")
 	}
 	if manager.Get() != current {

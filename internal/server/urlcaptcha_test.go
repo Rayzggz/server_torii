@@ -7,6 +7,7 @@ import (
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"testing"
 )
 
@@ -48,7 +49,7 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			rules.URLCAPTCHARule = &dataType.URLCAPTCHARule{Enabled: true, List: list}
 			rules.CAPTCHARule = &dataType.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
 			req := dataType.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/login", FeatureControl: dataType.FeatureURLCAPTCHA}
-			shared := &dataType.SharedMemory{}
+			shared := &state.Runtime{}
 			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 			trie := &dataType.TrieNode{}
 			_, network, _ := net.ParseCIDR("192.0.2.0/24")
@@ -102,7 +103,7 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 				wantStatus, wantAction = 445, "403"
 			}
 			recorder := httptest.NewRecorder()
-			CheckMain(recorder, req, rules, &config.MainConfig{}, shared)
+			NewServer(&config.MainConfig{}, nil, shared, nil).CheckMain(recorder, req, rules)
 			if recorder.Code != wantStatus || recorder.Header().Get("Torii-Action") != wantAction {
 				t.Fatalf("got %d %q, want %d %q", recorder.Code, recorder.Header().Get("Torii-Action"), wantStatus, wantAction)
 			}

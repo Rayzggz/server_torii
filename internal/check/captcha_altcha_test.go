@@ -8,6 +8,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
+	"server_torii/internal/state"
 	"strings"
 	"testing"
 	"time"
@@ -25,9 +26,9 @@ func TestCheckCaptchaAltchaGood(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, reqData, ruleSet, decision, rt)
 
 	if decision.State != action.Done {
 		t.Fatalf("expected done decision, got state=%v", decision.State)
@@ -61,10 +62,10 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 
 	decision := action.NewDecision()
 	counter := dataType.NewCounter(1, 60)
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+	rt := &state.Runtime{}
+	rt.CaptchaFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, replayReqData, ruleSet, decision, rt)
 
 	if decision.Captcha != action.CaptchaBadSession {
 		t.Fatalf("expected response badSession for fresh-session replay, got %s", decision.Captcha)
@@ -101,9 +102,9 @@ func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, replayReqData, ruleSet, decision, rt)
 
 	if decision.Captcha != action.CaptchaBad {
 		t.Fatalf("expected response bad for tampered session binding, got %s", decision.Captcha)
@@ -127,7 +128,7 @@ func TestCheckCaptchaAltchaRejectsWrongSolution(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	CheckCaptcha(req, reqData, ruleSet, decision, testCaptchaSharedMemory())
+	CheckCaptcha(req, reqData, ruleSet, decision, testCaptchaRuntime())
 
 	if decision.Captcha != action.CaptchaBad {
 		t.Fatalf("expected response bad for wrong solution, got %s", decision.Captcha)
@@ -144,10 +145,10 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 
 	decision := action.NewDecision()
 	counter := dataType.NewCounter(1, 60)
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+	rt := &state.Runtime{}
+	rt.CaptchaFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, reqData, ruleSet, decision, rt)
 
 	if decision.Captcha != action.CaptchaBad {
 		t.Fatalf("expected response bad, got %s", decision.Captcha)
@@ -170,9 +171,9 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	CheckCaptcha(req, reqData, ruleSet, decision, rt)
 
 	if decision.Captcha != action.CaptchaBadSession {
 		t.Fatalf("expected response badSession, got %s", decision.Captcha)
@@ -205,10 +206,10 @@ func testCaptchaRequestData(ruleSet *config.RuleSet) dataType.UserRequest {
 	return reqData
 }
 
-func testCaptchaSharedMemory() *dataType.SharedMemory {
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
-	return sharedMem
+func testCaptchaRuntime() *state.Runtime {
+	rt := &state.Runtime{}
+	rt.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
+	return rt
 }
 
 func solveAltchaPayload(t *testing.T, ruleSet *config.RuleSet, reqData dataType.UserRequest) string {

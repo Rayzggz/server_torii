@@ -5,7 +5,6 @@ import (
 	"net/netip"
 	"runtime/debug"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -87,7 +86,6 @@ const (
 type UserRequest struct {
 	RemoteIP       string
 	Uri            string
-	Captcha        bool
 	FeatureControl uint16
 	ToriiClearance string
 	ToriiSessionID string
@@ -250,43 +248,7 @@ type TrafficMarker interface {
 	MarkNeutral(ip string, ttl time.Duration)
 }
 
-// TrafficMarkerOf returns the analyzer as a TrafficMarker when one is running.
-func TrafficMarkerOf(sharedMem *SharedMemory) (TrafficMarker, bool) {
-	if sharedMem == nil {
-		return nil, false
-	}
-	marker, ok := sharedMem.AdaptiveTrafficAnalyzer.(TrafficMarker)
-	return marker, ok
-}
-
 // BrowserEvidence reports whether the traffic analyzer has recently seen an IP behave like a browser.
 type BrowserEvidence interface {
 	HasBrowserEvidence(ip string) bool
-}
-
-// BrowserEvidenceOf returns the analyzer as a BrowserEvidence when one is running.
-func BrowserEvidenceOf(sharedMem *SharedMemory) (BrowserEvidence, bool) {
-	if sharedMem == nil {
-		return nil, false
-	}
-	ev, ok := sharedMem.AdaptiveTrafficAnalyzer.(BrowserEvidence)
-	return ev, ok
-}
-
-type GossipHandler interface {
-	HandleGossip(w http.ResponseWriter, r *http.Request)
-}
-
-type SharedMemory struct {
-	GossipChan    chan GossipMessage
-	GossipManager GossipHandler
-
-	HTTPFloodSpeedLimitCounter   atomic.Pointer[Counter]
-	HTTPFloodSameURILimitCounter atomic.Pointer[Counter]
-	HTTPFloodFailureLimitCounter atomic.Pointer[Counter]
-	CaptchaFailureLimitCounter   atomic.Pointer[Counter]
-
-	ActionRuleEngine        interface{}
-	AdaptiveTrafficAnalyzer interface{}
-	CountryResolver         CountryResolver
 }

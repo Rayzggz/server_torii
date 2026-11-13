@@ -7,6 +7,7 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/dataType"
 	"server_torii/internal/geoip"
+	"server_torii/internal/state"
 	"testing"
 )
 
@@ -31,7 +32,7 @@ func TestCountryRulePolicies(t *testing.T) {
 			t.Run(string(policy)+"/"+source, func(t *testing.T) {
 				rules := countryTestRuleSet()
 				resolver := &fakeCountryResolver{country: "us"}
-				shared := &dataType.SharedMemory{CountryResolver: resolver}
+				shared := &state.Runtime{CountryResolver: resolver}
 				shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 				req := dataType.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: dataType.FeatureCountryRule}
 				rules.CountryRule.UnknownAction = policy
@@ -82,7 +83,7 @@ func TestCountryRuleSkipsLookup(t *testing.T) {
 		}
 		resolver := &fakeCountryResolver{country: "US"}
 		decision := action.NewDecision()
-		CountryRule(req, rules, decision, &dataType.SharedMemory{CountryResolver: resolver})
+		CountryRule(req, rules, decision, &state.Runtime{CountryResolver: resolver})
 		if resolver.calls != 0 || decision.State != action.Continue {
 			t.Fatalf("unexpected lookup or decision: %#v", decision)
 		}
@@ -94,7 +95,7 @@ func TestCountryRuleCaptchaClearanceContinues(t *testing.T) {
 	rules.CountryRule.DefaultAction = dataType.CountryCaptcha
 	req := dataType.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: dataType.FeatureCountryRule}
 	req.ToriiClearance = string(GenClearance(req, *rules))
-	shared := &dataType.SharedMemory{CountryResolver: &fakeCountryResolver{country: "US"}}
+	shared := &state.Runtime{CountryResolver: &fakeCountryResolver{country: "US"}}
 	shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
 	decision := action.NewDecision()
 	CountryRule(req, rules, decision, shared)
