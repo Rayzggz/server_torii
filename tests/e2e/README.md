@@ -27,7 +27,7 @@ Inside Ubuntu:
 ```bash
 sudo apt-get update
 sudo apt-get install -y build-essential ca-certificates curl jq openssl dnsutils iproute2 shellcheck
-# Install Go 1.25 or newer if it is not already available; verify with go version.
+# Install Go 1.26 or newer if it is not already available; verify with go version.
 cd /mnt/c/Users/Roi/GolandProjects/server_torii
 bash tests/e2e/test.sh
 ```

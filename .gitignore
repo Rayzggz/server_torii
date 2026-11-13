@@ -5,6 +5,9 @@
 *.so
 *.dylib
 
+# Binary built by `make build`
+/server_torii
+
 # Test binary, built with `go test -c`
 *.test
 
