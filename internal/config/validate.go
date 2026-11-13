@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 
 	"github.com/go-playground/validator/v10"
 )
@@ -19,6 +20,19 @@ func init() {
 	if err != nil {
 		log.Fatalf("failed to register \"dir\" validator: %v", err)
 	}
+
+	// Register custom validation for TCP/UDP port numbers stored as strings.
+	// min/max on a string field compare length, not value, so they cannot express a port range.
+	err = validate.RegisterValidation("port", validatePort)
+	if err != nil {
+		log.Fatalf("failed to register \"port\" validator: %v", err)
+	}
+}
+
+// validatePort validates that a string is a decimal port number in the range 1-65535.
+func validatePort(fl validator.FieldLevel) bool {
+	port, err := strconv.Atoi(fl.Field().String())
+	return err == nil && port >= 1 && port <= 65535
 }
 
 // validateDir validates that a path is a directory.
@@ -68,6 +82,8 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 		return "value must be a valid rate format"
 	case "dir":
 		return "path must be an existing directory"
+	case "port":
+		return "value must be a port number between 1 and 65535"
 	default:
 		return fmt.Sprintf("validation rule '%s' failed", fe.Tag())
 	}

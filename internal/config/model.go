@@ -3,7 +3,7 @@ package config
 // MainConfig is the top-level configuration loaded from torii.yml.
 type MainConfig struct {
 	ConfigDir                       string           `yaml:"-"`
-	Port                            string           `yaml:"port" validate:"required,numeric,min=1,max=65535"`
+	Port                            string           `yaml:"port" validate:"required,port"`
 	WebPath                         string           `yaml:"web_path" validate:"required,startswith=/"`
 	ErrorPage                       string           `yaml:"error_page" validate:"required"`
 	LogPath                         string           `yaml:"log_path" validate:"required"`
