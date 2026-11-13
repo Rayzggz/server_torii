@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -415,7 +416,8 @@ func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Reques
 	// Read Body (Protected by MaxBytesReader)
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		if err.Error() == "http: request body too large" {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
 			log.Printf("[SECURITY] Dropped oversized gossip request from %s", r.RemoteAddr)
 			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
 		} else {
