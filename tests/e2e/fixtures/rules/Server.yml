@@ -60,6 +60,25 @@ AdaptiveTrafficAnalyzer:
 CustomRules:
   enabled: false
   rules:
+    - id: cookie-query
+      expression: 'http.request.uri.path eq "/e2e/cookie" and http.request.cookies["role"] eq "blocked" and http.request.uri.args["mode"] eq "strict"'
+      action: block
+    - id: country-expression
+      expression: 'http.request.uri.path eq "/e2e/country" and ip.src.country eq "US"'
+      action: block
+    - id: external-expression
+      expression: 'http.request.uri.path eq "/e2e/external"'
+      action: external
+    - id: continue-expression
+      expression: 'http.request.uri.path eq "/e2e/continue"'
+      action: continue
+    - id: skip-remaining
+      expression: 'http.request.uri.path eq "/e2e/skip"'
+      action: skip
+      skip: [CustomRules, Captcha, ExternalMigration]
+    - id: unreachable-block
+      expression: 'http.request.uri.path in {"/e2e/continue" "/e2e/skip"}'
+      action: block
     - id: block-spam-referer
       expression: 'http.referer contains "spam.e2e"'
       action: block
