@@ -1,6 +1,7 @@
 package dataType
 
 import (
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -81,6 +82,47 @@ func TestCounterGarbageCollection(t *testing.T) {
 	}
 	if got := c.Query("active", 60); got != 7 {
 		t.Errorf("active counter lost: %d", got)
+	}
+}
+
+func TestCounterElementQueryBatchMatchesQuery(t *testing.T) {
+	c := newCounterElement(10)
+	c.counterElementAdd(100, 1)
+	c.counterElementAdd(103, 5)
+	c.counterElementAdd(105, 2)
+	c.counterElementAdd(108, 4)
+	// now=110 has no data, and neither do the last seconds of most windows.
+	windows := []int64{30, 3, 0, 1, 7, 5, 10, -2, 2}
+	for _, now := range []int64{108, 110, 112, 125} {
+		got := c.counterElementQueryBatch(windows, now)
+		if len(got) != len(windows) {
+			t.Fatalf("now=%d: len = %d, want %d", now, len(got), len(windows))
+		}
+		for i, w := range windows {
+			want := int64(0)
+			if w > 0 {
+				want = c.counterElementQuery(w, now)
+			}
+			if got[i] != want {
+				t.Errorf("now=%d window=%d: batch = %d, Query = %d", now, w, got[i], want)
+			}
+		}
+	}
+	// Spot-check against hand-computed values at now=110.
+	got := c.counterElementQueryBatch([]int64{2, 3, 6, 10}, 110)
+	if want := []int64{0, 4, 6, 11}; !slices.Equal(got, want) {
+		t.Errorf("now=110 batch = %v, want %v", got, want)
+	}
+}
+
+func TestCounterElementQueryBatchEmpty(t *testing.T) {
+	c := newCounterElement(5)
+	c.counterElementAdd(100, 3)
+	if got := c.counterElementQueryBatch(nil, 100); len(got) != 0 {
+		t.Errorf("nil windows = %v", got)
+	}
+	if got := c.counterElementQueryBatch([]int64{}, 100); len(got) != 0 {
+		t.Errorf("empty windows = %v", got)
 	}
 }
 

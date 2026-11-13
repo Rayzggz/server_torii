@@ -1,7 +1,9 @@
 package dataType
 
 import (
+	"cmp"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -54,26 +56,40 @@ func (c *counterElement) counterElementQuery(lastN int64, now int64) int64 {
 	return sum
 }
 
+// counterElementQueryBatch returns, for each window in lastN, the same value
+// counterElementQuery would return for it. lastN may be in any order; windows
+// larger than segSize are clamped and windows <= 0 yield 0.
 func (c *counterElement) counterElementQueryBatch(lastN []int64, now int64) []int64 {
-	querySize := len(lastN)
-	lastSec := lastN[querySize-1]
-	if lastSec > c.segSize {
-		lastSec = c.segSize
-		log.Printf("Error: lastSec exceeds segment size, resetting to segment size")
+	res := make([]int64, len(lastN))
+	if len(lastN) == 0 {
+		return res
 	}
 
-	var sum int64
-	var queryIdx = 0
-	res := make([]int64, querySize)
-	for i := int64(0); i < lastSec; i++ {
-		sec := now - lastSec + 1 + i
-		idx := sec % c.segSize
-		if c.segments[idx].timestamp == sec {
-			sum += c.segments[idx].count
-			if queryIdx < querySize && lastN[queryIdx] == i+1 {
-				res[queryIdx] = sum
-				queryIdx++
+	// Visit windows from smallest to largest while walking back from now,
+	// so each window's total is the running sum of the most recent seconds.
+	order := make([]int, len(lastN))
+	for i := range order {
+		order[i] = i
+	}
+	slices.SortFunc(order, func(a, b int) int { return cmp.Compare(lastN[a], lastN[b]) })
+
+	if lastN[order[len(order)-1]] > c.segSize {
+		log.Printf("Error: lastN exceeds segment size, resetting to segment size")
+	}
+
+	var sum, covered int64
+	for _, qi := range order {
+		window := min(lastN[qi], c.segSize)
+		for covered < window {
+			sec := now - covered
+			idx := sec % c.segSize
+			if c.segments[idx].timestamp == sec {
+				sum += c.segments[idx].count
 			}
+			covered++
+		}
+		if window > 0 {
+			res[qi] = sum
 		}
 	}
 	return res
