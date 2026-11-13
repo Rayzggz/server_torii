@@ -258,6 +258,32 @@ func TestCaptchaSuccessWithoutAnalyzer(t *testing.T) {
 	}
 }
 
+func TestCaptchaVerifierErrorReturnsRetryableStatus(t *testing.T) {
+	solveRuleSet := testAltchaServerRuleSet()
+	// Empty secrets make the ALTCHA verifier itself fail, standing in for an unreachable provider.
+	brokenRuleSet := testAltchaServerRuleSet()
+	brokenRuleSet.CAPTCHARule.SecretKey = ""
+	brokenRuleSet.CAPTCHARule.AltchaHMACSecret = ""
+
+	reqData := dataType.UserRequest{RemoteIP: "203.0.113.81", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
+	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *brokenRuleSet))
+	sharedMem := &dataType.SharedMemory{}
+	counter := dataType.NewCounter(1, 60)
+	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+
+	rec := postCaptcha(reqData, brokenRuleSet, sharedMem, solveAltcha(t, solveRuleSet, reqData))
+
+	if rec.Code != http.StatusServiceUnavailable || rec.Body.String() != "error" {
+		t.Fatalf("got %d %q, want 503 error", rec.Code, rec.Body.String())
+	}
+	if clearanceFrom(t, rec) != "" {
+		t.Fatal("clearance set after a verifier error")
+	}
+	if got := counter.Query(reqData.RemoteIP, 60); got != 0 {
+		t.Fatalf("verifier error counted as a client failure: %d", got)
+	}
+}
+
 func TestCaptchaEndpointRejectsGet(t *testing.T) {
 	cfg := newPagesConfig(t)
 	rec := serveTorii("/torii/captcha", dataType.UserRequest{RemoteIP: "203.0.113.5"}, testAltchaServerRuleSet(), cfg, &dataType.SharedMemory{})

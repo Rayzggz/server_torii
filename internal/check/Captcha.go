@@ -185,6 +185,10 @@ func verifyHCaptchaResponse(r *http.Request, reqData dataType.UserRequest, ruleS
 		}
 	}(resp.Body)
 
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("hCaptcha siteverify returned HTTP %d", resp.StatusCode)
+	}
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return false, fmt.Errorf("error reading response from hCaptcha: %v", err)

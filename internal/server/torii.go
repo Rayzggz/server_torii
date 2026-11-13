@@ -42,6 +42,15 @@ func CheckTorii(w http.ResponseWriter, r *http.Request, reqData dataType.UserReq
 			return
 		}
 	}
+	if decision.Verdict == action.VerdictError && decision.Captcha != action.CaptchaNone {
+		// The CAPTCHA provider could not verify the answer; this is not the client's fault, so the page may retry.
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		if _, err := w.Write([]byte("error")); err != nil {
+			utils.LogError(reqData, "Error writing response: "+err.Error(), "CheckTorii")
+		}
+		return
+	}
 	if decision.Verdict == action.VerdictAllow {
 		switch decision.Captcha {
 		case action.CaptchaBad, action.CaptchaBadSession:

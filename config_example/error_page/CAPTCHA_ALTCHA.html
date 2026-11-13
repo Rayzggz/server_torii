@@ -45,6 +45,16 @@
             color: #666;
         }
 
+        .toriiStatus {
+            margin-top: 10px;
+            min-height: 1.2em;
+            color: #666;
+        }
+
+        .toriiStatus.error {
+            color: #c0392b;
+        }
+
         .footer {
             margin-top: 30px;
             font-size: 12px;
@@ -60,33 +70,80 @@
     <script>
         const toriiWebPath = "/torii";
 
-        function postAltcha(payload) {
-            const reqBody = "altcha=" + encodeURIComponent(payload);
-            const httpRequest = new XMLHttpRequest();
-            httpRequest.open("POST", toriiWebPath + "/captcha", true);
-            httpRequest.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-            httpRequest.send(reqBody);
-            httpRequest.onreadystatechange = () => {
-                if (httpRequest.readyState == 4 && httpRequest.status == 200) {
-                    let text = httpRequest.responseText;
-                    switch (text) {
-                        case "good":
-                            window.location.reload();
-                            break;
-                        case "bad":
-                            alert("Bad CAPTCHA, please refresh the page and try again.");
-                            window.location.reload();
-                            break;
-                        case "badSession":
-                            alert("Session invalid, please refresh the page and try again.");
-                            window.location.reload();
-                            break;
-                        default:
-                            alert("Unexpected error occurred, please refresh the page and try again.");
-                            window.location.reload();
-                    }
+        const toriiRequestTimeout = 15000;
+        let toriiSubmitting = false;
+
+        function setStatus(text, isError) {
+            const el = document.getElementById("toriiStatus");
+            if (!el) {
+                return;
+            }
+            el.textContent = text;
+            el.className = isError ? "toriiStatus error" : "toriiStatus";
+        }
+
+        function resetCaptcha() {
+            const widget = document.querySelector("altcha-widget");
+            try {
+                if (widget && typeof widget.reset === "function") {
+                    widget.reset();
                 }
-            };
+            } catch (e) {
+            }
+        }
+
+        function reloadSoon() {
+            setTimeout(() => window.location.reload(), 1500);
+        }
+
+        // Response contract of POST /torii/captcha:
+        //   200 good       -> clearance cookie set, reload to continue
+        //   200 bad        -> wrong or missing answer, solve again
+        //   200 badSession -> session cookie expired or mismatched, reload for a new one
+        //   503 error      -> CAPTCHA verifier failed, safe to retry
+        //   anything else  -> reload and let the gateway show the right page
+        function handleResult(status, text) {
+            if (status === 200 && text === "good") {
+                setStatus("Verified, redirecting...", false);
+                window.location.reload();
+            } else if (status === 200 && text === "bad") {
+                setStatus("Verification failed, please try again.", true);
+                resetCaptcha();
+            } else if (status === 200 && text === "badSession") {
+                setStatus("Session expired, reloading...", true);
+                reloadSoon();
+            } else if (status === 0 || status >= 500) {
+                setStatus("Verification service is temporarily unavailable, please try again.", true);
+                resetCaptcha();
+            } else {
+                setStatus("Unexpected response, reloading...", true);
+                reloadSoon();
+            }
+        }
+
+        function submitCaptcha(reqBody) {
+            if (toriiSubmitting) {
+                return;
+            }
+            toriiSubmitting = true;
+            setStatus("Verifying...", false);
+
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), toriiRequestTimeout);
+            fetch(toriiWebPath + "/captcha", {
+                method: "POST",
+                headers: {"Content-Type": "application/x-www-form-urlencoded"},
+                body: reqBody,
+                credentials: "same-origin",
+                cache: "no-store",
+                signal: controller.signal
+            })
+                .then((resp) => resp.text().then((text) => handleResult(resp.status, text.trim())))
+                .catch(() => handleResult(0, ""))
+                .finally(() => {
+                    clearTimeout(timer);
+                    toriiSubmitting = false;
+                });
         }
 
         function setupAltcha() {
@@ -96,8 +153,18 @@
             }
             widget.setAttribute("challenge", toriiWebPath + "/captcha/challenge");
             widget.addEventListener("statechange", (ev) => {
-                if (ev.detail.state === "verified" && ev.detail.payload) {
-                    postAltcha(ev.detail.payload);
+                switch (ev.detail.state) {
+                    case "verified":
+                        if (ev.detail.payload) {
+                            submitCaptcha("altcha=" + encodeURIComponent(ev.detail.payload));
+                        }
+                        break;
+                    case "expired":
+                        setStatus("CAPTCHA expired, please solve it again.", true);
+                        break;
+                    case "error":
+                        setStatus("CAPTCHA failed to load, please check your connection and try again.", true);
+                        break;
                 }
             });
         }
@@ -121,6 +188,7 @@
     <div class="toriiVerifyBox" id="toriiVerifyBox">
         <altcha-widget name="altcha"></altcha-widget>
     </div>
+    <div class="toriiStatus" id="toriiStatus" role="status" aria-live="polite"></div>
     <div class="footer">
         DDoS Protection Powered by <a href="https://github.com/Rayzggz/server_torii">⛩️Server Torii</a>
     </div>
