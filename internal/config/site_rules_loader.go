@@ -96,15 +96,15 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return fmt.Errorf("[ERROR] rules file %s does not exist: %w", YAMLFile, err)
+			return fmt.Errorf("rules file %s does not exist: %w", YAMLFile, err)
 		} else {
-			return fmt.Errorf("[ERROR] failed to read rules file %s: %w", YAMLFile, err)
+			return fmt.Errorf("failed to read rules file %s: %w", YAMLFile, err)
 		}
 	}
 
 	wrapper, err := decodeServerRules(yamlData)
 	if err != nil {
-		return fmt.Errorf("[ERROR] failed to parse rules file %s: %w", YAMLFile, err)
+		return fmt.Errorf("failed to parse rules file %s: %w", YAMLFile, err)
 	}
 
 	if rs.IPCAPTCHARule == nil {
