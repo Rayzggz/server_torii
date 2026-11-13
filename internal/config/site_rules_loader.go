@@ -237,17 +237,32 @@ func loadIPRules(filePath string, trie *dataType.TrieNode) error {
 			continue
 		}
 
-		if !strings.Contains(line, "/") {
-			line = line + "/32"
-		}
-		_, ipNet, err := net.ParseCIDR(line)
-		if err != nil {
+		ipNet, ok := parseIPRule(line)
+		if !ok {
 			continue
 		}
 		trie.Insert(ipNet)
 	}
 
 	return scanner.Err()
+}
+
+// parseIPRule parses a CIDR or a bare address. A bare address becomes a host
+// rule sized to its family: /32 for IPv4 (including IPv4-mapped IPv6, which
+// net.ParseIP normalizes) and /128 for native IPv6.
+func parseIPRule(line string) (*net.IPNet, bool) {
+	if strings.Contains(line, "/") {
+		_, ipNet, err := net.ParseCIDR(line)
+		return ipNet, err == nil
+	}
+	ip := net.ParseIP(line)
+	if ip == nil {
+		return nil, false
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		return &net.IPNet{IP: ip4, Mask: net.CIDRMask(8*net.IPv4len, 8*net.IPv4len)}, true
+	}
+	return &net.IPNet{IP: ip, Mask: net.CIDRMask(8*net.IPv6len, 8*net.IPv6len)}, true
 }
 
 // loadURLRules Load URL rules from the specified file

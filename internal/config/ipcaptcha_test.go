@@ -56,14 +56,14 @@ func TestIPCaptchaConfiguration(t *testing.T) {
 
 func TestIPCaptchaUsesIPAllowMatching(t *testing.T) {
 	dir := ipCaptchaDirectory(t, ipCaptchaSettings)
-	list := "192.0.2.10\n198.51.100.0/24\nbad\n2001:db8::/32\n\n"
+	list := "192.0.2.10\n198.51.100.0/24\nbad\n2001:db8::/32\n2001:db8::1\n::ffff:203.0.113.5\n\n"
 	writeFile(t, filepath.Join(dir, "IP_AllowList.conf"), list)
 	writeFile(t, filepath.Join(dir, "IP_CAPTCHAList.conf"), list)
 	rules, err := LoadRules(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for ip, want := range map[string]bool{"192.0.2.10": true, "192.0.2.11": false, "198.51.100.255": true, "198.51.101.1": false, "2001:db8::1": false} {
+	for ip, want := range map[string]bool{"192.0.2.10": true, "192.0.2.11": false, "198.51.100.255": true, "198.51.101.1": false, "2001:db8::1": false, "203.0.113.5": true, "::ffff:203.0.113.5": true, "203.0.113.6": false} {
 		address := net.ParseIP(ip)
 		got := rules.IPCAPTCHARule.Trie.Search(address)
 		if got != want || got != rules.IPAllowRule.Trie.Search(address) {
