@@ -247,6 +247,56 @@ func TestDetectorWarmupFallback(t *testing.T) {
 	}
 }
 
+// A site whose pages normally see no non-browser traffic has a zero baseline mix. A modest
+// non-browser stream to one page (a feed reader, an uptime monitor) must not become hot just
+// because it clears min_requests and min_distinct_ips, while a real attack still must.
+func TestDetectorZeroBaselineMix(t *testing.T) {
+	// A short half-life lets the baseline settle within the test.
+	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) { r.URIDetection.Baseline.HalfLife = 120 })
+	humansOnly := func(tick int) []LogEntry {
+		var logs []LogEntry
+		for _, e := range humanTraffic(tick) {
+			if e.IP[:5] != "10.9." {
+				logs = append(logs, e)
+			}
+		}
+		return logs
+	}
+	// 12 monitors, each fetching /news every other interval: 180 requests per window,
+	// well under the ~300 browser-like requests /news normally gets.
+	monitors := func(tick int) []LogEntry {
+		var logs []LogEntry
+		for i := 0; i < 12; i++ {
+			if (i+tick)%2 == 0 {
+				logs = append(logs, hit(fmt.Sprintf("10.8.0.%d", i), "/news", 200))
+			}
+		}
+		return logs
+	}
+	for i := 0; i < 60; i++ {
+		h.run(humansOnly(h.tick))
+	}
+	for i := 0; i < 60; i++ {
+		h.run(append(humansOnly(h.tick), monitors(h.tick)...))
+	}
+	if h.state.mode != modeBaseline {
+		t.Fatalf("detection mode %q, want baseline", h.state.mode)
+	}
+	if _, ok := h.state.uriRules["/news"]; ok {
+		t.Fatal("/news falsely detected as hot with a zero baseline mix")
+	}
+	for i := 0; i < 30; i++ {
+		logs := append(humansOnly(h.tick), monitors(h.tick)...)
+		h.run(append(logs, botTraffic(h.tick)...))
+	}
+	if _, ok := h.state.uriRules["/search"]; !ok {
+		t.Fatal("/search attack not detected with a zero baseline mix")
+	}
+	if _, ok := h.state.uriRules["/news"]; ok {
+		t.Fatal("/news falsely detected as hot during the /search attack")
+	}
+}
+
 func TestDetectorHotURIMustBeSustained(t *testing.T) {
 	// Production-sized min_requests so each interval must carry a real share of the traffic.
 	h := newDetectorHarness(t, func(r *dataType.AdaptiveTrafficAnalyzerRule) { r.URIDetection.MinRequests = 300 })

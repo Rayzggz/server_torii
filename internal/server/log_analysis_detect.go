@@ -337,6 +337,11 @@ func (det *detection) fallbackCandidates(uris map[string]*uriWindow) map[string]
 	return candidates
 }
 
+// minBaselineMix is the lowest non-browser:browser mix baseline detection assumes. At the
+// default ratio_threshold of 5, a URI then needs at least as much non-browser traffic as its
+// normal browser-like traffic to be hot.
+const minBaselineMix = 0.2
+
 // baselineCandidates finds URIs whose non-browser traffic far exceeds the site's normal mix.
 func (det *detection) baselineCandidates(uris map[string]*uriWindow) map[string]bool {
 
@@ -354,7 +359,10 @@ func (det *detection) baselineCandidates(uris map[string]*uriWindow) map[string]
 		ratios = append(ratios, float64(non)/expected)
 		weights = append(weights, expected)
 	}
-	mix := weightedMedian(ratios, weights)
+	// Floor the mix: on sites where most pages see no non-browser traffic the median is 0,
+	// which would make every URI over min_requests and min_distinct_ips hot regardless of
+	// ratio_threshold.
+	mix := math.Max(weightedMedian(ratios, weights), minBaselineMix)
 
 	hc := det.rule.URIDetection
 	candidates := make(map[string]bool)
