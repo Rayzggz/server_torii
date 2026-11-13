@@ -15,8 +15,8 @@ type MainConfig struct {
 	ConnectingURIHeaders            []string         `yaml:"connecting_uri_headers" validate:"required"`
 	ConnectingFeatureControlHeaders []string         `yaml:"connecting_feature_control_headers" validate:"required"`
 	ConnectingMethodHeaders         []string         `yaml:"connecting_method_headers"`
-	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required"`
-	Peers                           []Peer           `yaml:"peers"`
+	Sites                           []AllSiteRuleSet `yaml:"sites" validate:"required,dive"`
+	Peers                           []Peer           `yaml:"peers" validate:"omitempty,dive"`
 }
 
 // Peer represents a gossip peer node.
