@@ -2,21 +2,25 @@ package utils
 
 import (
 	"fmt"
-	"github.com/medama-io/go-useragent"
 	"regexp"
+
+	"github.com/medama-io/go-useragent"
+)
+
+var (
+	// uaParser is safe for concurrent use: Parse only reads the trie.
+	uaParser       = useragent.NewParser()
+	blankUAPattern = regexp.MustCompile(`^\s*$`)
 )
 
 func GetClearanceUserAgent(inputUA string) string {
 	if len(inputUA) < 8 || inputUA[:8] != "Mozilla/" {
-		if inputUA == "" || regexp.MustCompile(`^\s*$`).MatchString(inputUA) {
+		if inputUA == "" || blankUAPattern.MatchString(inputUA) {
 			return "undefined"
 		}
 		return inputUA
 	}
-	ua := useragent.NewParser()
-	agent := ua.Parse(inputUA)
+	agent := uaParser.Parse(inputUA)
 
-	ret := fmt.Sprintf("Device:%v,OS:%v,Browser:%v,BrowserVersion:%v", agent.Device(), agent.OS(), agent.Browser(), agent.BrowserVersion())
-	return ret
-
+	return fmt.Sprintf("Device:%v,OS:%v,Browser:%v,BrowserVersion:%v", agent.Device(), agent.OS(), agent.Browser(), agent.BrowserVersion())
 }
