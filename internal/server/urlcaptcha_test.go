@@ -16,7 +16,7 @@ import (
 
 func TestURLCaptchaFeatureControl(t *testing.T) {
 	rules := featureControlRuleSet()
-	rules.IPCAPTCHARule = &config.IPCAPTCHARule{Enabled: true}
+	rules.IPCAPTCHARule = &config.IPListRule{Enabled: true}
 	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 	for _, tt := range []struct {
 		header        string
@@ -24,7 +24,7 @@ func TestURLCaptchaFeatureControl(t *testing.T) {
 	}{
 		{"", true, true}, {"__________0", true, false}, {"__________1", false, true}, {"___________", true, true}, {"__________", true, true},
 	} {
-		rules.URLCAPTCHARule = &config.URLCAPTCHARule{Enabled: tt.enabled}
+		rules.URLCAPTCHARule = &config.URLListRule{Enabled: tt.enabled}
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Header.Set("X-Features", tt.header)
 		got := processFeatureControl(cfg, req, rules)
@@ -49,7 +49,7 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			list := &urllist.URLRuleList{}
 			list.Append(&urllist.URLRule{Pattern: "/login"})
 			list.Append(&urllist.URLRule{IsRegex: true, Regex: regexp.MustCompile("^/admin(/|$)")})
-			rules.URLCAPTCHARule = &config.URLCAPTCHARule{Enabled: true, List: list}
+			rules.URLCAPTCHARule = &config.URLListRule{Enabled: true, List: list}
 			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
 			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/login", FeatureControl: request.FeatureURLCAPTCHA}
 			shared := &state.Runtime{}

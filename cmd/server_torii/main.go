@@ -61,10 +61,10 @@ func run() int {
 		return 1
 	}
 
-	var gossipManager *gossip.GossipManager
+	var gossipManager *gossip.Manager
 	if cfg.EnableGossip {
-		rt.GossipChan = make(chan gossip.GossipMessage, 1000)
-		gossipManager = gossip.NewGossipManager(cfg, engine)
+		rt.GossipChan = make(chan gossip.Message, 1000)
+		gossipManager = gossip.NewManager(cfg, engine)
 		go gossipManager.Start(rt.GossipChan)
 	}
 
@@ -74,7 +74,7 @@ func run() int {
 	go rt.RunGC(ctx, time.Minute)
 
 	// Initialize log system
-	logx.InitLogx(cfg.LogPath)
+	logx.Init(cfg.LogPath)
 
 	log.Printf("Ready to start server on port %s", cfg.Port)
 

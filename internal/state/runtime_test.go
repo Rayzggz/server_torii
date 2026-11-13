@@ -46,7 +46,7 @@ func TestApplyRule(t *testing.T) {
 
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossipCh := make(chan gossip.GossipMessage, 4)
+	gossipCh := make(chan gossip.Message, 4)
 	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossipCh}
 
 	if !rt.BlockIP("1.2.3.4", time.Minute) {
@@ -57,7 +57,7 @@ func TestApplyRule(t *testing.T) {
 	}
 	select {
 	case msg := <-gossipCh:
-		if msg.OriginNode != "node-a" || msg.Type != gossip.GossipTypeActionRule {
+		if msg.OriginNode != "node-a" || msg.Type != gossip.TypeActionRule {
 			t.Fatalf("unexpected broadcast: %+v", msg)
 		}
 	default:

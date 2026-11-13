@@ -82,7 +82,7 @@ func verifyHCaptchaResponse(r *http.Request, reqData request.UserRequest, ruleSe
 	defer func(Body io.ReadCloser) {
 		err := Body.Close()
 		if err != nil {
-			logx.LogError(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
+			logx.Error(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
 		}
 	}(resp.Body)
 

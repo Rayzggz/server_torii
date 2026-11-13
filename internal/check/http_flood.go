@@ -21,7 +21,7 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	sameURICounter := rt.HTTPFloodSameURILimitCounter.Load()
 	failureCounter := rt.HTTPFloodFailureLimitCounter.Load()
 	if speedCounter == nil || sameURICounter == nil || failureCounter == nil {
-		logx.LogError(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
+		logx.Error(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
 		decision.Set(action.Continue)
 		return
 	}
@@ -37,9 +37,9 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		if failureCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
 				if !rt.BlockIP(ipKey, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second) {
-					logx.LogError(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
+					logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
-				logx.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
+				logx.Info(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 				failureCounter.Reset(ipKey)
 				decision.SetVerdict(action.Done, action.VerdictBlock)
 				return
@@ -49,7 +49,7 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit {
 		if speedCounter.Query(ipKey, window) > limit {
-			logx.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
+			logx.Info(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 			failureCounter.Add(ipKey, 1)
 			decision.SetVerdict(action.Done, action.VerdictRateLimit)
 			return
@@ -58,7 +58,7 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSameURILimit {
 		if sameURICounter.Query(uriKey, window) > limit {
-			logx.LogInfo(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
+			logx.Info(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
 			failureCounter.Add(ipKey, 1)
 			decision.SetVerdict(action.Done, action.VerdictRateLimit)
 			return

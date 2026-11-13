@@ -22,7 +22,7 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 		if !rule.Program.Eval(ctx) {
 			continue
 		}
-		logx.LogInfo(reqData, "", "CustomRule "+rule.String())
+		logx.Info(reqData, "", "CustomRule "+rule.String())
 		switch rule.Action {
 		case rules.ActionAllow:
 			decision.SetVerdict(action.Done, action.VerdictAllow)

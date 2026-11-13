@@ -1,6 +1,6 @@
 package gossip
 
-type GossipMessage struct {
+type Message struct {
 	Type       string `json:"type"`        // e.g., "ACTION_RULE", "SYNC"
 	ID         string `json:"id"`          // UUID for deduplication
 	Seq        int64  `json:"seq"`         // Sequence number/Version
@@ -21,6 +21,6 @@ type ActionRuleSyncPayload struct {
 }
 
 const (
-	GossipTypeActionRule = "ACTION_RULE"
-	GossipTypeSync       = "SYNC"
+	TypeActionRule = "ACTION_RULE"
+	TypeSync       = "SYNC"
 )

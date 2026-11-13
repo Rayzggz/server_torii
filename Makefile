@@ -14,7 +14,7 @@ COMMIT ?= $(shell h=$$(git rev-parse --short=7 HEAD 2>/dev/null) && { git diff -
 LDFLAGS := -X server_torii/internal/version.buildCommit=$(COMMIT)
 
 build:
-	go build -ldflags "$(LDFLAGS)" -o server_torii .
+	go build -ldflags "$(LDFLAGS)" -o server_torii ./cmd/server_torii
 
 test-e2e:
 	bash tests/e2e/test.sh

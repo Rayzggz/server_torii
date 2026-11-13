@@ -24,7 +24,7 @@ func TestIPCaptchaFeatureControl(t *testing.T) {
 	}{
 		{"", true, true}, {"_________0", true, false}, {"_________1", false, true}, {"__________", true, true}, {"________", true, true},
 	} {
-		rules.IPCAPTCHARule = &config.IPCAPTCHARule{Enabled: tt.enabled}
+		rules.IPCAPTCHARule = &config.IPListRule{Enabled: tt.enabled}
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Header.Set("X-Features", tt.header)
 		got := processFeatureControl(cfg, req, rules)
@@ -45,7 +45,7 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 			trie := &iptrie.TrieNode{}
 			_, network, _ := net.ParseCIDR("192.0.2.0/24")
 			trie.Insert(network)
-			rules.IPCAPTCHARule = &config.IPCAPTCHARule{Enabled: true, Trie: trie}
+			rules.IPCAPTCHARule = &config.IPListRule{Enabled: true, Trie: trie}
 			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
 			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/test", FeatureControl: request.FeatureIPCAPTCHA}
 			shared := &state.Runtime{}

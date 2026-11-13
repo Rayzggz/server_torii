@@ -20,8 +20,8 @@ func TestIPListRules(t *testing.T) {
 	}
 	trie.Insert(network)
 	rules := &config.RuleSet{
-		IPAllowRule: &config.IPAllowRule{Trie: trie},
-		IPBlockRule: &config.IPBlockRule{Trie: trie},
+		IPAllowRule: &config.IPListRule{Trie: trie},
+		IPBlockRule: &config.IPListRule{Trie: trie},
 	}
 	for _, checker := range []struct {
 		name    string
@@ -66,8 +66,8 @@ func TestURLListRules(t *testing.T) {
 	list.Append(&urllist.URLRule{Pattern: "/admin"})
 	list.Append(&urllist.URLRule{IsRegex: true, Regex: regexp.MustCompile(`^/private/.*$`)})
 	rules := &config.RuleSet{
-		URLAllowRule: &config.URLAllowRule{List: list},
-		URLBlockRule: &config.URLBlockRule{List: list},
+		URLAllowRule: &config.URLListRule{List: list},
+		URLBlockRule: &config.URLListRule{List: list},
 	}
 	for _, checker := range []struct {
 		name    string

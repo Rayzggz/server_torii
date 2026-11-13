@@ -47,7 +47,7 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	ip := net.ParseIP(reqData.RemoteIP)
 	if ip == nil {
-		logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
+		logx.Info(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return
 	}
@@ -60,9 +60,9 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	}
 	if fresh {
 		if err != nil {
-			logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
+			logx.Info(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
 		} else {
-			logx.LogInfo(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
+			logx.Info(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
 		}
 	}
 	decision.SetVerdict(action.Done, action.VerdictBlock)

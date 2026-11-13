@@ -27,10 +27,10 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 
 	createReq := func(ts int64, id string) *http.Request {
 		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-		msg := GossipMessage{
+		msg := Message{
 			ID:         id,
 			OriginNode: "KnownPeer",
-			Type:       GossipTypeActionRule,
+			Type:       TypeActionRule,
 			Content:    string(payload),
 			Timestamp:  ts,
 		}
@@ -84,7 +84,7 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 			}
 			engine := action.NewActionRuleEngine(time.Minute)
 			t.Cleanup(engine.Stop)
-			gm := NewGossipManager(&localCfg, engine)
+			gm := NewManager(&localCfg, engine)
 			// Override start time/random dependencies if needed, but here simple logic suffices.
 
 			id := uuid.New().String()

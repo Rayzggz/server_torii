@@ -27,7 +27,7 @@ type Runtime struct {
 
 	// NodeName and GossipChan are used to share action rules with peers; a nil channel keeps rules local.
 	NodeName   string
-	GossipChan chan gossip.GossipMessage
+	GossipChan chan gossip.Message
 }
 
 // SetAnalyzer registers the running traffic analyzer.

@@ -27,8 +27,8 @@ func TestFeatureControlContract(t *testing.T) {
 		{"Captcha", request.FeatureCaptcha, func(rs *config.RuleSet) { rs.CAPTCHARule.Enabled = true }},
 		{"ExternalMigration", request.FeatureExternalMigration, func(rs *config.RuleSet) { rs.ExternalMigrationRule.Enabled = true }},
 		{"CountryRule", request.FeatureCountryRule, func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
-		{"IPCAPTCHA", request.FeatureIPCAPTCHA, func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPCAPTCHARule{Enabled: true} }},
-		{"URLCAPTCHA", request.FeatureURLCAPTCHA, func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLCAPTCHARule{Enabled: true} }},
+		{"IPCAPTCHA", request.FeatureIPCAPTCHA, func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
+		{"URLCAPTCHA", request.FeatureURLCAPTCHA, func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
 		{"CustomRules", request.FeatureCustomRules, func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
 	}
 	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}

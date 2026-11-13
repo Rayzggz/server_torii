@@ -26,7 +26,7 @@ func Captcha(reqData request.UserRequest, ruleSet *config.RuleSet, decision *act
 func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	failureCounter := rt.CaptchaFailureLimitCounter.Load()
 	if failureCounter == nil {
-		logx.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha rate checks")
+		logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha rate checks")
 		decision.Set(action.Continue)
 		return
 	}
@@ -40,9 +40,9 @@ func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decisi
 
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
 				if !rt.BlockIP(ipKey, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second) {
-					logx.LogError(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
+					logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
-				logx.LogInfo(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
+				logx.Info(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
 				failureCounter.Reset(ipKey)
 				decision.SetVerdict(action.Done, action.VerdictBlock)
 				return
@@ -102,7 +102,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 		if failureCounter := rt.CaptchaFailureLimitCounter.Load(); failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
-			logx.LogError(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
+			logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}
 		return outcome
 	}
@@ -116,7 +116,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 
 	verificationResult, err := verifyCaptchaResponse(r, reqData, ruleSet)
 	if err != nil {
-		logx.LogError(reqData, "", err.Error())
+		logx.Error(reqData, "", err.Error())
 		return SubmissionUnavailable
 	}
 	switch verificationResult {

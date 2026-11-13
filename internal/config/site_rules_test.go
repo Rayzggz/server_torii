@@ -5,10 +5,10 @@ import (
 )
 
 func TestGetSiteRules_ExactMatch(t *testing.T) {
-	rs := &RuleSet{IPAllowRule: &IPAllowRule{Enabled: true}}
+	rs := &RuleSet{IPAllowRule: &IPListRule{Enabled: true}}
 	siteRules := map[string]*RuleSet{
 		"example.com":  rs,
-		"default_site": {IPAllowRule: &IPAllowRule{Enabled: false}},
+		"default_site": {IPAllowRule: &IPListRule{Enabled: false}},
 	}
 
 	got := GetSiteRules(siteRules, "example.com")
@@ -18,10 +18,10 @@ func TestGetSiteRules_ExactMatch(t *testing.T) {
 }
 
 func TestGetSiteRules_WildcardMatch(t *testing.T) {
-	wildcard := &RuleSet{IPAllowRule: &IPAllowRule{Enabled: true}}
+	wildcard := &RuleSet{IPAllowRule: &IPListRule{Enabled: true}}
 	siteRules := map[string]*RuleSet{
 		"*.example.com": wildcard,
-		"default_site":  {IPAllowRule: &IPAllowRule{Enabled: false}},
+		"default_site":  {IPAllowRule: &IPListRule{Enabled: false}},
 	}
 
 	got := GetSiteRules(siteRules, "sub.example.com")
@@ -31,7 +31,7 @@ func TestGetSiteRules_WildcardMatch(t *testing.T) {
 }
 
 func TestGetSiteRules_DefaultFallback(t *testing.T) {
-	def := &RuleSet{IPAllowRule: &IPAllowRule{Enabled: true}}
+	def := &RuleSet{IPAllowRule: &IPListRule{Enabled: true}}
 	siteRules := map[string]*RuleSet{
 		"default_site": def,
 	}
@@ -54,8 +54,8 @@ func TestGetSiteRules_NoMatch(t *testing.T) {
 }
 
 func TestGetSiteRules_WildcardPriority(t *testing.T) {
-	exact := &RuleSet{IPAllowRule: &IPAllowRule{Enabled: true}}
-	wildcard := &RuleSet{IPAllowRule: &IPAllowRule{Enabled: false}}
+	exact := &RuleSet{IPAllowRule: &IPListRule{Enabled: true}}
+	wildcard := &RuleSet{IPAllowRule: &IPListRule{Enabled: false}}
 	siteRules := map[string]*RuleSet{
 		"sub.example.com": exact,
 		"*.example.com":   wildcard,

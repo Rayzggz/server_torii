@@ -2,18 +2,20 @@ package config
 
 import (
 	"server_torii/internal/feature"
+	"server_torii/internal/iptrie"
 	"server_torii/internal/rules"
+	"server_torii/internal/urllist"
 	"strings"
 )
 
 // RuleSet stores all rules for a single site.
 type RuleSet struct {
-	IPAllowRule                 *IPAllowRule
-	IPBlockRule                 *IPBlockRule
-	URLAllowRule                *URLAllowRule
-	URLBlockRule                *URLBlockRule
-	IPCAPTCHARule               *IPCAPTCHARule
-	URLCAPTCHARule              *URLCAPTCHARule
+	IPAllowRule                 *IPListRule
+	IPBlockRule                 *IPListRule
+	URLAllowRule                *URLListRule
+	URLBlockRule                *URLListRule
+	IPCAPTCHARule               *IPListRule
+	URLCAPTCHARule              *URLListRule
 	CAPTCHARule                 *CaptchaRule
 	VerifyBotRule               *VerifyBotRule
 	HTTPFloodRule               *HTTPFloodRule
@@ -21,6 +23,26 @@ type RuleSet struct {
 	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule
 	CountryRule                 *CountryRule
 	CustomRules                 *rules.CustomRules
+}
+
+// NewRuleSet returns a rule set with every rule present, disabled and empty, so code that reads
+// a loaded site never meets a nil rule.
+func NewRuleSet() *RuleSet {
+	return &RuleSet{
+		IPAllowRule:                 &IPListRule{Trie: &iptrie.TrieNode{}},
+		IPBlockRule:                 &IPListRule{Trie: &iptrie.TrieNode{}},
+		IPCAPTCHARule:               &IPListRule{Trie: &iptrie.TrieNode{}},
+		URLAllowRule:                &URLListRule{List: &urllist.URLRuleList{}},
+		URLBlockRule:                &URLListRule{List: &urllist.URLRuleList{}},
+		URLCAPTCHARule:              &URLListRule{List: &urllist.URLRuleList{}},
+		CAPTCHARule:                 &CaptchaRule{},
+		VerifyBotRule:               &VerifyBotRule{},
+		HTTPFloodRule:               &HTTPFloodRule{},
+		ExternalMigrationRule:       &ExternalMigrationRule{},
+		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
+		CountryRule:                 &CountryRule{DefaultAction: CountryContinue, UnknownAction: CountryContinue, Countries: make(map[string]CountryAction)},
+		CustomRules:                 &rules.CustomRules{},
+	}
 }
 
 // GetSiteRules returns the rules for a specific host.

@@ -15,6 +15,6 @@ func URLCAPTCHA(reqData request.UserRequest, ruleSet *config.RuleSet, decision *
 	if reqData.FeatureControl&request.FeatureURLCAPTCHA == 0 || rule == nil || rule.List == nil || !rule.List.Match(reqData.Uri) {
 		return
 	}
-	logx.LogInfo(reqData, "", "URLCAPTCHA")
+	logx.Info(reqData, "", "URLCAPTCHA")
 	requireCaptcha(reqData, ruleSet, decision, rt)
 }

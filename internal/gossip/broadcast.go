@@ -6,7 +6,7 @@ import (
 )
 
 // BroadcastActionRule sends an action rule event to the gossip channel
-func BroadcastActionRule(nodeName string, ruleType string, value string, action string, duration time.Duration, gossipChan chan GossipMessage) {
+func BroadcastActionRule(nodeName string, ruleType string, value string, action string, duration time.Duration, gossipChan chan Message) {
 	if gossipChan == nil {
 		return
 	}
@@ -24,8 +24,8 @@ func BroadcastActionRule(nodeName string, ruleType string, value string, action 
 	}
 
 	select {
-	case gossipChan <- GossipMessage{
-		Type:       GossipTypeActionRule,
+	case gossipChan <- Message{
+		Type:       TypeActionRule,
 		OriginNode: nodeName,
 		Content:    string(payloadBytes),
 	}:

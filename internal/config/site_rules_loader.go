@@ -25,21 +25,7 @@ func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
-	rs := RuleSet{
-		IPAllowRule:                 &IPAllowRule{Trie: &iptrie.TrieNode{}},
-		IPBlockRule:                 &IPBlockRule{Trie: &iptrie.TrieNode{}},
-		IPCAPTCHARule:               &IPCAPTCHARule{Trie: &iptrie.TrieNode{}},
-		URLAllowRule:                &URLAllowRule{List: &urllist.URLRuleList{}},
-		URLBlockRule:                &URLBlockRule{List: &urllist.URLRuleList{}},
-		URLCAPTCHARule:              &URLCAPTCHARule{List: &urllist.URLRuleList{}},
-		CAPTCHARule:                 &CaptchaRule{},
-		VerifyBotRule:               &VerifyBotRule{},
-		HTTPFloodRule:               &HTTPFloodRule{},
-		ExternalMigrationRule:       &ExternalMigrationRule{},
-		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
-		CountryRule:                 &CountryRule{DefaultAction: CountryContinue, UnknownAction: CountryContinue, Countries: make(map[string]CountryAction)},
-		CustomRules:                 &rules.CustomRules{},
-	}
+	rs := NewRuleSet()
 
 	// Load IP Allow List
 	ipAllowFile := filepath.Join(rulePath, "IP_AllowList.conf")
@@ -80,7 +66,7 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 	}
 
 	YAMLFile := filepath.Join(rulePath, "Server.yml")
-	if err := loadServerRules(YAMLFile, &rs); err != nil {
+	if err := loadServerRules(YAMLFile, rs); err != nil {
 		return nil, err
 	}
 	if ipCaptchaErr != nil && rs.IPCAPTCHARule.Enabled {
@@ -90,9 +76,10 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 		return nil, fmt.Errorf("URLCAPTCHA list: %w", urlCaptchaErr)
 	}
 
-	return &rs, nil
+	return rs, nil
 }
 
+// loadServerRules fills rs, which must come from NewRuleSet, from the site's Server.yml.
 func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
@@ -106,13 +93,6 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	wrapper, err := decodeServerRules(yamlData)
 	if err != nil {
 		return fmt.Errorf("failed to parse rules file %s: %w", YAMLFile, err)
-	}
-
-	if rs.IPCAPTCHARule == nil {
-		rs.IPCAPTCHARule = &IPCAPTCHARule{Trie: &iptrie.TrieNode{}}
-	}
-	if rs.URLCAPTCHARule == nil {
-		rs.URLCAPTCHARule = &URLCAPTCHARule{List: &urllist.URLRuleList{}}
 	}
 
 	if wrapper.IPAllowRule != nil {
@@ -172,9 +152,6 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	}
 
 	if wrapper.CustomRules != nil {
-		if rs.CustomRules == nil {
-			rs.CustomRules = &rules.CustomRules{}
-		}
 		if err := mapCustomRules(wrapper.CustomRules, rs.CustomRules); err != nil {
 			return err
 		}

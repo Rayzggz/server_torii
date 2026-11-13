@@ -18,12 +18,12 @@ const (
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
-	IPAllowRule                 *IPAllowRule                 `yaml:"IPAllow"`
-	IPBlockRule                 *IPBlockRule                 `yaml:"IPBlock"`
-	URLAllowRule                *URLAllowRule                `yaml:"URLAllow"`
-	URLBlockRule                *URLBlockRule                `yaml:"URLBlock"`
-	IPCAPTCHARule               *IPCAPTCHARule               `yaml:"IPCAPTCHA"`
-	URLCAPTCHARule              *URLCAPTCHARule              `yaml:"URLCAPTCHA"`
+	IPAllowRule                 *IPListRule                  `yaml:"IPAllow"`
+	IPBlockRule                 *IPListRule                  `yaml:"IPBlock"`
+	URLAllowRule                *URLListRule                 `yaml:"URLAllow"`
+	URLBlockRule                *URLListRule                 `yaml:"URLBlock"`
+	IPCAPTCHARule               *IPListRule                  `yaml:"IPCAPTCHA"`
+	URLCAPTCHARule              *URLListRule                 `yaml:"URLCAPTCHA"`
 	CAPTCHARule                 *captchaRuleWrapper          `yaml:"CAPTCHA"`
 	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
 	HTTPFloodRule               httpFloodRuleWrapper         `yaml:"HTTPFlood"`

@@ -7,13 +7,13 @@ import (
 )
 
 func TestBroadcastActionRulePayload(t *testing.T) {
-	ch := make(chan GossipMessage, 1)
+	ch := make(chan Message, 1)
 	before := time.Now().Add(time.Minute).Unix()
 	BroadcastActionRule("node-a", "URI", `/quoted/"path`, "BLOCK", time.Minute, ch)
 	after := time.Now().Add(time.Minute).Unix()
 	select {
 	case message := <-ch:
-		if message.Type != GossipTypeActionRule || message.OriginNode != "node-a" {
+		if message.Type != TypeActionRule || message.OriginNode != "node-a" {
 			t.Fatalf("unexpected envelope: %+v", message)
 		}
 		var payload ActionRulePayload
@@ -32,9 +32,9 @@ func TestBroadcastActionRulePayload(t *testing.T) {
 }
 
 func TestBroadcastActionRuleDoesNotBlock(t *testing.T) {
-	full := make(chan GossipMessage, 1)
-	full <- GossipMessage{ID: "existing"}
-	for name, ch := range map[string]chan GossipMessage{"nil": nil, "full": full, "unbuffered": make(chan GossipMessage)} {
+	full := make(chan Message, 1)
+	full <- Message{ID: "existing"}
+	for name, ch := range map[string]chan Message{"nil": nil, "full": full, "unbuffered": make(chan Message)} {
 		t.Run(name, func(t *testing.T) {
 			done := make(chan struct{})
 			go func() { BroadcastActionRule("node", "IP", "192.0.2.1", "BLOCK", time.Minute, ch); close(done) }()

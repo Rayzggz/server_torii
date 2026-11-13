@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-const ServerToriiVersion string = "2.0.0-beta"
+const Version string = "2.0.0-beta"
 
 // buildCommit is injected at build time, e.g.
 //
@@ -14,10 +14,10 @@ const ServerToriiVersion string = "2.0.0-beta"
 // It must stay a plain string var (not a const) for -X to work.
 var buildCommit string
 
-// ServerToriiCommit returns the git commit the binary was built from: the
+// Commit returns the git commit the binary was built from: the
 // -ldflags value if set, otherwise the VCS info the Go toolchain embeds when
 // building inside a git checkout, otherwise "unknown".
-var ServerToriiCommit = sync.OnceValue(func() string {
+var Commit = sync.OnceValue(func() string {
 	if buildCommit != "" {
 		return buildCommit
 	}

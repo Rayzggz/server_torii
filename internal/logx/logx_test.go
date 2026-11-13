@@ -19,13 +19,13 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 		logger = prev
 		_ = os.RemoveAll(base)
 	})
-	InitLogx(base)
+	Init(base)
 
 	req := request.UserRequest{RemoteIP: "203.0.113.9", Host: "example.com", Uri: "/path", UserAgent: "test-agent"}
-	LogInfo(req, "info-message", "info-extra")
-	LogError(req, "error-message", "error-extra")
-	LogDebug(req, "debug-message", "debug-extra")
-	LogInfo(request.UserRequest{Host: "other.example.com"}, "other-host", "")
+	Info(req, "info-message", "info-extra")
+	Error(req, "error-message", "error-extra")
+	Debug(req, "debug-message", "debug-extra")
+	Info(request.UserRequest{Host: "other.example.com"}, "other-host", "")
 
 	read := func(host, name string) string {
 		t.Helper()
@@ -70,7 +70,7 @@ func TestLogxUninitializedDoesNotPanic(t *testing.T) {
 	t.Cleanup(func() { logger = prev })
 
 	req := request.UserRequest{Host: "example.com"}
-	LogInfo(req, "a", "b")
-	LogError(req, "a", "b")
-	LogDebug(req, "a", "b")
+	Info(req, "a", "b")
+	Error(req, "a", "b")
+	Debug(req, "a", "b")
 }

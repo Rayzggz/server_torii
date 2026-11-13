@@ -66,7 +66,7 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 			t.Run(policy+"/"+config.name, func(t *testing.T) {
 				file := filepath.Join(t.TempDir(), "Server.yml")
 				writeFile(t, file, "CountryRule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
-				rules := &RuleSet{CountryRule: &CountryRule{}, CAPTCHARule: &CaptchaRule{}, HTTPFloodRule: &HTTPFloodRule{}}
+				rules := NewRuleSet()
 				err := loadServerRules(file, rules)
 				if (err != nil) != config.invalid {
 					t.Fatalf("error = %v, invalid = %t", err, config.invalid)
@@ -90,7 +90,7 @@ func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	writeRuleFiles(t, dir, map[string]string{"IP_AllowList.conf": "", "IP_BlockList.conf": "", "URL_AllowList.conf": "", "URL_BlockList.conf": "", "Server.yml": "CountryRule: { default_action: block }"})
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: dir}}}
-	manager := &ConfigManager{}
+	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}

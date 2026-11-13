@@ -20,6 +20,6 @@ func IPCAPTCHA(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	if ip == nil || !rule.Trie.Search(ip) {
 		return
 	}
-	logx.LogInfo(reqData, "", "IPCAPTCHA")
+	logx.Info(reqData, "", "IPCAPTCHA")
 	requireCaptcha(reqData, ruleSet, decision, rt)
 }

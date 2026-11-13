@@ -103,34 +103,17 @@ type ExternalMigrationRule struct {
 	SessionTimeout int64  `yaml:"session_timeout" validate:"required,min=1,max=9223372036854775807"`
 }
 
-type IPAllowRule struct {
-	Enabled bool `yaml:"enabled"`
-	Trie    *iptrie.TrieNode
-}
-
-type IPCAPTCHARule struct {
+// IPListRule switches one of a site's IP lists (allow, block, CAPTCHA). The list itself comes from the
+// matching .conf file, not from Server.yml.
+type IPListRule struct {
 	Enabled bool             `yaml:"enabled"`
 	Trie    *iptrie.TrieNode `yaml:"-"`
 }
 
-type IPBlockRule struct {
-	Enabled bool `yaml:"enabled"`
-	Trie    *iptrie.TrieNode
-}
-
-type URLAllowRule struct {
-	Enabled bool `yaml:"enabled"`
-	List    *urllist.URLRuleList
-}
-
-type URLCAPTCHARule struct {
+// URLListRule switches one of a site's URL lists (allow, block, CAPTCHA).
+type URLListRule struct {
 	Enabled bool                 `yaml:"enabled"`
 	List    *urllist.URLRuleList `yaml:"-"`
-}
-
-type URLBlockRule struct {
-	Enabled bool `yaml:"enabled"`
-	List    *urllist.URLRuleList
 }
 
 type CountryAction string

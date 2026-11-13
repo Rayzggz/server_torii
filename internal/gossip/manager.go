@@ -25,14 +25,14 @@ import (
 )
 
 const (
-	GossipMaxSkew       = 2 * time.Minute
-	GossipMaxAge        = 10 * time.Minute
+	MaxSkew             = 2 * time.Minute
+	MaxAge              = 10 * time.Minute
 	maxGossipBodySize   = 10 * 1024 * 1024 // 10MB
 	maxSyncEntriesBatch = 5000             // conservative count to stay under 10MB
 	maxSeenMessages     = 50000            // default limit for seen messages
 )
 
-type GossipManager struct {
+type Manager struct {
 	cfg                 *config.MainConfig
 	actionEngine        *action.ActionRuleEngine
 	seenMessages        map[string]time.Time
@@ -44,8 +44,8 @@ type GossipManager struct {
 	rngMu               sync.Mutex
 }
 
-func NewGossipManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine) *GossipManager {
-	return &GossipManager{
+func NewManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine) *Manager {
+	return &Manager{
 		cfg:                 cfg,
 		actionEngine:        actionEngine,
 		seenMessages:        make(map[string]time.Time),
@@ -55,7 +55,7 @@ func NewGossipManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEng
 	}
 }
 
-func (gm *GossipManager) Start(gossipChan <-chan GossipMessage) {
+func (gm *Manager) Start(gossipChan <-chan Message) {
 	log.Printf("GossipManager started, listening for events...")
 
 	// Start anti-entropy ticker
@@ -83,7 +83,7 @@ func (gm *GossipManager) Start(gossipChan <-chan GossipMessage) {
 	}
 }
 
-func (gm *GossipManager) markSeen(id string) {
+func (gm *Manager) markSeen(id string) {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
@@ -95,7 +95,7 @@ func (gm *GossipManager) markSeen(id string) {
 	gm.seenMessages[id] = time.Now()
 }
 
-func (gm *GossipManager) isSeen(id string) bool {
+func (gm *Manager) isSeen(id string) bool {
 	gm.mu.RLock()
 	defer gm.mu.RUnlock()
 	_, ok := gm.seenMessages[id]
@@ -105,7 +105,7 @@ func (gm *GossipManager) isSeen(id string) bool {
 // checkAndMarkSeen atomically checks if a message has been seen.
 // If not seen, it marks it as seen and returns false.
 // If already seen, it returns true.
-func (gm *GossipManager) checkAndMarkSeen(id string) bool {
+func (gm *Manager) checkAndMarkSeen(id string) bool {
 	gm.mu.Lock()
 	defer gm.mu.Unlock()
 
@@ -122,7 +122,7 @@ func (gm *GossipManager) checkAndMarkSeen(id string) bool {
 	return false
 }
 
-func (gm *GossipManager) isKnownPeer(name string) bool {
+func (gm *Manager) isKnownPeer(name string) bool {
 	for _, p := range gm.cfg.Peers {
 		if p.Name == name {
 			return true
@@ -133,11 +133,11 @@ func (gm *GossipManager) isKnownPeer(name string) bool {
 
 // pruneSeenMessagesLocked removes expired messages and enforces the size limit.
 // It must be called with mu.Lock() held.
-func (gm *GossipManager) pruneSeenMessagesLocked() {
+func (gm *Manager) pruneSeenMessagesLocked() {
 	now := time.Now()
 	// 1. Remove expired messages
 	for id, t := range gm.seenMessages {
-		if now.Sub(t) > GossipMaxAge {
+		if now.Sub(t) > MaxAge {
 			delete(gm.seenMessages, id)
 		}
 	}
@@ -165,7 +165,7 @@ func (gm *GossipManager) pruneSeenMessagesLocked() {
 	}
 }
 
-func (gm *GossipManager) cleanupSeenMessages() {
+func (gm *Manager) cleanupSeenMessages() {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
@@ -175,7 +175,7 @@ func (gm *GossipManager) cleanupSeenMessages() {
 	}
 }
 
-func (gm *GossipManager) epidemicBroadcast(msg GossipMessage) {
+func (gm *Manager) epidemicBroadcast(msg Message) {
 	// Fanout: Select k random peers
 	k := 3 // Fanout factor
 	peers := gm.cfg.Peers
@@ -200,7 +200,7 @@ func (gm *GossipManager) epidemicBroadcast(msg GossipMessage) {
 	}
 }
 
-func (gm *GossipManager) startAntiEntropy() {
+func (gm *Manager) startAntiEntropy() {
 	ticker := time.NewTicker(gm.AntiEntropyInterval) // Run every interval
 	defer ticker.Stop()
 
@@ -251,15 +251,15 @@ func (gm *GossipManager) startAntiEntropy() {
 	}
 }
 
-func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) {
+func (gm *Manager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) {
 	content, err := json.Marshal(batch)
 	if err != nil {
 		log.Printf("[ERROR] Failed to marshal snapshot batch for anti-entropy: %v", err)
 		return
 	}
 
-	msg := GossipMessage{
-		Type:       GossipTypeSync,
+	msg := Message{
+		Type:       TypeSync,
 		ID:         uuid.New().String(),
 		OriginNode: gm.cfg.NodeName,
 		Timestamp:  time.Now().Unix(),
@@ -269,7 +269,7 @@ func (gm *GossipManager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPay
 	go gm.sendGossip(peer, msg)
 }
 
-func (gm *GossipManager) sendGossip(p config.Peer, msg GossipMessage) {
+func (gm *Manager) sendGossip(p config.Peer, msg Message) {
 	url := p.Address + gm.cfg.WebPath + "/gossip"
 
 	data, err := json.Marshal(msg)
@@ -323,7 +323,7 @@ func (gm *GossipManager) sendGossip(p config.Peer, msg GossipMessage) {
 	}
 }
 
-func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
+func (gm *Manager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -334,7 +334,7 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var msg GossipMessage
+	var msg Message
 	if err := json.Unmarshal(body, &msg); err != nil {
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
@@ -369,9 +369,9 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	msgTime := time.Unix(msg.Timestamp, 0)
 
-	if now.Sub(msgTime) > GossipMaxAge {
+	if now.Sub(msgTime) > MaxAge {
 		log.Printf("[SECURITY] Dropped old gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
-	} else if msgTime.Sub(now) > GossipMaxSkew {
+	} else if msgTime.Sub(now) > MaxSkew {
 		log.Printf("[SECURITY] Dropped future gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
 	} else {
 		// Processing
@@ -384,7 +384,7 @@ func (gm *GossipManager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func (gm *Manager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	// Check Content-Length if provided
 	if r.ContentLength > maxGossipBodySize {
 		log.Printf("[SECURITY] Rejected oversized gossip request from %s (Content-Length: %d)", r.RemoteAddr, r.ContentLength)
@@ -449,7 +449,7 @@ func (gm *GossipManager) readAndVerifyBody(w http.ResponseWriter, r *http.Reques
 	return body, true
 }
 
-func (gm *GossipManager) processRemoteMessage(msg GossipMessage) {
+func (gm *Manager) processRemoteMessage(msg Message) {
 	// Deduplication
 	if gm.checkAndMarkSeen(msg.ID) {
 		return
@@ -457,14 +457,14 @@ func (gm *GossipManager) processRemoteMessage(msg GossipMessage) {
 	now := time.Now()
 
 	switch msg.Type {
-	case GossipTypeActionRule:
+	case TypeActionRule:
 		gm.processActionRule(msg, now)
-	case GossipTypeSync:
+	case TypeSync:
 		gm.processSync(msg, now)
 	}
 }
 
-func (gm *GossipManager) processActionRule(msg GossipMessage, now time.Time) {
+func (gm *Manager) processActionRule(msg Message, now time.Time) {
 	var payload ActionRulePayload
 	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
 		log.Printf("[ERROR] Failed to unmarshal action rule gossip: %v", err)
@@ -494,7 +494,7 @@ func (gm *GossipManager) processActionRule(msg GossipMessage, now time.Time) {
 	gm.epidemicBroadcast(msg)
 }
 
-func (gm *GossipManager) processSync(msg GossipMessage, now time.Time) {
+func (gm *Manager) processSync(msg Message, now time.Time) {
 	log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
 	var syncPayload ActionRuleSyncPayload
 	if err := json.Unmarshal([]byte(msg.Content), &syncPayload); err != nil {

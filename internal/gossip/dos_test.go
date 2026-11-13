@@ -23,7 +23,7 @@ func TestGossipManager_HandleGossip_DoS(t *testing.T) {
 			{Name: "KnownPeer", Address: "http://known.com"},
 		},
 	}
-	gm := &GossipManager{
+	gm := &Manager{
 		cfg:          cfg,
 		seenMessages: make(map[string]time.Time),
 	}
@@ -97,10 +97,10 @@ func TestGossipManager_HandleGossip_DoS(t *testing.T) {
 
 func createSignedGossipRequest(t *testing.T, cfg *config.MainConfig, bodyStr string) *http.Request {
 	payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-	msg := GossipMessage{
+	msg := Message{
 		ID:         "test-id",
 		OriginNode: "KnownPeer",
-		Type:       GossipTypeActionRule,
+		Type:       TypeActionRule,
 		Content:    string(payload),
 		Timestamp:  time.Now().Unix(),
 	}
@@ -130,7 +130,7 @@ func TestGossipManager_SeenMessagesLimit(t *testing.T) {
 
 	// 5. Test maxSeenMessages Limit
 	// Create a new GM
-	gmLimit := &GossipManager{
+	gmLimit := &Manager{
 		cfg:            cfg,
 		seenMessages:   make(map[string]time.Time),
 		maxSeenEntries: 10,

@@ -16,7 +16,7 @@ func verifyToken(reqData request.UserRequest, signer token.Signer, value string,
 	}
 	ok, err := signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), maxAge, time.Now())
 	if err != nil {
-		logx.LogError(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
+		logx.Error(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
 	}
 	return ok
 }

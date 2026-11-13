@@ -116,11 +116,11 @@ func TestHealthCheck(t *testing.T) {
 		k, v, _ := strings.Cut(l, "=")
 		fields[k] = v
 	}
-	if fields["version"] != version.ServerToriiVersion {
-		t.Errorf("version = %q, want %q", fields["version"], version.ServerToriiVersion)
+	if fields["version"] != version.Version {
+		t.Errorf("version = %q, want %q", fields["version"], version.Version)
 	}
-	if fields["commit"] != version.ServerToriiCommit() || fields["commit"] == "" {
-		t.Errorf("commit = %q, want %q", fields["commit"], version.ServerToriiCommit())
+	if fields["commit"] != version.Commit() || fields["commit"] == "" {
+		t.Errorf("commit = %q, want %q", fields["commit"], version.Commit())
 	}
 	if fields["sliver"] != "node-a" {
 		t.Errorf("sliver = %q, want node-a", fields["sliver"])

@@ -64,7 +64,7 @@ type AdaptiveTrafficAnalyzer struct {
 	buffer      *LogBuffer
 	analyzers   []Analyzer
 	rt          *state.Runtime
-	configs     *config.ConfigManager
+	configs     *config.Manager
 	stopCh      chan struct{}
 	startOnce   sync.Once
 	stopOnce    sync.Once
@@ -95,7 +95,7 @@ type analysisWindow struct {
 
 // NewAdaptiveTrafficAnalyzer builds an analyzer that reads site rules from configs and enforces through rt.
 // Either may be nil: without configs nothing is analyzed, without rt detections are only logged.
-func NewAdaptiveTrafficAnalyzer(rt *state.Runtime, configs *config.ConfigManager) *AdaptiveTrafficAnalyzer {
+func NewAdaptiveTrafficAnalyzer(rt *state.Runtime, configs *config.Manager) *AdaptiveTrafficAnalyzer {
 	return &AdaptiveTrafficAnalyzer{
 		buffer:    NewLogBuffer(),
 		analyzers: []Analyzer{&trafficDetector{}},

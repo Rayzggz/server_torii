@@ -77,7 +77,7 @@ func TestIPCaptchaReloadAndSiteIsolation(t *testing.T) {
 	list := filepath.Join(first, "IP_CAPTCHAList.conf")
 	writeFile(t, list, "192.0.2.10")
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: first}, {Host: "other.example", RulePath: second}}}
-	manager := &ConfigManager{}
+	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}

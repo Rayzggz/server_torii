@@ -42,10 +42,10 @@ func CountryRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 	}
 	switch selected {
 	case config.CountryBlock:
-		logx.LogInfo(reqData, "", "CountryRule BLOCK "+reason)
+		logx.Info(reqData, "", "CountryRule BLOCK "+reason)
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	case config.CountryCaptcha:
-		logx.LogInfo(reqData, "", "CountryRule CAPTCHA "+reason)
+		logx.Info(reqData, "", "CountryRule CAPTCHA "+reason)
 		requireCaptcha(reqData, ruleSet, decision, rt)
 	default:
 		decision.Set(action.Continue)

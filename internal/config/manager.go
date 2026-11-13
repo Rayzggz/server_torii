@@ -33,19 +33,19 @@ func (s *SiteConfigSnapshot) CounterWindows() CounterWindows {
 	return w
 }
 
-// ConfigManager handles the thread-safe swapping of site configuration snapshots.
-type ConfigManager struct {
+// Manager handles the thread-safe swapping of site configuration snapshots.
+type Manager struct {
 	snapshot atomic.Pointer[SiteConfigSnapshot]
 }
 
 // NewManager returns a manager with no snapshot; call Reload to load one.
-func NewManager() *ConfigManager {
-	return &ConfigManager{}
+func NewManager() *Manager {
+	return &Manager{}
 }
 
 // Get returns the current, immutable site configuration snapshot, or nil when none is loaded.
 // Calling this at the start of a request guarantees that the request sees a consistent state.
-func (m *ConfigManager) Get() *SiteConfigSnapshot {
+func (m *Manager) Get() *SiteConfigSnapshot {
 	if m == nil {
 		return nil
 	}
@@ -53,7 +53,7 @@ func (m *ConfigManager) Get() *SiteConfigSnapshot {
 }
 
 // Set forcefully replaces the current configuration snapshot with a new one.
-func (m *ConfigManager) Set(snap *SiteConfigSnapshot) {
+func (m *Manager) Set(snap *SiteConfigSnapshot) {
 	m.snapshot.Store(snap)
 }
 
@@ -75,7 +75,7 @@ func LoadSnapshot(cfg *MainConfig) (*SiteConfigSnapshot, error) {
 // Reload re-reads all site rules and swaps the snapshot without interrupting current requests.
 // A failed load leaves the current snapshot in place. Each beforeSwap hook runs once the new
 // snapshot is loaded and before requests can see it, so state derived from it is ready in time.
-func (m *ConfigManager) Reload(cfg *MainConfig, beforeSwap ...func(*SiteConfigSnapshot)) error {
+func (m *Manager) Reload(cfg *MainConfig, beforeSwap ...func(*SiteConfigSnapshot)) error {
 	log.Println("[INFO] Reloading site configurations...")
 
 	snap, err := LoadSnapshot(cfg)

@@ -59,7 +59,7 @@ func TestURLCaptchaReloadAndIsolation(t *testing.T) {
 	file := filepath.Join(first, "URL_CAPTCHAList.conf")
 	writeFile(t, file, "/login")
 	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: first}, {Host: "other.example", RulePath: second}}}
-	manager := &ConfigManager{}
+	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}

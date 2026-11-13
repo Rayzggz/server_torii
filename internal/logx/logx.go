@@ -21,7 +21,7 @@ type LogxManager struct {
 
 var logger *LogxManager
 
-func InitLogx(base string) {
+func Init(base string) {
 	logger = newManager(base)
 }
 
@@ -78,7 +78,7 @@ func (m *LogxManager) openLogFile(path string) *os.File {
 	return f
 }
 
-func LogInfo(reqData request.UserRequest, msg, msg2 string) {
+func Info(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")
@@ -97,7 +97,7 @@ func LogInfo(reqData request.UserRequest, msg, msg2 string) {
 	lg.Info(line)
 }
 
-func LogError(reqData request.UserRequest, msg, msg2 string) {
+func Error(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")
@@ -116,7 +116,7 @@ func LogError(reqData request.UserRequest, msg, msg2 string) {
 	lg.Error(line)
 }
 
-func LogDebug(reqData request.UserRequest, msg, msg2 string) {
+func Debug(reqData request.UserRequest, msg, msg2 string) {
 	m := logger
 	if m == nil {
 		log.Printf("LogxManager is not initialized")

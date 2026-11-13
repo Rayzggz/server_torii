@@ -17,9 +17,9 @@ func TestGossipManager_RNG_Seeding(t *testing.T) {
 	defer bl.Stop()
 
 	// Create two managers with a delay to ensure different seeds
-	gm1 := NewGossipManager(cfg, bl)
+	gm1 := NewManager(cfg, bl)
 	time.Sleep(2 * time.Nanosecond) // Ensure time.Now().UnixNano() changes
-	gm2 := NewGossipManager(cfg, bl)
+	gm2 := NewManager(cfg, bl)
 
 	if gm1.rng == nil {
 		t.Fatal("gm1.rng is nil")
@@ -67,16 +67,16 @@ func TestGossipManager_RNG_Locking(t *testing.T) {
 	}
 	bl := action.NewActionRuleEngine(time.Minute)
 	defer bl.Stop()
-	gm := NewGossipManager(cfg, bl)
+	gm := NewManager(cfg, bl)
 
 	// Simulate concurrent access
 	done := make(chan bool)
 	go func() {
-		gm.epidemicBroadcast(GossipMessage{ID: "test"})
+		gm.epidemicBroadcast(Message{ID: "test"})
 		done <- true
 	}()
 	go func() {
-		gm.epidemicBroadcast(GossipMessage{ID: "test2"})
+		gm.epidemicBroadcast(Message{ID: "test2"})
 		done <- true
 	}()
 

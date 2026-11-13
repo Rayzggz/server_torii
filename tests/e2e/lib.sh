@@ -90,7 +90,7 @@ preflight() {
 setup_cluster() {
     local i j node site cfg deadline
     log "Building Torii and preparing $NUM_NODES processes"
-    (cd "$ROOT" && go build -o "$RUN/server_torii" .)
+    (cd "$ROOT" && go build -o "$RUN/server_torii" ./cmd/server_torii)
     for ((i=1; i<=NUM_NODES; i++)); do
         node="$RUN/node$i"
         mkdir -p "$node/log" "$node/data" "$node/rules"

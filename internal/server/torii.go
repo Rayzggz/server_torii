@@ -62,7 +62,7 @@ func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request,
 	}
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(outcome.String())); err != nil {
-		logx.LogError(reqData, "Error writing response: "+err.Error(), "handleCaptchaSubmission")
+		logx.Error(reqData, "Error writing response: "+err.Error(), "handleCaptchaSubmission")
 	}
 }
 
@@ -82,7 +82,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData requ
 
 	challenge, err := check.GenAltchaChallenge(*ruleSet, reqData)
 	if err != nil {
-		logx.LogError(reqData, fmt.Sprintf("Error generating ALTCHA challenge: %v", err), "handleCaptchaChallenge")
+		logx.Error(reqData, fmt.Sprintf("Error generating ALTCHA challenge: %v", err), "handleCaptchaChallenge")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -90,7 +90,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData requ
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(challenge); err != nil {
-		logx.LogError(reqData, fmt.Sprintf("Error writing ALTCHA challenge: %v", err), "handleCaptchaChallenge")
+		logx.Error(reqData, fmt.Sprintf("Error writing ALTCHA challenge: %v", err), "handleCaptchaChallenge")
 	}
 }
 
@@ -99,10 +99,10 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	var builder strings.Builder
 	builder.WriteString("ok\n")
 	builder.WriteString("version=")
-	builder.WriteString(version.ServerToriiVersion)
+	builder.WriteString(version.Version)
 	builder.WriteString("\n")
 	builder.WriteString("commit=")
-	builder.WriteString(version.ServerToriiCommit())
+	builder.WriteString(version.Commit())
 	builder.WriteString("\n")
 	builder.WriteString("time=")
 	builder.WriteString(time.Now().Format(time.RFC3339))
@@ -117,7 +117,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(builder.String()))
 	if err != nil {
-		logx.LogError(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
+		logx.Error(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
 		return
 	}
 }
@@ -125,7 +125,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
 	if err != nil {
-		logx.LogInfo(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+		logx.Info(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid Original URI")
 		return
 	}
@@ -134,34 +134,34 @@ func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request,
 	hmacParam := r.URL.Query().Get("hmac")
 
 	if timestampStr == "" || hmacParam == "" {
-		logx.LogInfo(reqData, "Missing required parameters for external migration", "handleExternalMigration")
+		logx.Info(reqData, "Missing required parameters for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Missing required parameters")
 		return
 	}
 
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
-		logx.LogInfo(reqData, "Invalid timestamp format", fmt.Sprintf("handleExternalMigration: %v", err))
+		logx.Info(reqData, "Invalid timestamp format", fmt.Sprintf("handleExternalMigration: %v", err))
 		s.showExternalMigrationError(w, reqData, pages, "Invalid timestamp format")
 		return
 	}
 
 	currentTime := time.Now().Unix()
 	if currentTime-timestamp > 30 {
-		logx.LogInfo(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: 30s", currentTime-timestamp), "handleExternalMigration")
+		logx.Info(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: 30s", currentTime-timestamp), "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Migration link has expired")
 		return
 	}
 
 	if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
-		logx.LogInfo(reqData, "Session verification failed for external migration", "handleExternalMigration")
+		logx.Info(reqData, "Session verification failed for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid session")
 		return
 	}
 
 	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.ExternalMigrationRule.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
-		logx.LogInfo(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
+		logx.Info(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid migration signature")
 		return
 	}
@@ -210,13 +210,13 @@ func (s *Server) serveErrorPage(w http.ResponseWriter, reqData request.UserReque
 func (s *Server) renderPage(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, page config.Page, data any) ([]byte, bool) {
 	tpl := pages.Get(page)
 	if tpl == nil {
-		logx.LogError(reqData, "Error page "+page.String()+" is not loaded", "renderPage")
+		logx.Error(reqData, "Error page "+page.String()+" is not loaded", "renderPage")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return nil, false
 	}
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, data); err != nil {
-		logx.LogError(reqData, fmt.Sprintf("Error executing template %s: %v", page, err), "renderPage")
+		logx.Error(reqData, fmt.Sprintf("Error executing template %s: %v", page, err), "renderPage")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return nil, false
 	}
@@ -228,7 +228,7 @@ func writeHTML(w http.ResponseWriter, reqData request.UserRequest, status int, b
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil {
-		logx.LogError(reqData, "Error writing response: "+err.Error(), "writeHTML")
+		logx.Error(reqData, "Error writing response: "+err.Error(), "writeHTML")
 	}
 }
 
@@ -311,7 +311,7 @@ func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData requ
 
 	sessionParts := strings.Split(sessionID, ":")
 	if len(sessionParts) != 2 {
-		logx.LogError(reqData, "Invalid session ID format", "redirectToExternalMigration")
+		logx.Error(reqData, "Invalid session ID format", "redirectToExternalMigration")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}

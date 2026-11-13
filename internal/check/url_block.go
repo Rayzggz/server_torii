@@ -18,7 +18,7 @@ func URLBlockList(reqData request.UserRequest, ruleSet *config.RuleSet, decision
 	url := reqData.Uri
 	list := ruleSet.URLBlockRule.List
 	if list.Match(url) {
-		logx.LogInfo(reqData, "", "URLBlockList")
+		logx.Info(reqData, "", "URLBlockList")
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 	} else {
 		decision.Set(action.Continue)

@@ -39,7 +39,7 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 	// 2. Known peer returns 200 (assuming processRemoteMessage works or doesn't crash immediately).
 	// To be safe, let's init the map.
 
-	gm := &GossipManager{
+	gm := &Manager{
 		cfg:          cfg,
 		seenMessages: make(map[string]time.Time),
 		// blockList is nil, so if we reach processRemoteMessage it might panic if it uses blockList.
@@ -48,9 +48,9 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 		// A safer way is to check the response code.
 	}
 	// To avoid panic in processRemoteMessage, we can mock blockList or ensure we don't hit nil pointer.
-	// NewGossipManager creates it. But that needs more deps.
+	// NewManager creates it. But that needs more deps.
 	// Let's try to construct it minimally.
-	// For "GossipTypeSync", it unmarshals content.
+	// For "TypeSync", it unmarshals content.
 	// For "GossipTypeBlockIP", it calls blockList.BlockUntil.
 	// If we send a message ID that is already seen, it returns early!
 	// So we can pre-populate seenMessages to avoid BlockList interaction!
@@ -61,10 +61,10 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
 		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
-		msg := GossipMessage{
+		msg := Message{
 			ID:         msgID,
 			OriginNode: originNode,
-			Type:       GossipTypeActionRule,
+			Type:       TypeActionRule,
 			Content:    string(payload),
 			Timestamp:  time.Now().Unix(),
 		}

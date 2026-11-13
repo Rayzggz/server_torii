@@ -47,13 +47,13 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 // Server answers the nginx auth_request checker and serves Torii's own pages.
 type Server struct {
 	cfg     *config.MainConfig
-	configs *config.ConfigManager
+	configs *config.Manager
 	rt      *state.Runtime
-	gossip  *gossip.GossipManager // nil when gossip is disabled
+	gossip  *gossip.Manager // nil when gossip is disabled
 }
 
 // NewServer wires a server to its configuration and shared state; gossip may be nil.
-func NewServer(cfg *config.MainConfig, configs *config.ConfigManager, rt *state.Runtime, gossipManager *gossip.GossipManager) *Server {
+func NewServer(cfg *config.MainConfig, configs *config.Manager, rt *state.Runtime, gossipManager *gossip.Manager) *Server {
 	return &Server{cfg: cfg, configs: configs, rt: rt, gossip: gossipManager}
 }
 

@@ -32,7 +32,7 @@ func TestCheckMainIPAllowBypassesCountryRule(t *testing.T) {
 	trie := &iptrie.TrieNode{}
 	trie.Insert(allowedNetwork)
 	ruleSet := &config.RuleSet{
-		IPAllowRule: &config.IPAllowRule{Enabled: true, Trie: trie},
+		IPAllowRule: &config.IPListRule{Enabled: true, Trie: trie},
 		CountryRule: &config.CountryRule{
 			Enabled:   true,
 			Countries: map[string]config.CountryAction{"US": config.CountryBlock},
@@ -143,10 +143,10 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		IPAllowRule:           &config.IPAllowRule{},
-		IPBlockRule:           &config.IPBlockRule{},
-		URLAllowRule:          &config.URLAllowRule{},
-		URLBlockRule:          &config.URLBlockRule{},
+		IPAllowRule:           &config.IPListRule{},
+		IPBlockRule:           &config.IPListRule{},
+		URLAllowRule:          &config.URLListRule{},
+		URLBlockRule:          &config.URLListRule{},
 		VerifyBotRule:         &config.VerifyBotRule{},
 		HTTPFloodRule:         &config.HTTPFloodRule{},
 		CAPTCHARule:           &config.CaptchaRule{},

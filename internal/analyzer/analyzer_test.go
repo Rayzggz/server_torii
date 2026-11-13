@@ -51,8 +51,8 @@ func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnaly
 		t: t,
 		rules: &config.RuleSet{
 			AdaptiveTrafficAnalyzerRule: rule,
-			IPAllowRule:                 &config.IPAllowRule{Trie: &iptrie.TrieNode{}},
-			URLAllowRule:                &config.URLAllowRule{List: &urllist.URLRuleList{}},
+			IPAllowRule:                 &config.IPListRule{Trie: &iptrie.TrieNode{}},
+			URLAllowRule:                &config.URLListRule{List: &urllist.URLRuleList{}},
 		},
 		state:    newSiteState(start),
 		marks:    newIPExpiry(maxMarkedClients),
@@ -429,7 +429,7 @@ func TestDetectorEscalation(t *testing.T) {
 func TestEnforcerBroadcastLimit(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossipCh := make(chan gossip.GossipMessage, 10)
+	gossipCh := make(chan gossip.Message, 10)
 	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, 2)
 	for i := 0; i < 5; i++ {
 		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), config.AnalyzerBlock, time.Minute, true)

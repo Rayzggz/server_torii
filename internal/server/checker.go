@@ -50,7 +50,7 @@ func (s *Server) CheckMain(w http.ResponseWriter, userRequestData request.UserRe
 		w.WriteHeader(http.StatusOK)
 		_, err := w.Write([]byte("Server Torii Access Passed"))
 		if err != nil {
-			logx.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
+			logx.Error(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
 			return
 		}
 	case action.VerdictBlock, action.VerdictCaptcha, action.VerdictRateLimit, action.VerdictExternal:
@@ -58,12 +58,12 @@ func (s *Server) CheckMain(w http.ResponseWriter, userRequestData request.UserRe
 		w.WriteHeader(445)
 		_, err := w.Write([]byte("Server Torii Auth Required"))
 		if err != nil {
-			logx.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
+			logx.Error(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
 			return
 		}
 	default:
 		//should never happen
-		logx.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
+		logx.Error(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
