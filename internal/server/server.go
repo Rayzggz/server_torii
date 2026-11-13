@@ -66,7 +66,7 @@ func StartServer(ctx context.Context, cfg *config.MainConfig, sharedMem *dataTyp
 		// Process feature control after ruleSet is loaded
 		userRequestData.FeatureControl = processFeatureControl(cfg, r, ruleSet)
 
-		if strings.Compare(r.URL.Path, path.Join(cfg.WebPath, "/checker")) == 0 {
+		if r.URL.Path == path.Join(cfg.WebPath, "/checker") {
 			CheckMain(w, userRequestData, ruleSet, cfg, sharedMem)
 		} else {
 			CheckTorii(w, r, userRequestData, ruleSet, cfg, sharedMem, snap.Pages)
