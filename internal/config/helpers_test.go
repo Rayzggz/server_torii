@@ -43,7 +43,7 @@ func writeRuleFiles(t *testing.T, dir string, files map[string]string) {
 var disabledSections = []struct{ name, text string }{
 	{"Lists", "Lists: []\n"},
 	{"CountryRule", "CountryRule: {enabled: false}\n"},
-	{"Challenge", "Challenge: {enabled: false, mode: hcaptcha, keys: [1234567890abcdef], clearance_ttl: 60, session_ttl: 120, failure_limit: [\"3/1m\"], failure_block_duration: 60}\n"},
+	{"Challenge", "Challenge: {enabled: false, mode: hcaptcha, clearance_ttl: 60, session_ttl: 120, failure_limit: [\"3/1m\"], failure_block_duration: 60}\n"},
 	{"HTTPFlood", "HTTPFlood: {enabled: false, HTTPFloodSpeedLimit: [\"5/10s\"], HTTPFloodSameURILimit: [\"3/10s\"], HTTPFloodFailureLimit: [\"3/30s\"], failure_block_duration: 300}\n"},
 	{"VerifyBot", "VerifyBot: {enabled: false}\n"},
 	{"AdaptiveTrafficAnalyzer", "AdaptiveTrafficAnalyzer: {enabled: false}\n"},

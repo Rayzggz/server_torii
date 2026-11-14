@@ -19,9 +19,11 @@ port: "25555"
 web_path: "/torii"
 error_page: "/www/server_torii/config/error_page"
 log_path: "/www/server_torii/log/"
-# Signs gossip messages; every node of a cluster needs the same value, at least 32 characters.
-# Required when `enable_gossip` is true, and this example value is refused then: generate your
-# own, e.g. with `openssl rand -hex 16`.
+# The one secret of a cluster, at least 32 characters. It signs the cookies of every site and
+# the gossip messages; every node needs the same value, and a cookie issued by one node is then
+# accepted by all of them. Changing it makes every client pass its challenge again.
+# This example value is public: anyone who knows it can issue cookies. Generate your own, e.g.
+# with `openssl rand -hex 16`. It is refused when `enable_gossip` is true.
 global_secret: "0378b0f84c4310279918d71a5647ba5d"
 node_name: "Server Torii"
 enable_gossip: false

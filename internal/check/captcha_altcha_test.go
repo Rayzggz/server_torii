@@ -172,7 +172,7 @@ func testAltchaRuleSet() *config.RuleSet {
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:                 config.ChallengeAltcha,
-			Keys:                 []string{"1234567890abcdef"},
+			CookieKey:            "1234567890abcdef",
 			ClearanceTTL:         60,
 			SessionTTL:           120,
 			AltchaHMACSecret:     "altcha-secret",

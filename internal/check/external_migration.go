@@ -28,15 +28,16 @@ func CalculateRedirectHMAC(domain, timestampStr, originalUri, secretKey string) 
 }
 
 // externalSession is the session handed to the provider: "<unix seconds>:<hex HMAC-SHA512>".
+// Only Torii verifies it, so it is signed with the cookie key, not with the key of the provider.
 // It does not use the token format of the other cookies, because the provider reads the
 // timestamp in front of the colon to verify the signature of the redirect.
-func externalSession(reqData request.UserRequest, ruleSet config.RuleSet, key string, ts int64) string {
-	mac := hmac.New(sha512.New, []byte(key))
+func externalSession(reqData request.UserRequest, ruleSet config.RuleSet, ts int64) string {
+	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.CookieKey))
 	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-SESSION@%s", ts, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), ruleSet.ID))
 	return fmt.Sprintf("%d:%x", ts, mac.Sum(nil))
 }
 
-// verifyExternalSession checks the signature of the session against every key of the site. The
+// verifyExternalSession checks the signature of the session. The
 // age is not checked: it is bounded by the 30-second lifetime of the link that must accompany it.
 func verifyExternalSession(reqData request.UserRequest, ruleSet config.RuleSet) bool {
 	stamp, ok := ExternalSessionTimestamp(reqData.ToriiSessionID)
@@ -47,12 +48,7 @@ func verifyExternalSession(reqData request.UserRequest, ruleSet config.RuleSet) 
 	if err != nil {
 		return false
 	}
-	for _, key := range ruleSet.Challenge.Keys {
-		if hmac.Equal([]byte(externalSession(reqData, ruleSet, key, ts)), []byte(reqData.ToriiSessionID)) {
-			return true
-		}
-	}
-	return false
+	return hmac.Equal([]byte(externalSession(reqData, ruleSet, ts)), []byte(reqData.ToriiSessionID))
 }
 
 // ExternalSessionTimestamp returns the timestamp of an external session, as it is written.

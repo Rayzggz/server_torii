@@ -118,7 +118,7 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 	case "required":
 		return "field is required but missing or empty"
 	case "required_if":
-		return "field is required when gossip is enabled"
+		return "field is required with this mode"
 	case "oneof":
 		return fmt.Sprintf("value must be one of: %s", fe.Param())
 	case "site_id":
@@ -134,8 +134,6 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 		return fmt.Sprintf("value must be at least %s", fe.Param())
 	case "max":
 		return fmt.Sprintf("value must be at most %s", fe.Param())
-	case "unique":
-		return "entries must differ from one another"
 	case "numeric":
 		return "value must be numeric"
 	case "url":

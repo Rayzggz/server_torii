@@ -8,9 +8,21 @@ import (
 	"testing"
 )
 
+// testGlobalSecret is the secret of the configurations that do not set their own.
+const testGlobalSecret = "test-only-global-secret-0123456789"
+
 // writeMainConfig writes a torii.yml holding extra and returns its directory. Unless extra
-// lists sites itself, the file gets one valid site.
+// lists sites itself, the file gets one valid site; unless it sets a secret, a valid one.
 func writeMainConfig(t *testing.T, extra string) string {
+	t.Helper()
+	if !strings.Contains(extra, "global_secret:") {
+		extra += "\nglobal_secret: " + testGlobalSecret
+	}
+	return writeRawMainConfig(t, extra)
+}
+
+// writeRawMainConfig is writeMainConfig without the secret.
+func writeRawMainConfig(t *testing.T, extra string) string {
 	t.Helper()
 	dir := t.TempDir()
 	rules := filepath.Join(dir, "rules")

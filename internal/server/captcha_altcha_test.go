@@ -20,7 +20,7 @@ func TestAltchaChallengeEndpoint(t *testing.T) {
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:             config.ChallengeAltcha,
-			Keys:             []string{"1234567890abcdef"},
+			CookieKey:        "1234567890abcdef",
 			SessionTTL:       120,
 			AltchaHMACSecret: "altcha-secret",
 			AltchaCost:       1,
@@ -65,7 +65,7 @@ func TestAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:             config.ChallengeAltcha,
-			Keys:             []string{"1234567890abcdef"},
+			CookieKey:        "1234567890abcdef",
 			SessionTTL:       120,
 			AltchaHMACSecret: "altcha-secret",
 			AltchaCost:       1,
@@ -163,7 +163,7 @@ func captchaPageRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:       mode,
-			Keys:       []string{"1234567890abcdef"},
+			CookieKey:  "1234567890abcdef",
 			SessionTTL: 120,
 		},
 	}

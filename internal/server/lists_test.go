@@ -26,7 +26,7 @@ func listsRuleSet() *config.RuleSet {
 		config.MustNewList("url_challenge", config.ListURL, action.ActionChallenge, "/login"),
 		config.MustNewList("partners", config.ListIP, action.ActionNone, "203.0.113.50"),
 	)
-	rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeAltcha, Keys: []string{"1234567890abcdef"}, ClearanceTTL: 60, SessionTTL: 120}
+	rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeAltcha, CookieKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120}
 	return rs
 }
 

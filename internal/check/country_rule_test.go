@@ -24,7 +24,7 @@ func (r *fakeCountryResolver) Country(netip.Addr) (string, error) { r.calls++; r
 func countryTestRuleSet() *config.RuleSet {
 	return &config.RuleSet{
 		CountryRule: &config.CountryRule{DefaultAction: action.ActionContinue, UnknownAction: action.ActionContinue, Countries: map[string]action.Action{}},
-		Challenge:   &config.ChallengeRule{Keys: []string{"1234567890abcdef"}, ClearanceTTL: 60, SessionTTL: 120, FailureLimit: map[int64]int64{}},
+		Challenge:   &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120, FailureLimit: map[int64]int64{}},
 	}
 }
 

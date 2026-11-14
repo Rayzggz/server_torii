@@ -17,10 +17,11 @@ import (
 func testExternalRuleSet() *config.RuleSet {
 	return &config.RuleSet{
 		Challenge: &config.ChallengeRule{Mode: config.ChallengeExternal,
-			Enabled:      true,
-			RedirectURL:  "https://mitigation.invalid/verify",
-			Keys:         []string{"external-secret-0123456789"},
-			ClearanceTTL: 600,
+			Enabled:        true,
+			RedirectURL:    "https://mitigation.invalid/verify",
+			CookieKey:      "cookie-key-0123456789",
+			ExternalSecret: "external-secret-0123456789",
+			ClearanceTTL:   600,
 		},
 	}
 }
@@ -47,18 +48,18 @@ func testExternalRequest() request.UserRequest {
 
 // signExternalClearance builds a clearance with an arbitrary timestamp, so expiry can be tested.
 func signExternalClearance(reqData request.UserRequest, secret string, ts int64) string {
-	signer := token.Signer{Keys: []string{secret}, Label: "EXTERNAL-CLEARANCE@"}
+	signer := token.Signer{Key: secret, Label: "EXTERNAL-CLEARANCE@"}
 	return signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(ts, 0))
 }
 
-// splitToken returns "v2.<key id>.", the timestamp and the signature of a token.
+// splitToken returns "v2.", the timestamp and the signature of a token.
 func splitToken(t *testing.T, value string) (prefix, ts, sig string) {
 	t.Helper()
 	parts := strings.Split(value, ".")
-	if len(parts) != 4 {
-		t.Fatalf("token %q does not have four parts", value)
+	if len(parts) != 3 {
+		t.Fatalf("token %q does not have three parts", value)
 	}
-	return parts[0] + "." + parts[1] + ".", parts[2], parts[3]
+	return parts[0] + ".", parts[1], parts[2]
 }
 
 func runExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet) *action.Decision {
@@ -100,10 +101,10 @@ func TestExternalMigrationClearance(t *testing.T) {
 			r.UserAgent = "curl/8.0"
 		}, false},
 		{"within timeout", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SigningKey(), now-timeout+5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.CookieKey, now-timeout+5)
 		}, true},
 		{"expired", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SigningKey(), now-timeout-5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.CookieKey, now-timeout-5)
 		}, false},
 		{"signed with another key", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, "another-secret-0123456789", now)
@@ -171,7 +172,7 @@ func TestExternalMigrationSessionID(t *testing.T) {
 			rs := *ruleSet
 			if tt.keyOver != "" {
 				rule := *ruleSet.Challenge
-				rule.Keys = []string{tt.keyOver}
+				rule.CookieKey = tt.keyOver
 				rs.Challenge = &rule
 			}
 			if got := VerifySessionIDCookie(reqData, rs); got != tt.wantOK {

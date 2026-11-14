@@ -17,7 +17,7 @@ CountryRule:
 Challenge:
   enabled: false
   mode: altcha
-  keys: ["e2e-only-challenge-secret-never-use-in-production"]
+  external_secret: "e2e-only-challenge-secret-never-use-in-production"
   clearance_ttl: 5
   session_ttl: 120
   altcha_hmac_secret: "e2e-only-altcha-secret-never-use-in-production"

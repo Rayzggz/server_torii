@@ -72,7 +72,7 @@ type httpFloodRuleWrapper struct {
 type challengeRuleWrapper struct {
 	Enabled              bool          `yaml:"enabled"`
 	Mode                 ChallengeMode `yaml:"mode" validate:"required,oneof=hcaptcha altcha external"`
-	Keys                 []string      `yaml:"keys" validate:"required,min=1,unique,dive,min=16"`
+	ExternalSecret       string        `yaml:"external_secret" validate:"required_if=Mode external,omitempty,min=16"`
 	ClearanceTTL         int64         `yaml:"clearance_ttl" validate:"required,min=1,max=9223372036854775807"`
 	SessionTTL           int64         `yaml:"session_ttl" validate:"required_unless=Mode external,omitempty,min=1,max=9223372036854775807"`
 	HCaptchaSecret       string        `yaml:"hcaptcha_secret"`
@@ -148,14 +148,11 @@ func mapChallengeRule(wrapper *challengeRuleWrapper, dest *ChallengeRule) error 
 	}
 	dest.Enabled = wrapper.Enabled
 	dest.Mode = wrapper.Mode
-	dest.Keys = wrapper.Keys
+	dest.ExternalSecret = wrapper.ExternalSecret
 	dest.ClearanceTTL = wrapper.ClearanceTTL
 	dest.SessionTTL = wrapper.SessionTTL
 	dest.HCaptchaSecret = wrapper.HCaptchaSecret
 	dest.AltchaHMACSecret = wrapper.AltchaHMACSecret
-	if dest.AltchaHMACSecret == "" {
-		dest.AltchaHMACSecret = dest.SigningKey()
-	}
 	dest.AltchaCost = wrapper.AltchaCost
 	if dest.AltchaCost == 0 {
 		dest.AltchaCost = DefaultAltchaCost

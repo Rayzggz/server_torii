@@ -171,7 +171,7 @@ func TestNodeEndpoints(t *testing.T) {
 func testAltchaServerRuleSet() *config.RuleSet {
 	return &config.RuleSet{Challenge: &config.ChallengeRule{
 		Mode:             config.ChallengeAltcha,
-		Keys:             []string{"1234567890abcdef"},
+		CookieKey:        "1234567890abcdef",
 		ClearanceTTL:     600,
 		SessionTTL:       120,
 		AltchaHMACSecret: "altcha-secret",

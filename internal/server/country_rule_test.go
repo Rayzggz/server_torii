@@ -74,7 +74,7 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 		Countries: map[string]action.Action{"US": action.ActionChallenge, "CN": action.ActionBlock},
 	}
 	ruleSet.Challenge = &config.ChallengeRule{
-		Keys:         []string{"1234567890abcdef"},
+		CookieKey:    "1234567890abcdef",
 		ClearanceTTL: 60,
 		SessionTTL:   120,
 		FailureLimit: map[int64]int64{},

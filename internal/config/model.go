@@ -1,6 +1,9 @@
 package config
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"server_torii/internal/request"
 	"strconv"
@@ -22,9 +25,10 @@ type MainConfig struct {
 	WebPath        string `yaml:"web_path" validate:"required,startswith=/"`
 	ErrorPage      string `yaml:"error_page" validate:"required"`
 	LogPath        string `yaml:"log_path" validate:"required"`
-	// GlobalSecret signs gossip messages; it is required, and must not be the published
-	// example value, when gossip is enabled.
-	GlobalSecret string           `yaml:"global_secret" validate:"required_if=EnableGossip true,omitempty,min=32"`
+	// GlobalSecret is the one secret of a cluster: it signs gossip messages, and the key that
+	// signs the cookies of every site is derived from it. With gossip enabled it must not be
+	// the published example value.
+	GlobalSecret string           `yaml:"global_secret" validate:"required,min=32"`
 	NodeName     string           `yaml:"node_name" validate:"required"`
 	EnableGossip bool             `yaml:"enable_gossip"`
 	Sites        []AllSiteRuleSet `yaml:"sites" validate:"min=1,dive"`
@@ -112,4 +116,13 @@ func (c *MainConfig) SocketMode() os.FileMode {
 		return os.FileMode(mode)
 	}
 	return DefaultUnixSocketMode
+}
+
+// CookieKey is the key that signs the cookies of every site. It is derived from the global
+// secret, so nodes that share the secret accept one another's cookies, and a signature made for
+// a cookie is never a valid signature of a gossip message.
+func (c *MainConfig) CookieKey() string {
+	mac := hmac.New(sha256.New, []byte(c.GlobalSecret))
+	mac.Write([]byte("torii cookie key"))
+	return hex.EncodeToString(mac.Sum(nil))
 }

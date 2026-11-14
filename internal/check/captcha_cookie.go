@@ -28,7 +28,7 @@ func challengeSigner(ruleSet config.RuleSet, kind string) token.Signer {
 	if ruleSet.Challenge.Mode == config.ChallengeExternal {
 		family = "EXTERNAL"
 	}
-	return token.Signer{Keys: ruleSet.Challenge.Keys, Label: family + "-" + kind + "@" + ruleSet.ID}
+	return token.Signer{Key: ruleSet.Challenge.CookieKey, Label: family + "-" + kind + "@" + ruleSet.ID}
 }
 
 // GenClearance issues the cookie that lets a client who passed the challenge through.
@@ -45,7 +45,7 @@ func verifyClearanceCookie(reqData request.UserRequest, ruleSet config.RuleSet) 
 // the form the provider expects: its timestamp is part of the link that brings the client back.
 func GenSessionID(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
 	if !ruleSet.Challenge.ShowsCaptcha() {
-		return []byte(externalSession(reqData, ruleSet, ruleSet.Challenge.SigningKey(), time.Now().Unix()))
+		return []byte(externalSession(reqData, ruleSet, time.Now().Unix()))
 	}
 	if VerifySessionIDCookie(reqData, ruleSet) {
 		return []byte(reqData.ToriiSessionID)

@@ -156,7 +156,7 @@ func altchaChallengeSessionBinding(challenge altcha.Challenge) (string, bool) {
 }
 
 func altchaSessionBinding(reqData request.UserRequest, ruleSet config.RuleSet) string {
-	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.SigningKey()))
+	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.CookieKey))
 	mac.Write([]byte(reqData.ToriiSessionID))
 	mac.Write([]byte(reqData.Host))
 	mac.Write([]byte(GetClearanceUserAgent(reqData.UserAgent)))

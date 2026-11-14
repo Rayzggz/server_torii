@@ -30,7 +30,6 @@ CountryRule:
 Challenge:
   mode: hcaptcha
   enabled: true
-  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"
@@ -58,6 +57,7 @@ HTTPFlood:
 	writeFile(t, filepath.Join(tempDir, "torii.yml"), `port: "8080"
 web_path: "/edge"
 node_name: "integration-node"
+global_secret: "integration-secret-0123456789abcdef"
 sites:
   - id: "default_site"
     rule_path: "`+filepath.ToSlash(ruleDir)+`"
@@ -149,7 +149,6 @@ sites:
 Challenge:
   mode: hcaptcha
   enabled: true
-  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"

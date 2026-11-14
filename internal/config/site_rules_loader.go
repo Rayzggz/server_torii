@@ -90,6 +90,10 @@ func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
 			return nil, fmt.Errorf("failed to load rules for site %s: %w", site.ID, err)
 		}
 		ruleSet.ID = site.ID
+		ruleSet.Challenge.CookieKey = cfg.CookieKey()
+		if ruleSet.Challenge.AltchaHMACSecret == "" {
+			ruleSet.Challenge.AltchaHMACSecret = ruleSet.Challenge.CookieKey
+		}
 		siteRules[site.ID] = ruleSet
 	}
 

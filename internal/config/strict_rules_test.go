@@ -32,11 +32,13 @@ func TestLoadRules_Strict(t *testing.T) {
 		"empty limit list":          {strings.Replace(strictHTTPFlood, `["5/10s"]`, "[]", 1), "HTTPFlood.HTTPFloodSpeedLimit: list needs at least 1 entry"},
 		"bad rate":                  {strings.Replace(strictHTTPFlood, "5/10s", "fast", 1), "fast"},
 		"bad block duration":        {strings.Replace(strictHTTPFlood, "300", "0", 1), "HTTPFlood.failure_block_duration: field is required"},
-		"incomplete challenge":      {"Challenge: {enabled: false}", "Challenge.keys: field is required"},
+		"incomplete challenge":      {"Challenge: {enabled: false}", "Challenge.clearance_ttl: field is required"},
+		"external without secret":   {"Challenge: {mode: external, clearance_ttl: 5}", "Challenge.external_secret: field is required with this mode"},
+		"old cookie key of a site":  {"Challenge: {mode: hcaptcha, secret_key: 1234567890abcdef}", `unknown field "secret_key"`},
 		"challenge without mode":    {"Challenge: {enabled: false}", "Challenge.mode: field is required"},
 		"bad challenge mode":        {"Challenge: {mode: recaptcha}", "Challenge.mode: value must be one of: hcaptcha altcha external"},
-		"external without URL":      {"Challenge: {mode: external, keys: [1234567890abcdef], clearance_ttl: 5}", "Challenge.redirect_url: field is required"},
-		"bad external URL":          {"Challenge: {mode: external, redirect_url: nowhere, keys: [1234567890abcdef], clearance_ttl: 5}", "Challenge.redirect_url: value must be a valid URL"},
+		"external without URL":      {"Challenge: {mode: external, clearance_ttl: 5}", "Challenge.redirect_url: field is required"},
+		"bad external URL":          {"Challenge: {mode: external, redirect_url: nowhere, clearance_ttl: 5}", "Challenge.redirect_url: value must be a valid URL"},
 		"removed CAPTCHA section":   {"CAPTCHA: {enabled: false}", `unknown field "CAPTCHA"`},
 		"removed external section":  {"ExternalMigration: {enabled: false}", `unknown field "ExternalMigration"`},
 		"bad analyzer action":       {"AdaptiveTrafficAnalyzer: {ip_detection: {action: ban}}", "AdaptiveTrafficAnalyzer.ip_detection.action: value must be one of: observe challenge_unverified challenge block"},
@@ -105,7 +107,7 @@ func TestLoadRules_DisabledSectionsAreLoaded(t *testing.T) {
 		rules.AdaptiveTrafficAnalyzerRule.Enabled || rules.CustomRules.Enabled || rules.CountryRule.Enabled {
 		t.Fatalf("a rule is enabled: %+v", rules)
 	}
-	if rules.Challenge.SigningKey() == "" || rules.Challenge.Mode != ChallengeHCaptcha {
+	if rules.Challenge.Mode != ChallengeHCaptcha {
 		t.Fatalf("the disabled challenge was not loaded: %+v", rules.Challenge)
 	}
 	if want := (CounterWindows{HTTPFloodSpeed: 10, HTTPFloodSameURI: 10, HTTPFloodFailure: 30, ChallengeFailure: 60}); rules.CounterWindows() != want {

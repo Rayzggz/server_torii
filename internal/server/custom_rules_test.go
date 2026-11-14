@@ -205,8 +205,8 @@ func TestCheckMainCustomRules(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rs := featureControlRuleSet()
-			rs.Challenge = &config.ChallengeRule{Keys: []string{"1234567890abcdef"}, ClearanceTTL: 60}
-			rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, Keys: []string{"1234567890abcdef"}, ClearanceTTL: 60}
+			rs.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60}
+			rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, CookieKey: "1234567890abcdef", ClearanceTTL: 60}
 			rs.CustomRules = &rules.CustomRules{Enabled: true, Rules: tc.rules(t)}
 			headers := http.Header{}
 			headers.Set("Referer", "https://evil.example/landing")

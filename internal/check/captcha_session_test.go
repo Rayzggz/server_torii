@@ -60,7 +60,7 @@ func testCaptchaSessionRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:       mode,
-			Keys:       []string{"1234567890abcdef"},
+			CookieKey:  "1234567890abcdef",
 			SessionTTL: 120,
 		},
 	}

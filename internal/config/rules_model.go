@@ -21,9 +21,12 @@ type ChallengeRule struct {
 	// Enabled challenges every client; without it only the clients a rule singles out.
 	Enabled bool
 	Mode    ChallengeMode
-	// Keys sign the session and clearance cookies. The first one signs; all of them verify, so
-	// a key is replaced by putting the new one in front and dropping the old one later.
-	Keys []string
+	// CookieKey signs the session and clearance cookies. It is not configured per site: it is
+	// derived from the global secret, so every site and every node of a cluster signs alike.
+	CookieKey string
+	// ExternalSecret is the key the site shares with its external provider. It signs only
+	// what the two exchange, so the provider cannot issue cookies.
+	ExternalSecret string
 	// ClearanceTTL is how long, in seconds, a cleared client stays cleared.
 	ClearanceTTL int64
 	// SessionTTL is how long, in seconds, a client has to answer a CAPTCHA. The external mode
@@ -117,13 +120,4 @@ type CountryRule struct {
 	DefaultAction action.Action
 	UnknownAction action.Action
 	Countries     map[string]action.Action
-}
-
-// SigningKey is the key new cookies are signed with. It also signs what is exchanged with the
-// external provider and binds an ALTCHA challenge to its session.
-func (c *ChallengeRule) SigningKey() string {
-	if len(c.Keys) == 0 {
-		return ""
-	}
-	return c.Keys[0]
 }

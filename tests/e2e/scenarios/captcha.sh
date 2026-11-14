@@ -70,10 +70,10 @@ test_captcha() {
     submit_altcha "$solved" "$jar"
     assert_eq "$HTTP_BODY" "$(jq -r .captcha_success "$E2E/fixtures/responses.json")"
     assert_contains "$(header Set-Cookie)" '__torii_clearance='
-    [[ "$(awk '$6=="__torii_clearance" {print $7}' "$jar")" == v2.*.*.* ]] || fail 'Clearance is not a v2 token'
-    [[ "$session" == v2.*.*.* ]] || fail 'CAPTCHA session is not a v2 token'
+    [[ "$(awk '$6=="__torii_clearance" {print $7}' "$jar")" == v2.*.* ]] || fail 'Clearance is not a v2 token'
+    [[ "$session" == v2.*.* ]] || fail 'CAPTCHA session is not a v2 token'
     expect pass 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
-    # Nodes that hold the same keys share cookies: the clearance earned on node 1 clears node 2.
+    # Nodes that hold the same key share cookies: the clearance earned on node 1 clears node 2.
     expect pass 2 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
     expect pass 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
     expect pass 1 203.0.113.130 0000000000100000 /challenge default_site -b "$jar"

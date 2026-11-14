@@ -30,26 +30,23 @@ func contractMAC(message string) string {
 }
 
 // contractCookie builds a cookie the way the format is documented, without the token package:
-// "v2.<key id>.<unix seconds>.<signature>". The key id is the first six bytes of
-// SHA-256("torii token key id\0" + key); the signature is an HMAC-SHA256 over the version, the
-// label, the timestamp, the host and the user agent, each after its length as four big-endian
-// bytes. Both are base64url without padding.
+// "v2.<unix seconds>.<signature>". The signature is an HMAC-SHA256 over the version, the label,
+// the timestamp, the host and the user agent, each after its length as four big-endian bytes,
+// in base64url without padding.
 func contractCookie(ts int64, host, ua, label string) string {
-	id := sha256.Sum256([]byte("torii token key id\x00" + contractKey))
 	stamp := strconv.FormatInt(ts, 10)
 	mac := hmac.New(sha256.New, []byte(contractKey))
 	for _, field := range []string{"v2", label, stamp, host, ua} {
 		mac.Write(binary.BigEndian.AppendUint32(nil, uint32(len(field))))
 		mac.Write([]byte(field))
 	}
-	b64 := base64.RawURLEncoding.EncodeToString
-	return "v2." + b64(id[:6]) + "." + stamp + "." + b64(mac.Sum(nil))
+	return "v2." + stamp + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func contractFixture(mode config.ChallengeMode) (request.UserRequest, config.RuleSet) {
 	return request.UserRequest{Host: "example.com", UserAgent: "UA-X"},
 		config.RuleSet{
-			Challenge: &config.ChallengeRule{Mode: mode, Keys: []string{contractKey}, ClearanceTTL: 600, SessionTTL: 120},
+			Challenge: &config.ChallengeRule{Mode: mode, CookieKey: contractKey, ExternalSecret: contractKey, ClearanceTTL: 600, SessionTTL: 120},
 			// The site ID is part of every token, so a token of one site is useless on another.
 			ID: "shop",
 		}
@@ -61,7 +58,7 @@ func TestCookieFormatContract(t *testing.T) {
 		t.Fatalf("GetClearanceUserAgent = %q", got)
 	}
 	// Reference vector computed outside Go, see the token package.
-	const want = "v2.OABn0b72.1700000000.tNuJKQAaAnW32fCWPU_mmCZbI1r3cULhwMRC610v4Ew"
+	const want = "v2.1700000000.tNuJKQAaAnW32fCWPU_mmCZbI1r3cULhwMRC610v4Ew"
 	if got := contractCookie(1700000000, "example.com", "UA-X", "CAPTCHA-CLEARANCE@shop"); got != want {
 		t.Fatalf("reference cookie mismatch: %s", got)
 	}
@@ -93,10 +90,10 @@ func TestCookieFormatContract(t *testing.T) {
 
 			issued := string(tc.gen(req, rs))
 			parts := strings.Split(issued, ".")
-			if len(parts) != 4 {
-				t.Fatalf("issued cookie %q does not have four parts", issued)
+			if len(parts) != 3 {
+				t.Fatalf("issued cookie %q does not have three parts", issued)
 			}
-			ts, err := strconv.ParseInt(parts[2], 10, 64)
+			ts, err := strconv.ParseInt(parts[1], 10, 64)
 			if err != nil || ts < now || ts > now+5 {
 				t.Fatalf("issued cookie %q has no current timestamp", issued)
 			}
@@ -185,14 +182,10 @@ func TestExternalSessionContract(t *testing.T) {
 		}
 	}
 
-	// While a key is being replaced, sessions signed with the old one are still accepted.
-	rotated := rs
-	rotated.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, Keys: []string{"a-new-key-0123456789", contractKey}}
-	if !verify(rotated, valid) {
-		t.Error("session signed with the previous key rejected")
-	}
-	if verify(rs, string(GenSessionID(req, rotated))) {
-		t.Error("session signed with a key the site does not hold accepted")
+	other := rs
+	other.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, CookieKey: "another-key-0123456789"}
+	if verify(rs, string(GenSessionID(req, other))) {
+		t.Error("session signed with another key accepted")
 	}
 }
 

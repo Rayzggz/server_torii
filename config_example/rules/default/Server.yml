@@ -60,13 +60,13 @@ CountryRule:
 Challenge:
   enabled: true
   mode: "hcaptcha" # hcaptcha | altcha: a CAPTCHA page; external: a redirect to an external provider
-  secret_key: "0378b0f84c4310279918d71a5647ba5d" # signs the cookies; every node of a cluster needs the same value
   clearance_ttl: 600 # seconds a client stays cleared after passing
   session_ttl: 120 # seconds a client has to answer the CAPTCHA; not used by the external mode
   hcaptcha_secret: ""
   altcha_hmac_secret: "0378b0f84c4310279918d71a5647ba5d"
   altcha_cost: 50000
   # redirect_url: "https://example.com/migration" # where the external mode sends the client
+  # external_secret: "" # the key shared with that provider, at least 16 characters; required by the external mode
   failure_limit: # a client challenged more often than this without passing is blocked
     - "300/300s"
   failure_block_duration: 1200
