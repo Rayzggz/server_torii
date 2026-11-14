@@ -11,13 +11,8 @@ import (
 	"time"
 )
 
-// Captcha is the pipeline step: it challenges every client without a clearance when the feature is on.
+// Captcha is the pipeline step: it challenges every client without a clearance.
 func Captcha(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if Captcha feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureCaptcha) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
 	requireCaptcha(reqData, ruleSet, decision, rt)
 }
 
@@ -27,7 +22,6 @@ func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decisi
 	failureCounter := rt.LimitersFor(reqData.Site).CaptchaFailureLimitCounter.Load()
 	if failureCounter == nil {
 		logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha rate checks")
-		decision.Set(action.Continue)
 		return
 	}
 
@@ -53,11 +47,7 @@ func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decisi
 	if !verifyClearanceCookie(reqData, *ruleSet) {
 		failureCounter.Add(reqData.RemoteIP, 1)
 		decision.SetVerdict(action.Done, action.VerdictCaptcha)
-		return
 	}
-
-	decision.Set(action.Continue)
-
 }
 
 // CaptchaSubmission is the outcome of a client posting a CAPTCHA answer.

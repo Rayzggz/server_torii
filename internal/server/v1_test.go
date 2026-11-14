@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
-	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"server_torii/internal/urllist"
 	"strings"
@@ -175,6 +175,8 @@ func TestV1NoDecisionOnErrors(t *testing.T) {
 	}{
 		"unknown site": {map[string]string{headerSite: "nope", headerClientIP: "203.0.113.5", headerURI: "/"}, http.StatusInternalServerError},
 		"missing ip":   {map[string]string{headerSite: "shop", headerURI: "/"}, http.StatusBadRequest},
+		"invalid ip":   {map[string]string{headerSite: "shop", headerClientIP: "unix:", headerURI: "/"}, http.StatusBadRequest},
+		"two ips":      {map[string]string{headerSite: "shop", headerClientIP: "203.0.113.5, 10.0.0.1", headerURI: "/"}, http.StatusBadRequest},
 		"missing uri":  {map[string]string{headerSite: "shop", headerClientIP: "203.0.113.5"}, http.StatusBadRequest},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -208,15 +210,15 @@ func TestV1PublicEndpoints(t *testing.T) {
 }
 
 func TestApplyFeatureOverrides(t *testing.T) {
-	base := uint16(request.FeatureHTTPFlood | request.FeatureCaptcha)
+	base := uint16(feature.HTTPFlood.ControlMask() | feature.Captcha.ControlMask())
 	for _, tt := range []struct {
 		header  string
 		want    uint16
 		unknown int
 	}{
 		{"", base, 0},
-		{"-captcha", request.FeatureHTTPFlood, 0},
-		{"-Captcha, +ip_block", request.FeatureHTTPFlood | request.FeatureIPBlock, 0},
+		{"-captcha", feature.HTTPFlood.ControlMask(), 0},
+		{"-Captcha, +ip_block", feature.HTTPFlood.ControlMask() | feature.IPBlock.ControlMask(), 0},
 		{"+HTTPFlood +http-flood", base, 0},
 		{"-http_flood,-captcha", 0, 0},
 		// Entries without a sign, unknown names and checks without a switch are reported.

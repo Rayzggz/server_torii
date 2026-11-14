@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
@@ -31,7 +32,7 @@ func testExternalRequest() request.UserRequest {
 		Host:           "example.com",
 		UserAgent:      "Mozilla/5.0 test-agent",
 		Uri:            "/protected",
-		FeatureControl: request.FeatureExternalMigration,
+		FeatureControl: feature.ExternalMigration.ControlMask(),
 	}
 }
 
@@ -46,16 +47,6 @@ func runExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet) 
 	decision := action.NewDecision()
 	ExternalMigration(reqData, ruleSet, decision, &state.Runtime{})
 	return decision
-}
-
-func TestExternalMigrationFeatureDisabledContinues(t *testing.T) {
-	reqData := testExternalRequest()
-	reqData.FeatureControl = 0
-
-	decision := runExternalMigration(reqData, testExternalRuleSet())
-	if decision.State != action.Continue {
-		t.Fatalf("state = %v, want Continue", decision.State)
-	}
 }
 
 func TestExternalMigrationClearance(t *testing.T) {

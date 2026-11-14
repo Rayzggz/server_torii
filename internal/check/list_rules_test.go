@@ -24,29 +24,25 @@ func TestIPListRules(t *testing.T) {
 		IPBlockRule: &config.IPListRule{Trie: trie},
 	}
 	for _, checker := range []struct {
-		name    string
-		feature uint16
-		code    string
-		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
+		name string
+		code string
+		run  func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", request.FeatureIPAllow, "pass", IPAllowList},
-		{"block", request.FeatureIPBlock, "block", IPBlockList},
+		{"allow", "pass", IPAllowList},
+		{"block", "block", IPBlockList},
 	} {
 		for _, tc := range []struct {
-			name, ip        string
-			disabled, match bool
+			name, ip string
+			match    bool
 		}{
-			{"match", "192.0.2.42", false, true},
-			{"miss", "198.51.100.1", false, false},
-			{"invalid", "not-an-ip", false, false},
-			{"ipv6", "2001:db8::1", false, false},
-			{"disabled", "192.0.2.42", true, false},
+			{"match", "192.0.2.42", true},
+			{"mapped", "::ffff:192.0.2.42", true},
+			{"miss", "198.51.100.1", false},
+			{"invalid", "not-an-ip", false},
+			{"ipv6", "2001:db8::1", false},
 		} {
 			t.Run(checker.name+"/"+tc.name, func(t *testing.T) {
-				req := request.UserRequest{RemoteIP: tc.ip, FeatureControl: checker.feature}
-				if tc.disabled {
-					req.FeatureControl = request.FeatureVerifyBot
-				}
+				req := request.UserRequest{RemoteIP: tc.ip}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)
 				wantCode := "pass"
@@ -70,27 +66,22 @@ func TestURLListRules(t *testing.T) {
 		URLBlockRule: &config.URLListRule{List: list},
 	}
 	for _, checker := range []struct {
-		name    string
-		feature uint16
-		code    string
-		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
+		name string
+		code string
+		run  func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", request.FeatureURLAllow, "pass", URLAllowList},
-		{"block", request.FeatureURLBlock, "block", URLBlockList},
+		{"allow", "pass", URLAllowList},
+		{"block", "block", URLBlockList},
 	} {
 		for _, tc := range []struct {
-			name, uri       string
-			disabled, match bool
+			name, uri string
+			match     bool
 		}{
-			{"exact", "/admin", false, true}, {"regex", "/private/file", false, true},
-			{"miss", "/public", false, false}, {"prefix", "/admin/settings", false, false},
-			{"disabled", "/admin", true, false},
+			{"exact", "/admin", true}, {"regex", "/private/file", true},
+			{"miss", "/public", false}, {"prefix", "/admin/settings", false},
 		} {
 			t.Run(checker.name+"/"+tc.name, func(t *testing.T) {
-				req := request.UserRequest{Uri: tc.uri, FeatureControl: checker.feature}
-				if tc.disabled {
-					req.FeatureControl = request.FeatureVerifyBot
-				}
+				req := request.UserRequest{Uri: tc.uri}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)
 				wantCode := "pass"

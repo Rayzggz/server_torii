@@ -2,7 +2,6 @@ package check
 
 import (
 	"fmt"
-	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/logx"
@@ -16,12 +15,6 @@ import (
 const verifiedBotMarkTTL = time.Hour
 
 func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if VerifyBot feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureVerifyBot) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
-
 	ua := strings.ToLower(reqData.UserAgent)
 
 	var bot string
@@ -41,12 +34,11 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	case strings.Contains(ua, "applebot") && ruleSet.VerifyBotRule.VerifyAppleBot:
 		bot, exptractRDNS = "apple", []string{"apple.com"}
 	default:
-		decision.Set(action.Continue)
 		return
 	}
 
-	ip := net.ParseIP(reqData.RemoteIP)
-	if ip == nil {
+	ip := reqData.ClientAddr()
+	if !ip.IsValid() {
 		logx.Info(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return

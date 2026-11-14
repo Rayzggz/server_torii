@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"sort"
 	"strings"
@@ -161,7 +161,7 @@ func (det *detection) exemptIP(ip string) bool {
 		return true
 	}
 	if allow := det.ctx.Rule.IPAllowRule; allow != nil && allow.Trie != nil {
-		if parsed := net.ParseIP(ip); parsed != nil && allow.Trie.Search(parsed) {
+		if allow.Trie.SearchAddr(request.ParseAddr(ip)) {
 			return true
 		}
 	}

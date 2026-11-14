@@ -3,7 +3,6 @@ package server
 import (
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
-	"server_torii/internal/request"
 	"server_torii/internal/rules"
 	"testing"
 )
@@ -16,18 +15,18 @@ func TestFeatureNameContract(t *testing.T) {
 		mask   uint16
 		enable func(*config.RuleSet)
 	}{
-		{[]string{"IPAllow", "ip_allow"}, request.FeatureIPAllow, func(rs *config.RuleSet) { rs.IPAllowRule.Enabled = true }},
-		{[]string{"IPBlock", "ip_block"}, request.FeatureIPBlock, func(rs *config.RuleSet) { rs.IPBlockRule.Enabled = true }},
-		{[]string{"URLAllow", "url_allow"}, request.FeatureURLAllow, func(rs *config.RuleSet) { rs.URLAllowRule.Enabled = true }},
-		{[]string{"URLBlock", "url_block"}, request.FeatureURLBlock, func(rs *config.RuleSet) { rs.URLBlockRule.Enabled = true }},
-		{[]string{"VerifyBot", "verify_bot"}, request.FeatureVerifyBot, func(rs *config.RuleSet) { rs.VerifyBotRule.Enabled = true }},
-		{[]string{"HTTPFlood", "http_flood"}, request.FeatureHTTPFlood, func(rs *config.RuleSet) { rs.HTTPFloodRule.Enabled = true }},
-		{[]string{"Captcha", "CAPTCHA", "captcha"}, request.FeatureCaptcha, func(rs *config.RuleSet) { rs.CAPTCHARule.Enabled = true }},
-		{[]string{"ExternalMigration", "external_migration"}, request.FeatureExternalMigration, func(rs *config.RuleSet) { rs.ExternalMigrationRule.Enabled = true }},
-		{[]string{"CountryRule", "country_rule"}, request.FeatureCountryRule, func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
-		{[]string{"IPCAPTCHA", "ip_captcha"}, request.FeatureIPCAPTCHA, func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
-		{[]string{"URLCAPTCHA", "url_captcha"}, request.FeatureURLCAPTCHA, func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
-		{[]string{"CustomRules", "custom_rules"}, request.FeatureCustomRules, func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
+		{[]string{"IPAllow", "ip_allow"}, feature.IPAllow.ControlMask(), func(rs *config.RuleSet) { rs.IPAllowRule.Enabled = true }},
+		{[]string{"IPBlock", "ip_block"}, feature.IPBlock.ControlMask(), func(rs *config.RuleSet) { rs.IPBlockRule.Enabled = true }},
+		{[]string{"URLAllow", "url_allow"}, feature.URLAllow.ControlMask(), func(rs *config.RuleSet) { rs.URLAllowRule.Enabled = true }},
+		{[]string{"URLBlock", "url_block"}, feature.URLBlock.ControlMask(), func(rs *config.RuleSet) { rs.URLBlockRule.Enabled = true }},
+		{[]string{"VerifyBot", "verify_bot"}, feature.VerifyBot.ControlMask(), func(rs *config.RuleSet) { rs.VerifyBotRule.Enabled = true }},
+		{[]string{"HTTPFlood", "http_flood"}, feature.HTTPFlood.ControlMask(), func(rs *config.RuleSet) { rs.HTTPFloodRule.Enabled = true }},
+		{[]string{"Captcha", "CAPTCHA", "captcha"}, feature.Captcha.ControlMask(), func(rs *config.RuleSet) { rs.CAPTCHARule.Enabled = true }},
+		{[]string{"ExternalMigration", "external_migration"}, feature.ExternalMigration.ControlMask(), func(rs *config.RuleSet) { rs.ExternalMigrationRule.Enabled = true }},
+		{[]string{"CountryRule", "country_rule"}, feature.CountryRule.ControlMask(), func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
+		{[]string{"IPCAPTCHA", "ip_captcha"}, feature.IPCAPTCHA.ControlMask(), func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
+		{[]string{"URLCAPTCHA", "url_captcha"}, feature.URLCAPTCHA.ControlMask(), func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
+		{[]string{"CustomRules", "custom_rules"}, feature.CustomRules.ControlMask(), func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
 	}
 	allOff := func() *config.RuleSet {
 		rs := featureControlRuleSet()

@@ -88,11 +88,19 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 		Method:         r.Header.Get(headerMethod),
 		Headers:        r.Header,
 	}
+	// Parsed once here for every check.
+	reqData.Addr = request.ParseAddr(reqData.RemoteIP)
 	if reqData.Method == "" {
 		reqData.Method = r.Method
 	}
 	if reqData.RemoteIP == "" || reqData.Uri == "" {
 		http.Error(w, "400 - "+headerClientIP+" and "+headerURI+" are required", http.StatusBadRequest)
+		return reqData, nil, nil, false
+	}
+	// A connector always knows the address of its client; one that is not an IP address means
+	// the connector is set up wrongly, and no check could be trusted to judge the request.
+	if !reqData.Addr.IsValid() {
+		http.Error(w, "400 - "+headerClientIP+" is not an IP address", http.StatusBadRequest)
 		return reqData, nil, nil, false
 	}
 
@@ -112,6 +120,12 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 		return reqData, nil, nil, false
 	}
 	reqData.Site = ruleSet.ID
+	// Everything the checks need to know about the client is worked out here, before the first
+	// check runs.
+	if s.rt != nil {
+		reqData.ResolveCountry(s.rt.CountryResolver)
+	}
+	reqData.ShareLookups()
 
 	bits, unknown := applyFeatureOverrides(configFeatureBits(ruleSet), r.Header.Get(headerFeatures))
 	if len(unknown) > 0 {

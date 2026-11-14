@@ -28,12 +28,13 @@ var checkFuncs = [feature.Count]CheckFunc{
 	feature.Captcha:           check.Captcha,
 }
 
-// runChecks runs the check pipeline. It also returns the check that ended the pipeline, or
+// runChecks runs the checks that are switched on for the request and that no custom rule
+// skipped, in pipeline order, until one of them ends the pipeline. It also returns the check that ended the pipeline, or
 // feature.Count when every check let the request continue.
 func (s *Server) runChecks(userRequestData request.UserRequest, ruleSet *config.RuleSet) (*action.Decision, feature.Check) {
 	decision := action.NewDecision()
 	for _, c := range feature.Pipeline() {
-		if decision.SkipMask&c.SkipMask() != 0 {
+		if !c.Enabled(userRequestData.FeatureControl) || decision.SkipMask&c.SkipMask() != 0 {
 			continue
 		}
 		checkFuncs[c](userRequestData, ruleSet, decision, s.rt)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -83,7 +84,7 @@ func TestBotVerifierVerdicts(t *testing.T) {
 	}
 	for _, tt := range tests {
 		v := newBotVerifier(googleResolver())
-		got, fresh, err := v.verify(net.ParseIP(tt.ip), "google", googleDomains)
+		got, fresh, err := v.verify(netip.MustParseAddr(tt.ip), "google", googleDomains)
 		if got != tt.want || !fresh || (err != nil) != tt.wantErr {
 			t.Errorf("%s: verify = (%v, fresh=%v, %v), want (%v, fresh=true, err=%v)", tt.ip, got, fresh, err, tt.want, tt.wantErr)
 		}
@@ -94,10 +95,10 @@ func TestBotVerifierCachesBothOutcomes(t *testing.T) {
 	r := googleResolver()
 	v := newBotVerifier(r)
 	for i := 0; i < 5; i++ {
-		if ok, _, _ := v.verify(net.ParseIP("66.249.66.1"), "google", googleDomains); !ok {
+		if ok, _, _ := v.verify(netip.MustParseAddr("66.249.66.1"), "google", googleDomains); !ok {
 			t.Fatal("real Googlebot rejected")
 		}
-		if ok, _, _ := v.verify(net.ParseIP("203.0.113.7"), "google", googleDomains); ok {
+		if ok, _, _ := v.verify(netip.MustParseAddr("203.0.113.7"), "google", googleDomains); ok {
 			t.Fatal("spoofed Googlebot accepted")
 		}
 	}
@@ -109,7 +110,7 @@ func TestBotVerifierCachesBothOutcomes(t *testing.T) {
 	}
 
 	// A different crawler claim from the same address is verified separately.
-	_, _, _ = v.verify(net.ParseIP("66.249.66.1"), "bing", []string{"search.msn.com"})
+	_, _, _ = v.verify(netip.MustParseAddr("66.249.66.1"), "bing", []string{"search.msn.com"})
 	if got := r.ptrCalls.Load(); got != 3 {
 		t.Fatalf("reverse lookups = %d after bing claim, want 3", got)
 	}
@@ -121,7 +122,7 @@ func TestBotVerifierTTLs(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	v.now = func() time.Time { return now }
 
-	ip := net.ParseIP("203.0.113.7")
+	ip := netip.MustParseAddr("203.0.113.7")
 	_, _, _ = v.verify(ip, "google", googleDomains)
 	now = now.Add(botRejectedTTL - time.Second)
 	_, _, _ = v.verify(ip, "google", googleDomains)
@@ -133,7 +134,7 @@ func TestBotVerifierTTLs(t *testing.T) {
 		t.Fatal("rejection not re-checked after TTL")
 	}
 
-	good := net.ParseIP("66.249.66.1")
+	good := netip.MustParseAddr("66.249.66.1")
 	_, _, _ = v.verify(good, "google", googleDomains)
 	now = now.Add(botVerifiedTTL - time.Second)
 	if _, fresh, _ := v.verify(good, "google", googleDomains); fresh {
@@ -148,7 +149,7 @@ func TestBotVerifierCachesLookupErrorsBriefly(t *testing.T) {
 	now := time.Unix(1_000_000, 0)
 	v.now = func() time.Time { return now }
 
-	ip := net.ParseIP("66.249.66.1")
+	ip := netip.MustParseAddr("66.249.66.1")
 	ok, fresh, err := v.verify(ip, "google", googleDomains)
 	if ok || !fresh || err == nil {
 		t.Fatalf("verify = (%v, %v, %v), want rejection with error", ok, fresh, err)
@@ -172,7 +173,7 @@ func TestBotVerifierTimesOut(t *testing.T) {
 	v.timeout = 50 * time.Millisecond
 
 	start := time.Now()
-	ok, _, err := v.verify(net.ParseIP("66.249.66.1"), "google", googleDomains)
+	ok, _, err := v.verify(netip.MustParseAddr("66.249.66.1"), "google", googleDomains)
 	if ok || err == nil {
 		t.Fatalf("verify = (%v, %v), want timeout rejection", ok, err)
 	}
@@ -197,7 +198,7 @@ func TestBotVerifierSharesConcurrentLookups(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i], _, _ = v.verify(net.ParseIP("66.249.66.1"), "google", googleDomains)
+			results[i], _, _ = v.verify(netip.MustParseAddr("66.249.66.1"), "google", googleDomains)
 		}(i)
 	}
 	// Let every goroutine reach the cache before the single lookup finishes.
@@ -223,7 +224,7 @@ func TestBotVerifierBoundsCache(t *testing.T) {
 	v := newBotVerifier(googleResolver())
 	v.rejected = newBotLRU(100)
 	for i := 0; i < 1000; i++ {
-		_, _, _ = v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
+		_, _, _ = v.verify(netip.AddrFrom4([4]byte{198, 51, byte(i >> 8), byte(i)}), "google", googleDomains)
 		if n := v.rejected.len(); n > 100 {
 			t.Fatalf("rejected cache grew to %d entries, cap 100", n)
 		}
@@ -236,10 +237,10 @@ func TestBotVerifierFloodKeepsVerifiedCrawlers(t *testing.T) {
 	v := newBotVerifier(r)
 	v.rejected = newBotLRU(100)
 
-	good := net.ParseIP("66.249.66.1")
+	good := netip.MustParseAddr("66.249.66.1")
 	_, _, _ = v.verify(good, "google", googleDomains)
 	for i := 0; i < 10_000; i++ {
-		_, _, _ = v.verify(net.IPv4(198, 51, byte(i>>8), byte(i)), "google", googleDomains)
+		_, _, _ = v.verify(netip.AddrFrom4([4]byte{198, 51, byte(i >> 8), byte(i)}), "google", googleDomains)
 	}
 	before := r.ptrCalls.Load()
 	if ok, fresh, _ := v.verify(good, "google", googleDomains); !ok || fresh {
@@ -291,7 +292,7 @@ func TestBotVerifierCapsConcurrentLookups(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			_, _, _ = v.verify(net.IPv4(198, 51, 100, byte(i)), "google", googleDomains)
+			_, _, _ = v.verify(netip.AddrFrom4([4]byte{198, 51, 100, byte(i)}), "google", googleDomains)
 		}(i)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -303,7 +304,7 @@ func TestBotVerifierCapsConcurrentLookups(t *testing.T) {
 	}
 
 	// At the cap: answered at once as unverified, without a lookup, even for a real crawler.
-	crawler := net.ParseIP("66.249.66.1")
+	crawler := netip.MustParseAddr("66.249.66.1")
 	start := time.Now()
 	for i := 0; i < 100; i++ {
 		ok, fresh, err := v.verify(crawler, "google", googleDomains)

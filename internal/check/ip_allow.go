@@ -1,7 +1,6 @@
 package check
 
 import (
-	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/request"
@@ -9,22 +8,7 @@ import (
 )
 
 func IPAllowList(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if IPAllow feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureIPAllow) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
-
-	remoteIP := reqData.RemoteIP
-	trie := ruleSet.IPAllowRule.Trie
-
-	ip := net.ParseIP(remoteIP)
-	if ip == nil {
-		return
-	}
-	if trie.Search(ip) {
+	if ruleSet.IPAllowRule.Trie.SearchAddr(reqData.ClientAddr()) {
 		decision.SetVerdict(action.Done, action.VerdictAllow)
-	} else {
-		decision.Set(action.Continue)
 	}
 }

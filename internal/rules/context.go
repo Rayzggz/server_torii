@@ -8,21 +8,13 @@ import (
 	"strings"
 )
 
-// CountryResolver maps an address to its ISO country code.
-type CountryResolver interface {
-	Country(netip.Addr) (string, error)
-}
-
 // BrowserEvidence reports whether an IP has recently behaved like a browser on a site.
-type BrowserEvidence interface {
-	HasBrowserEvidence(site, ip string) bool
-}
+type BrowserEvidence = request.BrowserEvidence
 
 // Context holds one request plus lazily computed fields, so each field is parsed at most once
 // no matter how many rules read it.
 type Context struct {
 	req      *request.UserRequest
-	resolver CountryResolver
 	evidence BrowserEvidence
 
 	ipDone bool
@@ -36,16 +28,13 @@ type Context struct {
 	cookiesDone bool
 	cookies     map[string]string
 
-	countryDone bool
-	country     string
-
 	evidenceDone bool
 	hasEvidence  bool
 }
 
-// NewContext builds an evaluation context; resolver and evidence may be nil.
-func NewContext(req *request.UserRequest, resolver CountryResolver, evidence BrowserEvidence) *Context {
-	return &Context{req: req, resolver: resolver, evidence: evidence}
+// NewContext builds an evaluation context; evidence may be nil.
+func NewContext(req *request.UserRequest, evidence BrowserEvidence) *Context {
+	return &Context{req: req, evidence: evidence}
 }
 
 func (c *Context) header(name string) string {
@@ -55,9 +44,7 @@ func (c *Context) header(name string) string {
 func (c *Context) clientIP() netip.Addr {
 	if !c.ipDone {
 		c.ipDone = true
-		if addr, err := netip.ParseAddr(strings.TrimSpace(c.req.RemoteIP)); err == nil {
-			c.ip = addr.Unmap()
-		}
+		c.ip = c.req.ClientAddr()
 	}
 	return c.ip
 }
@@ -120,24 +107,13 @@ func (c *Context) cookie(name string) string {
 }
 
 func (c *Context) countryCode() string {
-	if c.countryDone {
-		return c.country
-	}
-	c.countryDone = true
-	addr := c.clientIP()
-	if !addr.IsValid() || !addr.IsGlobalUnicast() || addr.IsPrivate() || c.resolver == nil {
-		return ""
-	}
-	if country, err := c.resolver.Country(addr); err == nil {
-		c.country = strings.ToUpper(country)
-	}
-	return c.country
+	return c.req.Country
 }
 
 func (c *Context) browserEvidence() bool {
 	if !c.evidenceDone {
 		c.evidenceDone = true
-		c.hasEvidence = c.evidence != nil && c.evidence.HasBrowserEvidence(c.req.Site, c.req.RemoteIP)
+		c.hasEvidence = c.req.HasBrowserEvidence(c.evidence)
 	}
 	return c.hasEvidence
 }

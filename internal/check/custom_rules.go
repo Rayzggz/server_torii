@@ -13,11 +13,10 @@ import (
 // CustomRules evaluates the site's expression rules in order and applies the first terminating action.
 func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	customRules := ruleSet.CustomRules
-	if reqData.FeatureControl&request.FeatureCustomRules == 0 || customRules == nil || len(customRules.Rules) == 0 {
-		decision.Set(action.Continue)
+	if customRules == nil || len(customRules.Rules) == 0 {
 		return
 	}
-	ctx := rules.NewContext(&reqData, rt.CountryResolver, rt.BrowserEvidence)
+	ctx := rules.NewContext(&reqData, rt.BrowserEvidence)
 	for _, rule := range customRules.Rules {
 		if !rule.Program.Eval(ctx) {
 			continue
@@ -37,16 +36,13 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 			requireExternalMigration(reqData, ruleSet, decision, rt)
 			return
 		case rules.ActionContinue:
-			decision.Set(action.Continue)
 			return
 		case rules.ActionSkip:
 			decision.SkipMask |= rule.SkipMask
 			if decision.SkipMask&feature.CustomRules.SkipMask() != 0 {
-				decision.Set(action.Continue)
 				return
 			}
 		}
 		// ActionLog and non-terminal skips fall through to the next rule.
 	}
-	decision.Set(action.Continue)
 }

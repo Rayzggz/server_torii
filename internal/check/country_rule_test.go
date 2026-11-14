@@ -5,6 +5,7 @@ import (
 	"net/netip"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
@@ -35,7 +36,7 @@ func TestCountryRulePolicies(t *testing.T) {
 				resolver := &fakeCountryResolver{country: "us"}
 				shared := &state.Runtime{CountryResolver: resolver}
 				shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
-				req := request.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: request.FeatureCountryRule}
+				req := request.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: feature.CountryRule.ControlMask()}
 				rules.CountryRule.UnknownAction = policy
 				switch source {
 				case "override":
@@ -60,6 +61,7 @@ func TestCountryRulePolicies(t *testing.T) {
 				case "missing":
 					shared.CountryResolver = nil
 				}
+				req.ResolveCountry(shared.CountryResolver)
 				decision := action.NewDecision()
 				CountryRule(req, rules, decision, shared)
 				want := map[config.CountryAction]string{config.CountryContinue: "pass", config.CountryBlock: "block", config.CountryCaptcha: "captcha"}[policy]
@@ -74,29 +76,25 @@ func TestCountryRulePolicies(t *testing.T) {
 	}
 }
 
-func TestCountryRuleSkipsLookup(t *testing.T) {
-	for _, absent := range []bool{false, true} {
-		rules := countryTestRuleSet()
-		req := request.UserRequest{RemoteIP: "8.8.8.8"}
-		if absent {
-			rules.CountryRule = nil
-			req.FeatureControl = request.FeatureCountryRule
-		}
-		resolver := &fakeCountryResolver{country: "US"}
-		decision := action.NewDecision()
-		CountryRule(req, rules, decision, &state.Runtime{CountryResolver: resolver})
-		if resolver.calls != 0 || decision.State != action.Continue {
-			t.Fatalf("unexpected lookup or decision: %#v", decision)
-		}
+func TestCountryRuleWithoutRuleContinues(t *testing.T) {
+	rules := countryTestRuleSet()
+	rules.CountryRule = nil
+	req := request.UserRequest{RemoteIP: "8.8.8.8"}
+	req.ResolveCountry(&fakeCountryResolver{country: "US"})
+	decision := action.NewDecision()
+	CountryRule(req, rules, decision, &state.Runtime{})
+	if decision.State != action.Continue {
+		t.Fatalf("unexpected decision: %#v", decision)
 	}
 }
 
 func TestCountryRuleCaptchaClearanceContinues(t *testing.T) {
 	rules := countryTestRuleSet()
 	rules.CountryRule.DefaultAction = config.CountryCaptcha
-	req := request.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: request.FeatureCountryRule}
+	req := request.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: feature.CountryRule.ControlMask()}
 	req.ToriiClearance = string(GenClearance(req, *rules))
-	shared := &state.Runtime{CountryResolver: &fakeCountryResolver{country: "US"}}
+	req.ResolveCountry(&fakeCountryResolver{country: "US"})
+	shared := &state.Runtime{}
 	shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	decision := action.NewDecision()
 	CountryRule(req, rules, decision, shared)

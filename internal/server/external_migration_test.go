@@ -9,6 +9,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strconv"
@@ -84,7 +85,7 @@ func newExternalFixture(t *testing.T) *externalFixture {
 			RemoteIP:       "203.0.113.10",
 			Host:           "example.com",
 			UserAgent:      "Mozilla/5.0 test-agent",
-			FeatureControl: request.FeatureExternalMigration,
+			FeatureControl: feature.ExternalMigration.ControlMask(),
 		},
 	}
 	f.reqData.ToriiSessionID = string(check.GenExternalMigrationSessionID(f.reqData, *f.ruleSet))

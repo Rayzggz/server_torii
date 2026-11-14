@@ -8,6 +8,9 @@ import (
 
 // decide runs the check pipeline and returns the decision the connector would be told.
 func decide(rt *state.Runtime, req request.UserRequest, rs *config.RuleSet) string {
+	if rt != nil {
+		req.ResolveCountry(rt.CountryResolver)
+	}
 	decision, _ := NewServer(&config.MainConfig{}, nil, rt, nil).runChecks(req, rs)
 	return decision.Verdict.String()
 }

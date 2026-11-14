@@ -1,6 +1,9 @@
 package iptrie
 
-import "net"
+import (
+	"net"
+	"net/netip"
+)
 
 type TrieNode struct {
 	children [2]*TrieNode
@@ -44,10 +47,18 @@ func (node *TrieNode) Insert(ipNet *net.IPNet) {
 
 // Search if the ip is in the trie
 func (node *TrieNode) Search(ip net.IP) bool {
-	ip = ip.To4()
-	if ip == nil {
+	addr, ok := netip.AddrFromSlice(ip)
+	return ok && node.SearchAddr(addr)
+}
+
+// SearchAddr reports whether a rule in the trie covers addr. Only IPv4 addresses, plain or
+// IPv4-mapped, can match; a nil trie and the zero Addr match nothing.
+func (node *TrieNode) SearchAddr(addr netip.Addr) bool {
+	addr = addr.Unmap()
+	if node == nil || !addr.Is4() {
 		return false
 	}
+	ip := addr.As4()
 	current := node
 	for i := 0; i < 32; i++ {
 		if current.isEnd {

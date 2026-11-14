@@ -92,7 +92,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= request.FeatureHTTPFlood | request.FeatureCountryRule
+				req.FeatureControl |= feature.HTTPFlood.ControlMask() | feature.CountryRule.ControlMask()
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
 			want: "pass",
@@ -104,7 +104,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= request.FeatureHTTPFlood
+				req.FeatureControl |= feature.HTTPFlood.ControlMask()
 			},
 			want: "pass",
 		},
@@ -115,7 +115,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= request.FeatureHTTPFlood | request.FeatureCountryRule
+				req.FeatureControl |= feature.HTTPFlood.ControlMask() | feature.CountryRule.ControlMask()
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
 			want: "block",
@@ -127,7 +127,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= request.FeatureHTTPFlood
+				req.FeatureControl |= feature.HTTPFlood.ControlMask()
 			},
 			want: "rate_limit",
 		},
@@ -177,7 +177,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				return []*rules.Rule{customRule(t, "a", rules.ActionContinue, `true`)}
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
-				req.FeatureControl |= request.FeatureCountryRule
+				req.FeatureControl |= feature.CountryRule.ControlMask()
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
 			want: "block",
@@ -190,7 +190,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
 				rs.URLAllowRule.List = &urllist.URLRuleList{}
 				rs.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/login?next=/"})
-				req.FeatureControl |= request.FeatureURLAllow
+				req.FeatureControl |= feature.URLAllow.ControlMask()
 			},
 			want: "pass",
 		},
@@ -200,7 +200,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `true`)}
 			},
 			setup: func(_ *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
-				req.FeatureControl &^= request.FeatureCustomRules
+				req.FeatureControl &^= feature.CustomRules.ControlMask()
 			},
 			want: "pass",
 		},
@@ -219,7 +219,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				Method:         "POST",
 				UserAgent:      "Uptime Monitor/1.0",
 				Headers:        headers,
-				FeatureControl: request.FeatureCustomRules,
+				FeatureControl: feature.CustomRules.ControlMask(),
 			}
 			shared := &state.Runtime{}
 			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
@@ -237,10 +237,10 @@ func TestFeatureOverridesCustomRulesBit(t *testing.T) {
 	rs := featureControlRuleSet()
 	rs.CustomRules = &rules.CustomRules{Enabled: true}
 
-	if featureBits(rs, "")&request.FeatureCustomRules == 0 {
+	if featureBits(rs, "")&feature.CustomRules.ControlMask() == 0 {
 		t.Fatal("CustomRules baseline bit is disabled, want enabled")
 	}
-	if featureBits(rs, "-custom_rules")&request.FeatureCustomRules != 0 {
+	if featureBits(rs, "-custom_rules")&feature.CustomRules.ControlMask() != 0 {
 		t.Fatal("CustomRules bit remains enabled after the override")
 	}
 }

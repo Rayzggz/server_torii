@@ -11,13 +11,8 @@ import (
 	"server_torii/internal/token"
 )
 
-// ExternalMigration is the pipeline step: it hands every client without a clearance to the external provider when the feature is on.
+// ExternalMigration is the pipeline step: it hands every client without a clearance to the external provider.
 func ExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if ExternalMigration feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureExternalMigration) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
 	requireExternalMigration(reqData, ruleSet, decision, rt)
 }
 
@@ -25,10 +20,7 @@ func ExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet, dec
 func requireExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, _ *state.Runtime) {
 	if !verifyExternalMigrationClearanceCookie(reqData, *ruleSet) {
 		decision.SetVerdict(action.Done, action.VerdictExternal)
-		return
 	}
-
-	decision.Set(action.Continue)
 }
 
 func externalClearanceSigner(ruleSet config.RuleSet) token.Signer {

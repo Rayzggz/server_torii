@@ -16,7 +16,14 @@ type stubEvidence struct{ ip string }
 
 func (e stubEvidence) HasBrowserEvidence(_, ip string) bool { return ip == e.ip }
 
+// testRequest is a request from 8.8.8.8, which the country database places in the US.
 func testRequest() *request.UserRequest {
+	req := testRequestWithoutCountry()
+	req.ResolveCountry(stubResolver{country: "us"})
+	return req
+}
+
+func testRequestWithoutCountry() *request.UserRequest {
 	headers := http.Header{}
 	headers.Set("Referer", "https://evil.example/page")
 	headers.Set("Accept-Language", "zh-CN,zh;q=0.9")
@@ -98,7 +105,7 @@ func TestEval(t *testing.T) {
 			t.Errorf("Compile(%q) error: %v", tc.expr, err)
 			continue
 		}
-		if got := prog.Eval(NewContext(testRequest(), stubResolver{country: "us"}, stubEvidence{ip: "8.8.8.8"})); got != tc.want {
+		if got := prog.Eval(NewContext(testRequest(), stubEvidence{ip: "8.8.8.8"})); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
 	}
@@ -124,7 +131,7 @@ func TestEvalMissingData(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Compile(%q) error: %v", tc.expr, err)
 		}
-		if got := prog.Eval(NewContext(req, nil, nil)); got != tc.want {
+		if got := prog.Eval(NewContext(req, nil)); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
 	}
@@ -136,7 +143,7 @@ func TestIPv4MappedAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 	req := &request.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
-	if !prog.Eval(NewContext(req, nil, nil)) {
+	if !prog.Eval(NewContext(req, nil)) {
 		t.Error("IPv4-mapped address should match its IPv4 prefix")
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
 	"server_torii/internal/iptrie"
 	"server_torii/internal/ratelimit"
@@ -39,7 +40,7 @@ func TestIPAllowBypassesCountryRule(t *testing.T) {
 	}
 	reqData := request.UserRequest{
 		RemoteIP:       "8.8.8.8",
-		FeatureControl: request.FeatureIPAllow | request.FeatureCountryRule,
+		FeatureControl: feature.IPAllow.ControlMask() | feature.CountryRule.ControlMask(),
 	}
 	rt := &state.Runtime{CountryResolver: serverCountryResolver{country: "US"}}
 	if got := decide(rt, reqData, ruleSet); got != "pass" {
@@ -50,15 +51,15 @@ func TestIPAllowBypassesCountryRule(t *testing.T) {
 func TestFeatureOverridesCountryRuleBit(t *testing.T) {
 	ruleSet := featureControlRuleSet()
 
-	if featureBits(ruleSet, "")&request.FeatureCountryRule == 0 {
+	if featureBits(ruleSet, "")&feature.CountryRule.ControlMask() == 0 {
 		t.Fatal("CountryRule baseline bit is disabled, want enabled")
 	}
-	if featureBits(ruleSet, "-country_rule")&request.FeatureCountryRule != 0 {
+	if featureBits(ruleSet, "-country_rule")&feature.CountryRule.ControlMask() != 0 {
 		t.Fatal("CountryRule bit remains enabled after the override")
 	}
 
 	ruleSet.CountryRule.Enabled = false
-	if featureBits(ruleSet, "+country_rule")&request.FeatureCountryRule == 0 {
+	if featureBits(ruleSet, "+country_rule")&feature.CountryRule.ControlMask() == 0 {
 		t.Fatal("CountryRule bit remains disabled after the override")
 	}
 }
@@ -111,7 +112,7 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 			got := decide(sharedMem, request.UserRequest{
 				RemoteIP:       tt.remoteIP,
-				FeatureControl: request.FeatureCountryRule,
+				FeatureControl: feature.CountryRule.ControlMask(),
 			}, ruleSet)
 			if got != tt.want {
 				t.Fatalf("decision = %q, want %q", got, tt.want)

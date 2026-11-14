@@ -4,6 +4,7 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
@@ -22,7 +23,7 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	reqData := request.UserRequest{
 		RemoteIP:       "127.0.0.1",
 		Uri:            "/test",
-		FeatureControl: request.FeatureHTTPFlood,
+		FeatureControl: feature.HTTPFlood.ControlMask(),
 	}
 
 	HTTPFlood(reqData, ruleSet, decision, rt)
@@ -42,7 +43,7 @@ func TestCaptchaNilCounterContinue(t *testing.T) {
 	}
 	reqData := request.UserRequest{
 		RemoteIP:       "127.0.0.1",
-		FeatureControl: request.FeatureCaptcha,
+		FeatureControl: feature.Captcha.ControlMask(),
 	}
 
 	Captcha(reqData, ruleSet, decision, rt)

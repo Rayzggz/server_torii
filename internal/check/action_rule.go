@@ -10,7 +10,6 @@ import (
 func ActionRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	engine := rt.ActionRuleEngine
 	if engine == nil {
-		decision.Set(action.Continue)
 		return
 	}
 
@@ -22,12 +21,8 @@ func ActionRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *
 	case action.ActionCaptcha:
 		requireCaptcha(reqData, ruleSet, decision, rt)
 	case action.ActionCaptchaUnverified:
-		if rt.HasBrowserEvidence(reqData.Site, reqData.RemoteIP) {
-			decision.Set(action.Continue)
-			return
+		if !reqData.HasBrowserEvidence(rt.BrowserEvidence) {
+			requireCaptcha(reqData, ruleSet, decision, rt)
 		}
-		requireCaptcha(reqData, ruleSet, decision, rt)
-	default:
-		decision.Set(action.Continue)
 	}
 }

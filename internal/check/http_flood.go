@@ -11,19 +11,12 @@ import (
 )
 
 func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if HTTPFlood feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureHTTPFlood) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
-
 	limiters := rt.LimitersFor(reqData.Site)
 	speedCounter := limiters.HTTPFloodSpeedLimitCounter.Load()
 	sameURICounter := limiters.HTTPFloodSameURILimitCounter.Load()
 	failureCounter := limiters.HTTPFloodFailureLimitCounter.Load()
 	if speedCounter == nil || sameURICounter == nil || failureCounter == nil {
 		logx.Error(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
-		decision.Set(action.Continue)
 		return
 	}
 	ipKey := reqData.RemoteIP
@@ -65,5 +58,4 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 			return
 		}
 	}
-	decision.Set(action.Continue)
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -144,7 +145,7 @@ var defaultBotVerifier = newBotVerifier(net.DefaultResolver)
 // When botMaxLookups lookups are already in progress the address is not looked up: it counts
 // as unverified for this request only. Nothing is cached, so it is checked again as soon as
 // there is room.
-func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified, fresh bool, err error) {
+func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string) (verified, fresh bool, err error) {
 	key := bot + "|" + ip.String()
 
 	v.mu.Lock()
@@ -215,7 +216,7 @@ func (v *botVerifier) noteRefusedLocked(now time.Time) {
 }
 
 // lookup returns a nil error with verified=false when DNS answered but did not confirm the crawler.
-func (v *botVerifier) lookup(ctx context.Context, ip net.IP, domains []string) (bool, error) {
+func (v *botVerifier) lookup(ctx context.Context, ip netip.Addr, domains []string) (bool, error) {
 	names, err := v.resolver.LookupAddr(ctx, ip.String())
 	if err != nil {
 		if isNotFound(err) {
@@ -237,7 +238,7 @@ func (v *botVerifier) lookup(ctx context.Context, ip net.IP, domains []string) (
 			continue
 		}
 		for _, a := range addrs {
-			if a.IP.Equal(ip) {
+			if got, ok := netip.AddrFromSlice(a.IP); ok && got.Unmap() == ip {
 				return true, nil
 			}
 		}

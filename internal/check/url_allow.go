@@ -8,17 +8,7 @@ import (
 )
 
 func URLAllowList(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	// Check if URLAllow feature is enabled using binary operation
-	if (reqData.FeatureControl & request.FeatureURLAllow) == 0 {
-		decision.Set(action.Continue)
-		return
-	}
-
-	url := reqData.Uri
-	list := ruleSet.URLAllowRule.List
-	if list.Match(url) {
+	if ruleSet.URLAllowRule.List.Match(reqData.Uri) {
 		decision.SetVerdict(action.Done, action.VerdictAllow)
-	} else {
-		decision.Set(action.Continue)
 	}
 }

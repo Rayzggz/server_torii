@@ -5,6 +5,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/iptrie"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
@@ -24,12 +25,12 @@ func TestIPCaptchaFeatureControl(t *testing.T) {
 	} {
 		rules.IPCAPTCHARule = &config.IPListRule{Enabled: tt.enabled}
 		got := featureBits(rules, tt.header)
-		if (got&request.FeatureIPCAPTCHA != 0) != tt.want || got&request.FeatureCountryRule == 0 {
+		if (got&feature.IPCAPTCHA.ControlMask() != 0) != tt.want || got&feature.CountryRule.ControlMask() == 0 {
 			t.Fatalf("header %q: bits %b", tt.header, got)
 		}
 	}
 	rules.IPCAPTCHARule = nil
-	if got := featureBits(rules, ""); got&request.FeatureIPCAPTCHA != 0 {
+	if got := featureBits(rules, ""); got&feature.IPCAPTCHA.ControlMask() != 0 {
 		t.Fatal("absent rule enabled")
 	}
 }
@@ -43,7 +44,7 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 			trie.Insert(network)
 			rules.IPCAPTCHARule = &config.IPListRule{Enabled: true, Trie: trie}
 			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
-			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/test", FeatureControl: request.FeatureIPCAPTCHA}
+			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/test", FeatureControl: feature.IPCAPTCHA.ControlMask()}
 			shared := &state.Runtime{}
 			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			want := "pass"
@@ -60,19 +61,19 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 				rules.IPCAPTCHARule = nil
 			case "ip allow":
 				rules.IPAllowRule.Trie = trie
-				req.FeatureControl |= request.FeatureIPAllow
+				req.FeatureControl |= feature.IPAllow.ControlMask()
 			case "ip block":
 				rules.IPBlockRule.Trie = trie
-				req.FeatureControl |= request.FeatureIPBlock
+				req.FeatureControl |= feature.IPBlock.ControlMask()
 				want = "block"
 			case "url allow":
 				rules.URLAllowRule.List = &urllist.URLRuleList{}
 				rules.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/test"})
-				req.FeatureControl |= request.FeatureURLAllow
+				req.FeatureControl |= feature.URLAllow.ControlMask()
 			case "url block":
 				rules.URLBlockRule.List = &urllist.URLRuleList{}
 				rules.URLBlockRule.List.Append(&urllist.URLRule{Pattern: "/test"})
-				req.FeatureControl |= request.FeatureURLBlock
+				req.FeatureControl |= feature.URLBlock.ControlMask()
 				want = "block"
 			// IPCAPTCHA precedes country and dynamic action checks; valid clearance lets them run.
 			case "dynamic block", "clearance dynamic block":
@@ -87,7 +88,7 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 				}
 			case "country block", "clearance country block":
 				rules.CountryRule.UnknownAction = config.CountryBlock
-				req.FeatureControl |= request.FeatureCountryRule
+				req.FeatureControl |= feature.CountryRule.ControlMask()
 				want = "captcha"
 				if scenario == "clearance country block" {
 					req.ToriiClearance = string(check.GenClearance(req, *rules))
@@ -95,7 +96,7 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 				}
 			case "later flood":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
-				req.FeatureControl |= request.FeatureHTTPFlood
+				req.FeatureControl |= feature.HTTPFlood.ControlMask()
 				rules.HTTPFloodRule.HTTPFloodSpeedLimit = map[int64]int64{1: 0}
 				shared.HTTPFloodSpeedLimitCounter.Store(ratelimit.NewCounter(16, 1))
 				shared.HTTPFloodSameURILimitCounter.Store(ratelimit.NewCounter(16, 1))

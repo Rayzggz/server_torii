@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
+	"server_torii/internal/feature"
 	"server_torii/internal/iptrie"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
@@ -24,16 +25,16 @@ func TestURLCaptchaFeatureControl(t *testing.T) {
 	} {
 		rules.URLCAPTCHARule = &config.URLListRule{Enabled: tt.enabled}
 		got := featureBits(rules, tt.header)
-		want := uint16(request.FeatureCountryRule | request.FeatureIPCAPTCHA)
+		want := uint16(feature.CountryRule.ControlMask() | feature.IPCAPTCHA.ControlMask())
 		if tt.want {
-			want |= request.FeatureURLCAPTCHA
+			want |= feature.URLCAPTCHA.ControlMask()
 		}
 		if got != want {
 			t.Fatalf("header %q: got %b, want %b", tt.header, got, want)
 		}
 	}
 	rules.URLCAPTCHARule = nil
-	if got := featureBits(rules, ""); got&request.FeatureURLCAPTCHA != 0 {
+	if got := featureBits(rules, ""); got&feature.URLCAPTCHA.ControlMask() != 0 {
 		t.Fatal("absent rule enabled")
 	}
 }
@@ -47,7 +48,7 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			list.Append(&urllist.URLRule{IsRegex: true, Regex: regexp.MustCompile("^/admin(/|$)")})
 			rules.URLCAPTCHARule = &config.URLListRule{Enabled: true, List: list}
 			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
-			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/login", FeatureControl: request.FeatureURLCAPTCHA}
+			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/login", FeatureControl: feature.URLCAPTCHA.ControlMask()}
 			shared := &state.Runtime{}
 			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			trie := &iptrie.TrieNode{}
@@ -74,26 +75,26 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 				rules.URLCAPTCHARule.List = &urllist.URLRuleList{}
 			case "ip allow":
 				rules.IPAllowRule.Trie = trie
-				req.FeatureControl |= request.FeatureIPAllow
+				req.FeatureControl |= feature.IPAllow.ControlMask()
 			case "url allow":
 				rules.URLAllowRule.List = list
-				req.FeatureControl |= request.FeatureURLAllow
+				req.FeatureControl |= feature.URLAllow.ControlMask()
 			case "ip block":
 				rules.IPBlockRule.Trie = trie
-				req.FeatureControl |= request.FeatureIPBlock
+				req.FeatureControl |= feature.IPBlock.ControlMask()
 				want = "block"
 			case "url block":
 				rules.URLBlockRule.List = list
-				req.FeatureControl |= request.FeatureURLBlock
+				req.FeatureControl |= feature.URLBlock.ControlMask()
 				want = "block"
 			case "country precedence":
 				rules.CountryRule.UnknownAction = config.CountryBlock
-				req.FeatureControl |= request.FeatureCountryRule
+				req.FeatureControl |= feature.CountryRule.ControlMask()
 				want = "captcha"
 			case "clearance later block":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 				rules.CountryRule.UnknownAction = config.CountryBlock
-				req.FeatureControl |= request.FeatureCountryRule
+				req.FeatureControl |= feature.CountryRule.ControlMask()
 				want = "block"
 			case "failure limit":
 				rules.CAPTCHARule.CaptchaFailureLimit = map[int64]int64{1: 1}
