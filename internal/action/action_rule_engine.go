@@ -2,6 +2,7 @@ package action
 
 import (
 	"server_torii/internal/request"
+	"strings"
 	"sync"
 	"time"
 )
@@ -23,7 +24,18 @@ type actionRule struct {
 	ExpiresAt time.Time
 }
 
-// ActionRuleEngine manages action rules based on IP, UA, and URI.
+// ruleKey scopes a rule value to a site, so a rule installed for one site never matches a
+// request of another. Site IDs cannot contain the separator.
+func ruleKey(site, value string) string {
+	return site + "\x00" + value
+}
+
+func splitRuleKey(key string) (site, value string) {
+	site, value, _ = strings.Cut(key, "\x00")
+	return site, value
+}
+
+// ActionRuleEngine manages the temporary action rules of every site, based on IP, UA, and URI.
 type ActionRuleEngine struct {
 	mu           sync.RWMutex
 	ipRules      map[string]actionRule
@@ -52,10 +64,11 @@ func (e *ActionRuleEngine) Stop() {
 	close(e.stopCleanup)
 }
 
-// AddIPRule adds a rule for a specific IP.
-func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Duration) {
+// AddIPRule adds a rule for a specific IP on one site.
+func (e *ActionRuleEngine) AddIPRule(site, ip string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	ip = ruleKey(site, ip)
 
 	newExpiresAt := time.Now().Add(ttl)
 	if existing, ok := e.ipRules[ip]; ok && existing.ExpiresAt.After(newExpiresAt) {
@@ -68,18 +81,19 @@ func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Dura
 	}
 }
 
-// HasIPRule reports whether an unexpired rule exists for the IP.
-func (e *ActionRuleEngine) HasIPRule(ip string) bool {
+// HasIPRule reports whether an unexpired rule exists for the IP on the site.
+func (e *ActionRuleEngine) HasIPRule(site, ip string) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	rule, ok := e.ipRules[ip]
+	rule, ok := e.ipRules[ruleKey(site, ip)]
 	return ok && rule.ExpiresAt.After(time.Now())
 }
 
-// AddUARule adds a rule for a specific User-Agent.
-func (e *ActionRuleEngine) AddUARule(ua string, action ActionType, ttl time.Duration) {
+// AddUARule adds a rule for a specific User-Agent on one site.
+func (e *ActionRuleEngine) AddUARule(site, ua string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	ua = ruleKey(site, ua)
 
 	newExpiresAt := time.Now().Add(ttl)
 	if existing, ok := e.uaRules[ua]; ok && existing.ExpiresAt.After(newExpiresAt) {
@@ -92,10 +106,11 @@ func (e *ActionRuleEngine) AddUARule(ua string, action ActionType, ttl time.Dura
 	}
 }
 
-// AddURIRule adds a rule for a specific URI.
-func (e *ActionRuleEngine) AddURIRule(uri string, action ActionType, ttl time.Duration) {
+// AddURIRule adds a rule for a specific URI on one site.
+func (e *ActionRuleEngine) AddURIRule(site, uri string, action ActionType, ttl time.Duration) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	uri = ruleKey(site, uri)
 
 	newExpiresAt := time.Now().Add(ttl)
 	if existing, ok := e.uriRules[uri]; ok && existing.ExpiresAt.After(newExpiresAt) {
@@ -108,30 +123,30 @@ func (e *ActionRuleEngine) AddURIRule(uri string, action ActionType, ttl time.Du
 	}
 }
 
-// Check evaluates the request attributes against the rules.
+// Check evaluates the request attributes against the rules of the site.
 // Priority: IP > UA > URI.
-func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
+func (e *ActionRuleEngine) Check(site, ip, ua, uri string) ActionType {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	now := time.Now()
 
 	// Check IP Rules
-	if rule, ok := e.ipRules[ip]; ok {
+	if rule, ok := e.ipRules[ruleKey(site, ip)]; ok {
 		if rule.ExpiresAt.After(now) {
 			return rule.Action
 		}
 	}
 
 	// Check UA Rules
-	if rule, ok := e.uaRules[ua]; ok {
+	if rule, ok := e.uaRules[ruleKey(site, ua)]; ok {
 		if rule.ExpiresAt.After(now) {
 			return rule.Action
 		}
 	}
 
 	// Check URI Rules
-	if rule, ok := e.uriRules[uri]; ok {
+	if rule, ok := e.uriRules[ruleKey(site, uri)]; ok {
 		if rule.ExpiresAt.After(now) {
 			return rule.Action
 		}
@@ -140,7 +155,7 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 	// Check Canonical URI Rules
 	canonicalURI := CanonicalizeURI(uri)
 	if canonicalURI != uri {
-		if rule, ok := e.uriRules[canonicalURI]; ok {
+		if rule, ok := e.uriRules[ruleKey(site, canonicalURI)]; ok {
 			if rule.ExpiresAt.After(now) {
 				return rule.Action
 			}
@@ -152,7 +167,7 @@ func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
 
 // CheckRequest evaluates the request against the rules using UserRequest data.
 func (e *ActionRuleEngine) CheckRequest(req request.UserRequest) ActionType {
-	return e.Check(req.RemoteIP, req.UserAgent, req.Uri)
+	return e.Check(req.Site, req.RemoteIP, req.UserAgent, req.Uri)
 }
 
 // runCleanup periodically removes expired rules.
@@ -192,6 +207,7 @@ func (e *ActionRuleEngine) cleanup() {
 
 // RuleSnapshot is one active rule as reported by GetSnapshot.
 type RuleSnapshot struct {
+	Site      string
 	RuleType  string // "IP", "UA" or "URI"
 	Value     string
 	Action    ActionType
@@ -206,34 +222,21 @@ func (e *ActionRuleEngine) GetSnapshot() []RuleSnapshot {
 	var snapshot []RuleSnapshot
 	now := time.Now()
 
-	for ip, rule := range e.ipRules {
-		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, RuleSnapshot{
-				RuleType:  "IP",
-				Value:     ip,
-				Action:    rule.Action,
-				ExpiresAt: rule.ExpiresAt,
-			})
-		}
-	}
-	for ua, rule := range e.uaRules {
-		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, RuleSnapshot{
-				RuleType:  "UA",
-				Value:     ua,
-				Action:    rule.Action,
-				ExpiresAt: rule.ExpiresAt,
-			})
-		}
-	}
-	for uri, rule := range e.uriRules {
-		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, RuleSnapshot{
-				RuleType:  "URI",
-				Value:     uri,
-				Action:    rule.Action,
-				ExpiresAt: rule.ExpiresAt,
-			})
+	for _, kind := range []struct {
+		name  string
+		rules map[string]actionRule
+	}{{"IP", e.ipRules}, {"UA", e.uaRules}, {"URI", e.uriRules}} {
+		for key, rule := range kind.rules {
+			if rule.ExpiresAt.After(now) {
+				site, value := splitRuleKey(key)
+				snapshot = append(snapshot, RuleSnapshot{
+					Site:      site,
+					RuleType:  kind.name,
+					Value:     value,
+					Action:    rule.Action,
+					ExpiresAt: rule.ExpiresAt,
+				})
+			}
 		}
 	}
 

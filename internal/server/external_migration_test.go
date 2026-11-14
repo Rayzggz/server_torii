@@ -104,7 +104,7 @@ func (f *externalFixture) migrate(t *testing.T, reqData request.UserRequest, q u
 	target := "/torii/external_migration?" + q.Encode()
 	reqData.Uri = target
 	rec := httptest.NewRecorder()
-	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, pagesFor(f.cfg))
+	NewServer(f.cfg, nil, &state.Runtime{}, nil).servePublic(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, pagesFor(f.cfg))
 	return rec
 }
 
@@ -267,14 +267,13 @@ func TestExternalMigrationErrorPageMissingTemplate(t *testing.T) {
 	}
 }
 
-func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
+func TestExternalVerdictRedirectsToProvider(t *testing.T) {
 	f := newExternalFixture(t)
 	reqData := f.reqData
 	reqData.ToriiSessionID = ""
 	reqData.Uri = "/protected"
 
-	rec := httptest.NewRecorder()
-	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
+	rec := serveVerdictPage(action.VerdictExternal, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -319,8 +318,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	reqData.ToriiSessionID = ""
 	reqData.Uri = "/protected"
 
-	rec := httptest.NewRecorder()
-	NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
+	rec := serveVerdictPage(action.VerdictExternal, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 	loc, _ := url.Parse(rec.Header().Get("Location"))
 	provider := loc.Query()
 
@@ -376,8 +374,7 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 			reqData := f.reqData
 			reqData.Uri = tt.uri
 
-			rec := httptest.NewRecorder()
-			NewServer(f.cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, pagesFor(f.cfg))
+			rec := serveVerdictPage(action.VerdictExternal, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 
 			loc, err := url.Parse(rec.Header().Get("Location"))
 			if err != nil {

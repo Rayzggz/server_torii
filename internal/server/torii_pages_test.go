@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"server_torii/internal/action"
 	"server_torii/internal/analyzer"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
@@ -33,65 +34,72 @@ func newPagesConfig(t *testing.T) *config.MainConfig {
 func serveTorii(path string, reqData request.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *state.Runtime) *httptest.ResponseRecorder {
 	reqData.Uri = path
 	rec := httptest.NewRecorder()
-	NewServer(cfg, nil, sharedMem, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, path, nil), reqData, ruleSet, pagesFor(cfg))
+	NewServer(cfg, nil, sharedMem, nil).servePublic(rec, httptest.NewRequest(http.MethodGet, path, nil), reqData, ruleSet, pagesFor(cfg))
 	return rec
 }
 
-func TestCheckerPagesRenderTemplates(t *testing.T) {
+// serveVerdictPage answers reqData the way the checker does for a request it did not let through.
+func serveVerdictPage(verdict action.Verdict, reqData request.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, pages *config.ErrorPages) *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	NewServer(cfg, nil, &state.Runtime{}, nil).serveVerdict(rec, reqData, ruleSet, pages, verdict)
+	return rec
+}
+
+func TestVerdictPagesRenderTemplates(t *testing.T) {
 	cfg := newPagesConfig(t)
 	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Host: "example.com"}
 
-	tests := []struct {
-		path       string
+	for _, tt := range []struct {
+		verdict    action.Verdict
 		wantStatus int
 		wantBody   string
 	}{
-		{"/torii/checker_pages/403", http.StatusForbidden, "403|node-a|203.0.113.5"},
-		{"/torii/checker_pages/429", http.StatusTooManyRequests, "429|node-a|203.0.113.5"},
-		{"/torii/checker_pages/unknown", http.StatusForbidden, "403|node-a|203.0.113.5"},
-		// Anything that is not a Torii endpoint falls through to the default 403.
-		{"/torii/not-an-endpoint", http.StatusForbidden, "403|node-a|203.0.113.5"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.path, func(t *testing.T) {
-			rec := serveTorii(tt.path, reqData, &config.RuleSet{}, cfg, &state.Runtime{})
+		{action.VerdictBlock, http.StatusForbidden, "403|node-a|203.0.113.5"},
+		{action.VerdictRateLimit, http.StatusTooManyRequests, "429|node-a|203.0.113.5"},
+	} {
+		t.Run(tt.verdict.String(), func(t *testing.T) {
+			rec := serveVerdictPage(tt.verdict, reqData, &config.RuleSet{}, cfg, pagesFor(cfg))
 			if rec.Code != tt.wantStatus || rec.Body.String() != tt.wantBody {
 				t.Fatalf("got %d %q, want %d %q", rec.Code, rec.Body.String(), tt.wantStatus, tt.wantBody)
 			}
 		})
 	}
+
+	// Anything that is not a Torii endpoint gets the 403 page.
+	rec := serveTorii("/torii/not-an-endpoint", reqData, &config.RuleSet{}, cfg, &state.Runtime{})
+	if rec.Code != http.StatusForbidden || rec.Body.String() != "403|node-a|203.0.113.5" {
+		t.Fatalf("got %d %q, want the 403 page", rec.Code, rec.Body.String())
+	}
 }
 
-func TestCheckerPagesMissingTemplates(t *testing.T) {
+func TestVerdictPagesMissingTemplates(t *testing.T) {
 	cfg := &config.MainConfig{WebPath: "/torii", ErrorPage: t.TempDir()}
 	ruleSet := captchaPageRuleSet(check.CaptchaProviderAltcha)
-	for _, path := range []string{
-		"/torii/checker_pages/403",
-		"/torii/checker_pages/429",
-		"/torii/checker_pages/CAPTCHA",
-		"/torii/checker_pages/unknown",
-		"/torii/not-an-endpoint",
-	} {
-		t.Run(path, func(t *testing.T) {
-			rec := serveTorii(path, request.UserRequest{}, ruleSet, cfg, &state.Runtime{})
+	for _, verdict := range []action.Verdict{action.VerdictBlock, action.VerdictRateLimit, action.VerdictCaptcha} {
+		t.Run(verdict.String(), func(t *testing.T) {
+			rec := serveVerdictPage(verdict, request.UserRequest{}, ruleSet, cfg, pagesFor(cfg))
 			if rec.Code != http.StatusInternalServerError {
 				t.Fatalf("status = %d, want 500", rec.Code)
 			}
 		})
 	}
+	rec := serveTorii("/torii/not-an-endpoint", request.UserRequest{}, ruleSet, cfg, &state.Runtime{})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
 }
 
-func TestCheckerPagesRespectWebPath(t *testing.T) {
+func TestPublicEndpointsRespectWebPath(t *testing.T) {
 	cfg := newPagesConfig(t)
 	cfg.WebPath = "/custom"
-	// A checker page under the wrong prefix must not be served as one.
-	rec := serveTorii("/torii/checker_pages/429", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	// An endpoint under the wrong prefix must not be served as one.
+	rec := serveTorii("/torii/health_check", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}
-	rec = serveTorii("/custom/checker_pages/429", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
-	if rec.Code != http.StatusTooManyRequests {
-		t.Fatalf("status = %d, want 429", rec.Code)
+	rec = serveTorii("/custom/health_check", request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
 
@@ -108,7 +116,7 @@ func TestHealthCheck(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	lines := strings.Split(rec.Body.String(), "\n")
-	if len(lines) != 6 || lines[0] != "ok" {
+	if len(lines) != 11 || lines[0] != "ok" {
 		t.Fatalf("body = %q", rec.Body.String())
 	}
 	fields := map[string]string{}
@@ -132,14 +140,31 @@ func TestHealthCheck(t *testing.T) {
 	if fields["ts"] == "" {
 		t.Error("ts is empty")
 	}
+	// Without a running report listener the counters are all zero, but present.
+	for _, counter := range []string{"reports_received", "reports_accepted", "reports_malformed", "reports_unknown_site", "reports_dropped"} {
+		if fields[counter] != "0" {
+			t.Errorf("%s = %q, want 0", counter, fields[counter])
+		}
+	}
 }
 
-func TestGossipEndpointDisabledFallsThroughTo403(t *testing.T) {
+// The node's own endpoints: the health check answers without the connector, the gossip endpoint
+// only exists when gossip is enabled, and the legacy checker is gone.
+func TestNodeEndpoints(t *testing.T) {
 	cfg := newPagesConfig(t)
 	cfg.EnableGossip = false
-	rec := serveTorii("/torii/gossip", request.UserRequest{RemoteIP: "203.0.113.5"}, &config.RuleSet{}, cfg, &state.Runtime{})
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403", rec.Code)
+	s := NewServer(cfg, nil, &state.Runtime{}, nil)
+	for path, want := range map[string]int{
+		"/torii/health_check":      http.StatusOK,
+		"/torii/gossip":            http.StatusNotFound,
+		"/torii/checker":           http.StatusNotFound,
+		"/torii/checker_pages/403": http.StatusNotFound,
+		"/torii/captcha":           http.StatusNotFound,
+		"/":                        http.StatusNotFound,
+	} {
+		if rec := v1Get(s, path, nil); rec.Code != want {
+			t.Errorf("%s: status = %d, want %d", path, rec.Code, want)
+		}
 	}
 }
 
@@ -177,7 +202,7 @@ func postCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, sharedMem
 	req := httptest.NewRequest(http.MethodPost, "/torii/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	rec := httptest.NewRecorder()
-	NewServer(&config.MainConfig{WebPath: "/torii"}, nil, sharedMem, nil).CheckTorii(rec, req, reqData, ruleSet, nil)
+	NewServer(&config.MainConfig{WebPath: "/torii"}, nil, sharedMem, nil).servePublic(rec, req, reqData, ruleSet, nil)
 	return rec
 }
 
@@ -342,9 +367,8 @@ func TestErrorPagesAreParsedOnce(t *testing.T) {
 	if err := os.Remove(filepath.Join(cfg.ErrorPage, "403.html")); err != nil {
 		t.Fatal(err)
 	}
-	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Uri: "/torii/checker_pages/403"}
-	rec := httptest.NewRecorder()
-	NewServer(cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, pages)
+	reqData := request.UserRequest{RemoteIP: "203.0.113.5"}
+	rec := serveVerdictPage(action.VerdictBlock, reqData, &config.RuleSet{}, cfg, pages)
 	if rec.Code != http.StatusForbidden || rec.Body.String() != "403|node-a|203.0.113.5" {
 		t.Fatalf("got %d %q, want precompiled 403 page", rec.Code, rec.Body.String())
 	}
@@ -352,9 +376,7 @@ func TestErrorPagesAreParsedOnce(t *testing.T) {
 
 func TestNilErrorPagesAnswer500(t *testing.T) {
 	cfg := newPagesConfig(t)
-	reqData := request.UserRequest{Uri: "/torii/checker_pages/403"}
-	rec := httptest.NewRecorder()
-	NewServer(cfg, nil, &state.Runtime{}, nil).CheckTorii(rec, httptest.NewRequest(http.MethodGet, reqData.Uri, nil), reqData, &config.RuleSet{}, nil)
+	rec := serveVerdictPage(action.VerdictBlock, request.UserRequest{}, &config.RuleSet{}, cfg, nil)
 	if rec.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500", rec.Code)
 	}

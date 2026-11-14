@@ -2,13 +2,11 @@ package server
 
 import (
 	"net"
-	"net/http"
-	"net/http/httptest"
 	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"strings"
 	"testing"
 	"time"
 )
@@ -64,77 +62,39 @@ func verifyBotRuleSet() *config.RuleSet {
 	return rs
 }
 
-// serveChecker mirrors Server.ServeHTTP for the nginx auth_request endpoint.
-func serveChecker(cfg *config.MainConfig, rs *config.RuleSet, sharedMem *state.Runtime, header http.Header, remoteAddr string) *httptest.ResponseRecorder {
-	r := httptest.NewRequest(http.MethodGet, "/torii/checker", nil)
-	r.RemoteAddr = remoteAddr
-	for k, v := range header {
-		r.Header[k] = v
-	}
-	reqData := processRequestData(cfg, r)
-	reqData.FeatureControl = processFeatureControl(cfg, r, rs)
-	rec := httptest.NewRecorder()
-	NewServer(cfg, nil, sharedMem, nil).CheckMain(rec, reqData, rs)
-	return rec
+// botDecision runs the checks for a client the connector reports as ip with user agent ua.
+// features is a Torii-Features header value.
+func botDecision(rs *config.RuleSet, sharedMem *state.Runtime, ip, ua, features string) string {
+	return decide(sharedMem, request.UserRequest{
+		RemoteIP:       ip,
+		Host:           "example.com",
+		UserAgent:      ua,
+		FeatureControl: featureBits(rs, features),
+	}, rs)
 }
 
-func crawlerHeader(ip, ua string) http.Header {
-	return http.Header{
-		"Torii-Real-Ip":   {ip},
-		"Torii-Real-Host": {"example.com"},
-		"User-Agent":      {ua},
-	}
-}
-
-func newVerifyBotEnv() (*config.MainConfig, *state.Runtime, *analyzer.AdaptiveTrafficAnalyzer) {
-	cfg := config.DefaultMainConfig()
-	cfg.WebPath = "/torii"
+func newVerifyBotEnv() (*state.Runtime, *analyzer.AdaptiveTrafficAnalyzer) {
 	sharedMem := &state.Runtime{}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
 	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(ata)
-	return cfg, sharedMem, ata
+	return sharedMem, ata
 }
 
 func TestVerifyBotLiveAcceptsRealCrawlers(t *testing.T) {
 	for _, c := range liveCrawlers {
 		t.Run(c.name, func(t *testing.T) {
 			requireCrawlerDNS(t, c.ip)
-			cfg, sharedMem, ata := newVerifyBotEnv()
+			sharedMem, ata := newVerifyBotEnv()
 
-			// Nginx connects from a private address; the crawler IP only arrives in the header.
-			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(c.ip, c.ua), "10.0.0.2:40000")
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d Torii-Action=%q, want 200", rec.Code, rec.Header().Get("Torii-Action"))
+			if got := botDecision(verifyBotRuleSet(), sharedMem, c.ip, c.ua, ""); got != "pass" {
+				t.Fatalf("decision = %q, want pass", got)
 			}
 			if !ata.Marked(c.ip, time.Now()) {
 				t.Fatal("verified crawler was not exempted from traffic analysis")
 			}
-			if ata.Marked("10.0.0.2", time.Now()) {
-				t.Fatal("the proxy address was marked instead of the crawler")
-			}
 		})
-	}
-}
-
-func TestVerifyBotLiveUsesFirstForwardedAddress(t *testing.T) {
-	c := liveCrawlers[0]
-	requireCrawlerDNS(t, c.ip)
-	cfg, sharedMem, _ := newVerifyBotEnv()
-
-	header := crawlerHeader(c.ip+", 10.0.0.3", c.ua)
-	rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, header, "10.0.0.2:40000")
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d Torii-Action=%q, want 200", rec.Code, rec.Header().Get("Torii-Action"))
-	}
-
-	// The client is the first entry; a crawler address later in the chain proves nothing.
-	header = crawlerHeader("10.0.0.3, "+c.ip, c.ua)
-	rec = serveChecker(cfg, verifyBotRuleSet(), sharedMem, header, "10.0.0.2:40000")
-	if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
-		t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
 	}
 }
 
@@ -155,10 +115,9 @@ func TestVerifyBotLiveRejectsMismatchedCrawlers(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, sharedMem, ata := newVerifyBotEnv()
-			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(tt.ip, tt.ua), "10.0.0.2:40000")
-			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
-				t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
+			sharedMem, ata := newVerifyBotEnv()
+			if got := botDecision(verifyBotRuleSet(), sharedMem, tt.ip, tt.ua, ""); got != "block" {
+				t.Fatalf("decision = %q, want block", got)
 			}
 			if ata.Marked(tt.ip, time.Now()) {
 				t.Fatal("rejected client was exempted from traffic analysis")
@@ -172,51 +131,28 @@ func TestVerifyBotLiveFeatureControl(t *testing.T) {
 	requireCrawlerDNS(t, c.ip)
 
 	tests := []struct {
-		name       string
-		feature    string
-		enabled    bool
-		wantStatus int
-		wantAction string
+		name    string
+		feature string
+		enabled bool
+		want    string
 	}{
 		// Without VerifyBot the crawler falls through to CAPTCHA like any client.
-		{"disabled in config", "", false, 445, "CAPTCHA"},
-		{"forced off by header", "____0", true, 445, "CAPTCHA"},
-		{"forced on by header", "____1", false, http.StatusOK, ""},
+		{"disabled in config", "", false, "captcha"},
+		{"forced off by header", "-verify_bot", true, "captcha"},
+		{"forced on by header", "+verify_bot", false, "pass"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg, sharedMem, ata := newVerifyBotEnv()
+			sharedMem, ata := newVerifyBotEnv()
 			rs := verifyBotRuleSet()
 			rs.VerifyBotRule.Enabled = tt.enabled
-			header := crawlerHeader(c.ip, c.ua)
-			if tt.feature != "" {
-				header.Set("Torii-Feature-Control", tt.feature)
+			if got := botDecision(rs, sharedMem, c.ip, c.ua, tt.feature); got != tt.want {
+				t.Fatalf("decision = %q, want %q", got, tt.want)
 			}
-
-			rec := serveChecker(cfg, rs, sharedMem, header, "10.0.0.2:40000")
-			if rec.Code != tt.wantStatus || rec.Header().Get("Torii-Action") != tt.wantAction {
-				t.Fatalf("got %d %q, want %d %q", rec.Code, rec.Header().Get("Torii-Action"), tt.wantStatus, tt.wantAction)
-			}
-			if marked := ata.Marked(c.ip, time.Now()); marked != (tt.wantStatus == http.StatusOK) {
+			if marked := ata.Marked(c.ip, time.Now()); marked != (tt.want == "pass") {
 				t.Fatalf("marked = %v", marked)
 			}
 		})
-	}
-}
-
-func TestVerifyBotLiveIgnoresHeaderWhenNotConfigured(t *testing.T) {
-	c := liveCrawlers[0]
-	requireCrawlerDNS(t, c.ip)
-	cfg, sharedMem, _ := newVerifyBotEnv()
-	cfg.ConnectingIPHeaders = []string{"X-Other-Header"}
-
-	// Torii-Real-IP is not trusted here, so the socket address is the client.
-	rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(c.ip, c.ua), "192.0.2.1:40000")
-	if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
-		t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
-	}
-	if !strings.Contains(c.ua, "Googlebot") {
-		t.Fatal("fixture drifted")
 	}
 }
 
@@ -252,10 +188,9 @@ func TestVerifyBotLiveBlocksFakeCrawlers(t *testing.T) {
 
 	for _, f := range fakeCrawlers {
 		t.Run(f.name, func(t *testing.T) {
-			cfg, sharedMem, ata := newVerifyBotEnv()
-			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(f.ip, f.ua), "10.0.0.2:40000")
-			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "403" {
-				t.Fatalf("got %d %q, want 445 403", rec.Code, rec.Header().Get("Torii-Action"))
+			sharedMem, ata := newVerifyBotEnv()
+			if got := botDecision(verifyBotRuleSet(), sharedMem, f.ip, f.ua, ""); got != "block" {
+				t.Fatalf("decision = %q, want block", got)
 			}
 			if ata.Marked(f.ip, time.Now()) {
 				t.Fatal("fake crawler was exempted from traffic analysis")
@@ -277,10 +212,9 @@ func TestVerifyBotLiveLookalikeUserAgentsGetNoBypass(t *testing.T) {
 		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0 Safari/537.36",
 	} {
 		t.Run(ua, func(t *testing.T) {
-			cfg, sharedMem, ata := newVerifyBotEnv()
-			rec := serveChecker(cfg, verifyBotRuleSet(), sharedMem, crawlerHeader(liveCrawlers[0].ip, ua), "10.0.0.2:40000")
-			if rec.Code != 445 || rec.Header().Get("Torii-Action") != "CAPTCHA" {
-				t.Fatalf("got %d %q, want 445 CAPTCHA", rec.Code, rec.Header().Get("Torii-Action"))
+			sharedMem, ata := newVerifyBotEnv()
+			if got := botDecision(verifyBotRuleSet(), sharedMem, liveCrawlers[0].ip, ua, ""); got != "captcha" {
+				t.Fatalf("decision = %q, want captcha", got)
 			}
 			if ata.Marked(liveCrawlers[0].ip, time.Now()) {
 				t.Fatal("unverified client was exempted from traffic analysis")

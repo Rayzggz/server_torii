@@ -12,25 +12,25 @@ func TestActionRuleEngine_AddAndCheck(t *testing.T) {
 	defer engine.Stop()
 
 	// Test IP Rule
-	engine.AddIPRule("192.168.1.1", ActionBlock, time.Minute)
-	if action := engine.Check("192.168.1.1", "Mozilla", "/index.html"); action != ActionBlock {
+	engine.AddIPRule("", "192.168.1.1", ActionBlock, time.Minute)
+	if action := engine.Check("", "192.168.1.1", "Mozilla", "/index.html"); action != ActionBlock {
 		t.Errorf("Expected IP rule to return ActionBlock, got %v", action)
 	}
 
 	// Test UA Rule
-	engine.AddUARule("BadBot", ActionCaptcha, time.Minute)
-	if action := engine.Check("10.0.0.1", "BadBot", "/index.html"); action != ActionCaptcha {
+	engine.AddUARule("", "BadBot", ActionCaptcha, time.Minute)
+	if action := engine.Check("", "10.0.0.1", "BadBot", "/index.html"); action != ActionCaptcha {
 		t.Errorf("Expected UA rule to return ActionCaptcha, got %v", action)
 	}
 
 	// Test URI Rule
-	engine.AddURIRule("/admin", ActionBlock, time.Minute)
-	if action := engine.Check("10.0.0.1", "Mozilla", "/admin"); action != ActionBlock {
+	engine.AddURIRule("", "/admin", ActionBlock, time.Minute)
+	if action := engine.Check("", "10.0.0.1", "Mozilla", "/admin"); action != ActionBlock {
 		t.Errorf("Expected URI rule to return ActionBlock, got %v", action)
 	}
 
 	// Test No Match
-	if action := engine.Check("10.0.0.1", "Mozilla", "/home"); action != ActionNone {
+	if action := engine.Check("", "10.0.0.1", "Mozilla", "/home"); action != ActionNone {
 		t.Errorf("Expected no match to return ActionNone, got %v", action)
 	}
 }
@@ -39,17 +39,17 @@ func TestActionRuleEngine_Priority(t *testing.T) {
 	engine := NewActionRuleEngine(time.Second)
 	defer engine.Stop()
 
-	engine.AddIPRule("1.1.1.1", ActionBlock, time.Minute)
-	engine.AddUARule("SpecialUser", ActionCaptcha, time.Minute)
-	engine.AddURIRule("/login", ActionBlock, time.Minute)
+	engine.AddIPRule("", "1.1.1.1", ActionBlock, time.Minute)
+	engine.AddUARule("", "SpecialUser", ActionCaptcha, time.Minute)
+	engine.AddURIRule("", "/login", ActionBlock, time.Minute)
 
 	// IP should override everything
-	if action := engine.Check("1.1.1.1", "SpecialUser", "/login"); action != ActionBlock {
+	if action := engine.Check("", "1.1.1.1", "SpecialUser", "/login"); action != ActionBlock {
 		t.Errorf("Expected IP priority (ActionBlock), got %v", action)
 	}
 
 	// UA should override URI
-	if action := engine.Check("2.2.2.2", "SpecialUser", "/login"); action != ActionCaptcha {
+	if action := engine.Check("", "2.2.2.2", "SpecialUser", "/login"); action != ActionCaptcha {
 		t.Errorf("Expected UA priority (ActionCaptcha), got %v", action)
 	}
 }
@@ -61,10 +61,10 @@ func TestActionRuleEngine_TTL(t *testing.T) {
 
 	// Add a short-lived rule
 	ttl := 50 * time.Millisecond
-	engine.AddIPRule("1.2.3.4", ActionBlock, ttl)
+	engine.AddIPRule("", "1.2.3.4", ActionBlock, ttl)
 
 	// Should exist immediately
-	if action := engine.Check("1.2.3.4", "", ""); action != ActionBlock {
+	if action := engine.Check("", "1.2.3.4", "", ""); action != ActionBlock {
 		t.Errorf("Expected rule to match immediately")
 	}
 
@@ -72,7 +72,7 @@ func TestActionRuleEngine_TTL(t *testing.T) {
 	time.Sleep(ttl + interval*2)
 
 	// Should be gone
-	if action := engine.Check("1.2.3.4", "", ""); action != ActionNone {
+	if action := engine.Check("", "1.2.3.4", "", ""); action != ActionNone {
 		t.Errorf("Expected rule to expire, but got %v", action)
 	}
 }
@@ -89,8 +89,8 @@ func TestActionRuleEngine_Concurrency(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < count; i++ {
-			engine.AddIPRule("1.1.1.1", ActionBlock, time.Minute)
-			engine.AddUARule("Bot", ActionCaptcha, time.Minute)
+			engine.AddIPRule("", "1.1.1.1", ActionBlock, time.Minute)
+			engine.AddUARule("", "Bot", ActionCaptcha, time.Minute)
 		}
 	}()
 
@@ -99,7 +99,7 @@ func TestActionRuleEngine_Concurrency(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		for i := 0; i < count; i++ {
-			engine.Check("1.1.1.1", "Bot", "/index")
+			engine.Check("", "1.1.1.1", "Bot", "/index")
 		}
 	}()
 
@@ -110,7 +110,7 @@ func TestActionRuleEngine_CheckRequest(t *testing.T) {
 	engine := NewActionRuleEngine(time.Second)
 	defer engine.Stop()
 
-	engine.AddIPRule("10.0.0.5", ActionBlock, time.Minute)
+	engine.AddIPRule("", "10.0.0.5", ActionBlock, time.Minute)
 
 	req := &request.UserRequest{
 		RemoteIP:  "10.0.0.5",
@@ -138,15 +138,15 @@ func TestActionRuleEngine_CanonicalURI(t *testing.T) {
 	defer engine.Stop()
 
 	// Rule added for canonical URI (no query params)
-	engine.AddURIRule("/admin", ActionBlock, time.Minute)
+	engine.AddURIRule("", "/admin", ActionBlock, time.Minute)
 
 	// Check with raw URI containing query params
-	if action := engine.Check("10.0.0.1", "Mozilla", "/admin?debug=true"); action != ActionBlock {
+	if action := engine.Check("", "10.0.0.1", "Mozilla", "/admin?debug=true"); action != ActionBlock {
 		t.Errorf("Expected ActionBlock for raw URI matching canonical rule, got %v", action)
 	}
 
 	// Check with raw URI containing extra slashes
-	if action := engine.Check("10.0.0.1", "Mozilla", "//admin/"); action != ActionBlock {
+	if action := engine.Check("", "10.0.0.1", "Mozilla", "//admin/"); action != ActionBlock {
 		t.Errorf("Expected ActionBlock for non-clean URI matching canonical rule, got %v", action)
 	}
 }

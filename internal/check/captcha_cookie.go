@@ -25,12 +25,18 @@ func signToken(reqData request.UserRequest, signer token.Signer) []byte {
 	return []byte(signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Now()))
 }
 
+// siteLabel makes a token of one site useless on another, also when two sites share a secret
+// key and a host name.
+func siteLabel(ruleSet config.RuleSet, kind string) string {
+	return kind + "@" + ruleSet.ID
+}
+
 func captchaClearanceSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: "CAPTCHA-CLEARANCE"}
+	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: siteLabel(ruleSet, "CAPTCHA-CLEARANCE")}
 }
 
 func captchaSessionSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: "CAPTCHA-SESSION"}
+	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: siteLabel(ruleSet, "CAPTCHA-SESSION")}
 }
 
 // GenClearance issues the cookie that lets a client who solved a CAPTCHA through.

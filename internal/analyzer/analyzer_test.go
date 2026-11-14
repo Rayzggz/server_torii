@@ -31,7 +31,6 @@ func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnaly
 	t.Helper()
 	rule := &config.AdaptiveTrafficAnalyzerRule{
 		Enabled: true,
-		Tag:     "test",
 		URIDetection: config.URIDetectionRule{
 			MinRequests: 30, MinDistinctIPs: 10,
 			Baseline: config.BaselineRule{Warmup: 1, MinReferenceRequests: 20},
@@ -73,7 +72,7 @@ func (h *detectorHarness) run(logs []LogEntry) {
 }
 
 func (h *detectorHarness) ipAction(ip string) action.ActionType {
-	return h.engine.Check(ip, "", "/__unused__")
+	return h.engine.Check("", ip, "", "/__unused__")
 }
 
 // browse is a real browser loading a page and its assets.
@@ -176,7 +175,7 @@ func TestDetectorSustainedAttack(t *testing.T) {
 			t.Fatalf("legitimate client %s: got %v", ip, got)
 		}
 	}
-	if got := h.engine.Check("", "", "/search"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "", "/search"); got != action.ActionNone {
 		t.Fatalf("observe URI action wrote a rule: %v", got)
 	}
 	if _, ok := h.state.uriRules["/search"]; !ok {
@@ -211,10 +210,10 @@ func TestDetectorURIActionAndExemptions(t *testing.T) {
 		}
 		h.run(logs)
 	}
-	if got := h.engine.Check("", "", "/search"); got != action.ActionCaptcha {
+	if got := h.engine.Check("", "", "", "/search"); got != action.ActionCaptcha {
 		t.Fatalf("hot URI: got %v, want CAPTCHA", got)
 	}
-	if got := h.engine.Check("", "", "/api/feed"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "", "/api/feed"); got != action.ActionNone {
 		t.Fatalf("allowlisted URI got %v", got)
 	}
 	for _, ip := range []string{"192.168.5.7", "10.2.0.1", "10.4.0.1"} {
@@ -361,7 +360,7 @@ func TestDetectorIPSignals(t *testing.T) {
 			t.Errorf("%s: got %v, want %v", ip, got, w)
 		}
 	}
-	if got := h.engine.Check("", "", "/search"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "", "/search"); got != action.ActionNone {
 		t.Errorf("5xx outage produced URI rule %v", got)
 	}
 }
@@ -430,19 +429,19 @@ func TestEnforcerBroadcastLimit(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 	gossipCh := make(chan gossip.Message, 10)
-	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, 2)
+	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, "", 2)
 	for i := 0; i < 5; i++ {
 		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), config.AnalyzerBlock, time.Minute, true)
 	}
 	e.apply("URI", "/search", config.AnalyzerCaptchaUnverified, time.Minute, false)
-	if got := engine.Check("", "", "/search"); got != action.ActionCaptchaUnverified {
+	if got := engine.Check("", "", "", "/search"); got != action.ActionCaptchaUnverified {
 		t.Fatalf("URI rule %v, want CAPTCHA_UNVERIFIED", got)
 	}
 	if len(gossipCh) != 3 || e.suppressed != 3 {
 		t.Fatalf("broadcasts %d, suppressed %d; want 3 and 3", len(gossipCh), e.suppressed)
 	}
 	for i := 0; i < 5; i++ {
-		if !engine.HasIPRule(fmt.Sprintf("9.9.9.%d", i)) {
+		if !engine.HasIPRule("", fmt.Sprintf("9.9.9.%d", i)) {
 			t.Fatal("suppressed broadcast must still apply locally")
 		}
 	}
@@ -542,18 +541,22 @@ func TestHotHitThresholdsFollowRealUsers(t *testing.T) {
 func TestRecordEvidenceAtIngest(t *testing.T) {
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{
-		"site": {AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{Enabled: true, Tag: "nginx"}},
+		"site": {AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{Enabled: true}},
 	}})
 	a := NewAdaptiveTrafficAnalyzer(nil, configs)
 	for _, tc := range []struct {
 		entry LogEntry
 		want  bool
 	}{
-		{LogEntry{Tag: "nginx", IP: "1.0.0.1", URI: "/js/app.js?_v=1", Status: 200}, true},
-		{LogEntry{Tag: "nginx", IP: "1.0.0.2", URI: "/threads/1/", Status: 304}, true},
-		{LogEntry{Tag: "nginx", IP: "1.0.0.3", URI: "/js/missing.js", Status: 404}, false},
-		{LogEntry{Tag: "nginx", IP: "1.0.0.4", URI: "/members/1/", Status: 200}, false},
-		{LogEntry{Tag: "other", IP: "1.0.0.5", URI: "/js/app.js", Status: 200}, false},
+		{LogEntry{Site: "site", IP: "1.0.0.1", URI: "/js/app.js?_v=1", Status: 200}, true},
+		{LogEntry{Site: "site", IP: "1.0.0.2", URI: "/threads/1/", Status: 304}, true},
+		{LogEntry{Site: "site", IP: "1.0.0.3", URI: "/js/missing.js", Status: 404}, false},
+		{LogEntry{Site: "site", IP: "1.0.0.4", URI: "/members/1/", Status: 200}, false},
+		{LogEntry{Site: "other", IP: "1.0.0.5", URI: "/js/app.js", Status: 200}, false},
+		// The response type marks an asset whose URI does not look like one.
+		{LogEntry{Site: "site", IP: "1.0.0.6", URI: "/avatar/42", Status: 200, ContentType: "image/webp"}, true},
+		{LogEntry{Site: "site", IP: "1.0.0.7", URI: "/bundle", Status: 200, ContentType: "text/javascript; charset=utf-8"}, true},
+		{LogEntry{Site: "site", IP: "1.0.0.8", URI: "/api/items", Status: 200, ContentType: "application/json"}, false},
 	} {
 		a.AddLog(tc.entry)
 		if got := a.HasBrowserEvidence(tc.entry.IP); got != tc.want {

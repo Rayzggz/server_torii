@@ -50,7 +50,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectEmptyMessageID", func(t *testing.T) {
 		gm, _, cfg := setup(t)
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			Type:       TypeActionRule,
 			ID:         "", // Empty ID
@@ -73,7 +73,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectInvalidUUID", func(t *testing.T) {
 		gm, _, cfg := setup(t)
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			Type:       TypeActionRule,
 			ID:         "not-a-uuid", // Invalid UUID
@@ -97,7 +97,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 	t.Run("AcceptValidUUID", func(t *testing.T) {
 		gm, _, cfg := setup(t)
 		cfg.Peers[0].Address = newGossipTestPeer(t, 1)
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			Type:       TypeActionRule,
 			ID:         uuid.New().String(), // Valid UUID
@@ -122,7 +122,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 		// Create a large snapshot
 		var snapshot []ActionRulePayload
 		for i := 0; i < maxSyncEntriesBatch+10; i++ {
-			snapshot = append(snapshot, ActionRulePayload{RuleType: "IP", Value: uuid.New().String(), Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+			snapshot = append(snapshot, ActionRulePayload{Site: "site_a", RuleType: "IP", Value: uuid.New().String(), Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		}
 
 		content, _ := json.Marshal(ActionRuleSyncPayload{Rules: snapshot})
@@ -151,7 +151,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 
 	t.Run("RejectInvalidSignatureLength", func(t *testing.T) {
 		gm, _, _ := setup(t)
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			Type:       TypeActionRule,
 			ID:         uuid.New().String(),
@@ -183,7 +183,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 		// Create a V1 UUID
 		v1UUID, _ := uuid.NewUUID()
 
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			Type:       TypeActionRule,
 			ID:         v1UUID.String(), // Version 1 UUID

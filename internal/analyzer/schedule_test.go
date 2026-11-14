@@ -27,14 +27,17 @@ func (r *recordingAnalyzer) Analyze(ctx *analysisContext) {
 	r.calls = append(r.calls, recordedAnalysis{ctx.Rule, append([]LogEntry(nil), ctx.Logs...)})
 }
 
-func scheduledRule(tag string, interval int64) *config.RuleSet {
+func scheduledRule(interval int64) *config.RuleSet {
 	return &config.RuleSet{AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{
-		Enabled: true, Tag: tag, AnalysisInterval: interval,
+		Enabled: true, AnalysisInterval: interval,
 	}}
 }
 
 func scheduleFixture(t *testing.T, rules map[string]*config.RuleSet) (*AdaptiveTrafficAnalyzer, *recordingAnalyzer, time.Time) {
 	t.Helper()
+	for id, rule := range rules {
+		rule.ID = id
+	}
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{SiteRules: rules})
 	a := NewAdaptiveTrafficAnalyzer(nil, configs)
@@ -51,11 +54,11 @@ func scheduleFixture(t *testing.T, rules map[string]*config.RuleSet) (*AdaptiveT
 func TestAnalysisIndependentIntervals(t *testing.T) {
 	for _, intervals := range [][2]int64{{60, 300}, {7, 10}} {
 		t.Run(fmt.Sprint(intervals), func(t *testing.T) {
-			fast, slow := scheduledRule("fast", intervals[0]), scheduledRule("slow", intervals[1])
+			fast, slow := scheduledRule(intervals[0]), scheduledRule(intervals[1])
 			a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"fast": fast, "slow": slow})
 			for second := int64(1); second <= intervals[0]*intervals[1]; second++ {
-				for _, tag := range []string{"fast", "slow", "unknown"} {
-					a.AddLog(LogEntry{Tag: tag, IP: fmt.Sprint(second)})
+				for _, site := range []string{"fast", "slow", "unknown"} {
+					a.AddLog(LogEntry{Site: site, IP: fmt.Sprint(second)})
 				}
 				before := len(recorder.calls)
 				a.processBatchAt(start.Add(time.Duration(second) * time.Second))
@@ -74,7 +77,7 @@ func TestAnalysisIndependentIntervals(t *testing.T) {
 						t.Fatalf("second %d: got %d logs, want %d", second, len(call.logs), interval)
 					}
 					for i, entry := range call.logs {
-						if entry.Tag != call.rule.AdaptiveTrafficAnalyzerRule.Tag || entry.IP != fmt.Sprint(second-interval+1+int64(i)) {
+						if entry.Site != call.rule.ID || entry.IP != fmt.Sprint(second-interval+1+int64(i)) {
 							t.Fatalf("unexpected or duplicated log: %+v", entry)
 						}
 					}
@@ -95,10 +98,10 @@ func TestAnalysisReloadIntervalsAndRules(t *testing.T) {
 		{"threshold only", 60, 60, 20, 60},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("tag", tc.old)})
-			a.AddLog(LogEntry{Tag: "tag", IP: "retained"})
+			a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule(tc.old)})
+			a.AddLog(LogEntry{Site: "site", IP: "retained"})
 			a.processBatchAt(start.Add(time.Second))
-			updated := scheduledRule("tag", tc.updated)
+			updated := scheduledRule(tc.updated)
 			updated.AdaptiveTrafficAnalyzerRule.IPDetection.ScoreThreshold = 123
 			a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 			a.processBatchAt(start.Add(time.Duration(tc.reload) * time.Second))
@@ -120,12 +123,12 @@ func TestAnalysisReloadIntervalsAndRules(t *testing.T) {
 }
 
 func TestAnalysisReloadSiteLifecycle(t *testing.T) {
-	for _, change := range []string{"disabled", "removed", "retagged"} {
+	for _, change := range []string{"disabled", "removed"} {
 		t.Run(change, func(t *testing.T) {
-			a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("old", 10)})
-			a.AddLog(LogEntry{Tag: "old", IP: "discard"})
+			a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule(10)})
+			a.AddLog(LogEntry{Site: "site", IP: "discard"})
 			a.processBatchAt(start.Add(time.Second))
-			rules := map[string]*config.RuleSet{"site": scheduledRule("new", 10)}
+			rules := map[string]*config.RuleSet{"site": scheduledRule(10)}
 			if change == "disabled" {
 				rules["site"].AdaptiveTrafficAnalyzerRule.Enabled = false
 			}
@@ -134,15 +137,13 @@ func TestAnalysisReloadSiteLifecycle(t *testing.T) {
 			}
 			a.configs.Set(&config.SiteConfigSnapshot{SiteRules: rules})
 			a.processBatchAt(start.Add(2 * time.Second)) // Reload during idle traffic.
-			if change != "retagged" {
-				if len(a.windows) != 0 {
-					t.Fatal("inactive site retained pending state")
-				}
-				a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": scheduledRule("new", 10)}})
-				a.processBatchAt(start.Add(2 * time.Second))
+			if len(a.windows) != 0 {
+				t.Fatal("inactive site retained pending state")
 			}
-			a.AddLog(LogEntry{Tag: "old", IP: "ignored"})
-			a.AddLog(LogEntry{Tag: "new", IP: "fresh"})
+			a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": scheduledRule(10)}})
+			a.processBatchAt(start.Add(2 * time.Second))
+			a.AddLog(LogEntry{Site: "other", IP: "ignored"})
+			a.AddLog(LogEntry{Site: "site", IP: "fresh"})
 			a.processBatchAt(start.Add(10 * time.Second))
 			if len(recorder.calls) != 0 {
 				t.Fatal("new window used old deadline")
@@ -155,18 +156,19 @@ func TestAnalysisReloadSiteLifecycle(t *testing.T) {
 	}
 }
 
-func TestAnalysisSharedTagAndMissedWindows(t *testing.T) {
-	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"a": scheduledRule("shared", 7), "b": scheduledRule("shared", 10)})
+func TestAnalysisTwoSitesAndMissedWindows(t *testing.T) {
+	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"a": scheduledRule(7), "b": scheduledRule(10)})
 	secondRecorder := &recordingAnalyzer{}
 	a.analyzers = append(a.analyzers, secondRecorder)
-	a.AddLog(LogEntry{Tag: "shared"})
+	a.AddLog(LogEntry{Site: "a"})
+	a.AddLog(LogEntry{Site: "b"})
 	a.processBatchAt(start.Add(25 * time.Second))
 	if len(recorder.calls) != 2 || len(secondRecorder.calls) != 2 {
 		t.Fatal("both analyzers must run once per site")
 	}
 	for _, call := range recorder.calls {
 		if len(call.logs) != 1 {
-			t.Fatal("shared-tag logs lost")
+			t.Fatal("a site received the logs of another, or lost its own")
 		}
 	}
 	if !a.windows["a"].next.Equal(start.Add(28*time.Second)) || !a.windows["b"].next.Equal(start.Add(30*time.Second)) {
@@ -182,8 +184,8 @@ func TestAnalysisSharedTagAndMissedWindows(t *testing.T) {
 }
 
 func TestAnalysisFallbackAndMissingSnapshot(t *testing.T) {
-	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("tag", 0)})
-	a.AddLog(LogEntry{Tag: "tag"})
+	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule(0)})
+	a.AddLog(LogEntry{Site: "site"})
 	a.processBatchAt(start.Add(9 * time.Second))
 	if len(recorder.calls) != 0 {
 		t.Fatal("fallback ran early")
@@ -200,14 +202,14 @@ func TestAnalysisFallbackAndMissingSnapshot(t *testing.T) {
 }
 
 func TestAnalysisConcurrentIngestion(t *testing.T) {
-	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("tag", 10)})
+	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule(10)})
 	var wg sync.WaitGroup
 	for worker := 0; worker < 8; worker++ {
 		wg.Add(1)
 		go func(worker int) {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
-				a.AddLog(LogEntry{Tag: "tag", IP: fmt.Sprintf("%d/%d", worker, i)})
+				a.AddLog(LogEntry{Site: "site", IP: fmt.Sprintf("%d/%d", worker, i)})
 				a.processBatchAt(start.Add(time.Second))
 			}
 		}(worker)
@@ -227,12 +229,12 @@ func TestAnalysisConcurrentIngestion(t *testing.T) {
 }
 
 func TestAnalysisStartStop(t *testing.T) {
-	a, recorder, _ := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule("tag", 10)})
+	a, recorder, _ := scheduleFixture(t, map[string]*config.RuleSet{"site": scheduledRule(10)})
 	a.Start()
 	a.Start()
 	a.Stop()
 	a.Stop()
-	a.AddLog(LogEntry{Tag: "tag"})
+	a.AddLog(LogEntry{Site: "site"})
 	a.ProcessBatch()
 	if len(recorder.calls) != 0 {
 		t.Fatal("analysis ran after stop")
@@ -242,18 +244,18 @@ func TestAnalysisStartStop(t *testing.T) {
 }
 
 func TestAnalysisBatchUsesOneSnapshot(t *testing.T) {
-	old := scheduledRule("tag", 10)
-	updated := scheduledRule("tag", 10)
+	old := scheduledRule(10)
+	updated := scheduledRule(10)
 	a, recorder, start := scheduleFixture(t, map[string]*config.RuleSet{"site": old})
 	a.analyzers = []Analyzer{analyzerFunc(func(_ *analysisContext) {
 		a.configs.Set(&config.SiteConfigSnapshot{SiteRules: map[string]*config.RuleSet{"site": updated}})
 	}), recorder}
-	a.AddLog(LogEntry{Tag: "tag"})
+	a.AddLog(LogEntry{Site: "site"})
 	a.processBatchAt(start.Add(10 * time.Second))
 	if len(recorder.calls) != 1 || recorder.calls[0].rule != old {
 		t.Fatal("reload changed the snapshot midway through a batch")
 	}
-	a.AddLog(LogEntry{Tag: "tag"})
+	a.AddLog(LogEntry{Site: "site"})
 	a.processBatchAt(start.Add(20 * time.Second))
 	if len(recorder.calls) != 2 || recorder.calls[1].rule != updated {
 		t.Fatal("next batch did not observe reload")

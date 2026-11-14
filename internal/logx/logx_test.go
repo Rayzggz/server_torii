@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestLogxWritesPerHostLevelFiles(t *testing.T) {
+func TestLogxWritesPerSiteLevelFiles(t *testing.T) {
 	// zap keeps the files open, which Windows refuses to delete, so cleanup is best-effort.
 	base, err := os.MkdirTemp("", "logx-test-")
 	if err != nil {
@@ -21,11 +21,13 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 	})
 	Init(base)
 
-	req := request.UserRequest{RemoteIP: "203.0.113.9", Host: "example.com", Uri: "/path", UserAgent: "test-agent"}
+	req := request.UserRequest{Site: "shop", RemoteIP: "203.0.113.9", Host: "example.com", Uri: "/path", UserAgent: "test-agent"}
 	Info(req, "info-message", "info-extra")
 	Error(req, "error-message", "error-extra")
 	Debug(req, "debug-message", "debug-extra")
-	Info(request.UserRequest{Host: "other.example.com"}, "other-host", "")
+	Info(request.UserRequest{Site: "blog", Host: "example.com"}, "other-host", "")
+	// The host is what the client sent: it never names a directory.
+	Info(request.UserRequest{Host: "../../evil"}, "no-site", "")
 
 	read := func(host, name string) string {
 		t.Helper()
@@ -36,7 +38,7 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 		return string(b)
 	}
 
-	info := read("example.com", "info.log")
+	info := read("shop", "info.log")
 	for _, want := range []string{"203.0.113.9", "info-message", "example.com", "/path", "test-agent", "info-extra"} {
 		if !strings.Contains(info, want) {
 			t.Errorf("info.log missing %q: %q", want, info)
@@ -45,21 +47,27 @@ func TestLogxWritesPerHostLevelFiles(t *testing.T) {
 	if strings.Contains(info, "error-message") || strings.Contains(info, "debug-message") {
 		t.Errorf("info.log contains other levels: %q", info)
 	}
-	if e := read("example.com", "error.log"); !strings.Contains(e, "error-message") || strings.Contains(e, "info-message") {
+	if e := read("shop", "error.log"); !strings.Contains(e, "error-message") || strings.Contains(e, "info-message") {
 		t.Errorf("error.log = %q", e)
 	}
-	if d := read("example.com", "debug.log"); !strings.Contains(d, "debug-message") || strings.Contains(d, "info-message") {
+	if d := read("shop", "debug.log"); !strings.Contains(d, "debug-message") || strings.Contains(d, "info-message") {
 		t.Errorf("debug.log = %q", d)
 	}
-	if o := read("other.example.com", "info.log"); !strings.Contains(o, "other-host") {
+	if o := read("blog", "info.log"); !strings.Contains(o, "other-host") {
 		t.Errorf("other host info.log = %q", o)
 	}
 	if strings.Contains(info, "other-host") {
-		t.Error("hosts share a log file")
+		t.Error("sites share a log file")
+	}
+	if u := read(unknownSite, "info.log"); !strings.Contains(u, "no-site") {
+		t.Errorf("unknown site info.log = %q", u)
+	}
+	if entries, _ := os.ReadDir(base); len(entries) != 3 {
+		t.Errorf("log directories = %d, want one per site and one for requests without a site", len(entries))
 	}
 
 	// The same host reuses its logger instead of reopening files.
-	if first, again := logger.getLogger("example.com"), logger.getLogger("example.com"); first != again {
+	if first, again := logger.getLogger("shop"), logger.getLogger("shop"); first != again {
 		t.Error("logger not cached per host")
 	}
 }

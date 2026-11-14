@@ -9,7 +9,7 @@ import (
 func TestBroadcastActionRulePayload(t *testing.T) {
 	ch := make(chan Message, 1)
 	before := time.Now().Add(time.Minute).Unix()
-	BroadcastActionRule("node-a", "URI", `/quoted/"path`, "BLOCK", time.Minute, ch)
+	BroadcastActionRule("node-a", "site_a", "URI", `/quoted/"path`, "BLOCK", time.Minute, ch)
 	after := time.Now().Add(time.Minute).Unix()
 	select {
 	case message := <-ch:
@@ -37,7 +37,10 @@ func TestBroadcastActionRuleDoesNotBlock(t *testing.T) {
 	for name, ch := range map[string]chan Message{"nil": nil, "full": full, "unbuffered": make(chan Message)} {
 		t.Run(name, func(t *testing.T) {
 			done := make(chan struct{})
-			go func() { BroadcastActionRule("node", "IP", "192.0.2.1", "BLOCK", time.Minute, ch); close(done) }()
+			go func() {
+				BroadcastActionRule("node", "site_a", "IP", "192.0.2.1", "BLOCK", time.Minute, ch)
+				close(done)
+			}()
 			select {
 			case <-done:
 			case <-time.After(time.Second):

@@ -17,9 +17,10 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		return
 	}
 
-	speedCounter := rt.HTTPFloodSpeedLimitCounter.Load()
-	sameURICounter := rt.HTTPFloodSameURILimitCounter.Load()
-	failureCounter := rt.HTTPFloodFailureLimitCounter.Load()
+	limiters := rt.LimitersFor(reqData.Site)
+	speedCounter := limiters.HTTPFloodSpeedLimitCounter.Load()
+	sameURICounter := limiters.HTTPFloodSameURILimitCounter.Load()
+	failureCounter := limiters.HTTPFloodFailureLimitCounter.Load()
 	if speedCounter == nil || sameURICounter == nil || failureCounter == nil {
 		logx.Error(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
 		decision.Set(action.Continue)
@@ -36,7 +37,7 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
 		if failureCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
-				if !rt.BlockIP(ipKey, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second) {
+				if !rt.BlockIP(reqData.Site, ipKey, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second) {
 					logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
 				logx.Info(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))

@@ -1,34 +1,32 @@
 # TEST ONLY. Paths, port and node name are substituted in a temporary copy.
 port: "@PORT@"
+listen: [":@PORT@", "unix:@NODE@/torii.sock"]
 web_path: /torii
 error_page: "@NODE@/pages"
 log_path: "@NODE@/log"
 global_secret: "e2e-only-global-secret-never-use-in-production"
 node_name: "Node_@INDEX@"
 enable_gossip: true
-connecting_host_headers: [Torii-Real-Host, X-Test-Host]
-connecting_ip_headers: [Torii-Real-IP, X-Test-IP]
-connecting_uri_headers: [Torii-Original-URI, X-Test-URI]
-connecting_feature_control_headers: [Torii-Feature-Control, X-Test-Features]
 sites:
-  - host: default_site
+  - id: default_site
     rule_path: "@NODE@/rules/default"
-  - host: exact.e2e.test
+  - id: exact
     rule_path: "@NODE@/rules/exact"
-  - host: "*.e2e.test"
+  - id: wildcard
     rule_path: "@NODE@/rules/wildcard"
-  - host: failures.test
+  - id: failures
     rule_path: "@NODE@/rules/failures"
-  - host: unknown.test
+  - id: unknown
     rule_path: "@NODE@/rules/unknown"
-  - host: non200.test
+  - id: non200
     rule_path: "@NODE@/rules/non200"
-  - host: uri.test
+  - id: uri
     rule_path: "@NODE@/rules/uri"
-  - host: expiry.test
+  - id: expiry
     rule_path: "@NODE@/rules/expiry"
-  - host: non200expiry.test
+  - id: non200expiry
     rule_path: "@NODE@/rules/non200expiry"
-  - host: uriexpiry.test
+  - id: uriexpiry
     rule_path: "@NODE@/rules/uriexpiry"
+default_site: default_site
 peers:

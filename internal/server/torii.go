@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/logx"
@@ -17,17 +18,11 @@ import (
 	"time"
 )
 
-// CheckTorii serves every Torii endpoint other than the checker; unknown paths get the 403 page.
-//
-// Two paths are in play. r.URL.Path is what nginx asked Torii for, and is trusted: it selects
-// the pages nginx redirects to internally and the gossip endpoint peers call directly.
-// reqData.Uri is the URI the visitor originally requested, forwarded in a header: it selects the
-// endpoints a browser reaches under the address of the protected site.
-func (s *Server) CheckTorii(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
+// servePublicEndpoint answers the endpoints a browser reaches under the address of the protected
+// site, selected by the URI the visitor requested. It reports false, writing nothing, for any other URI.
+func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) bool {
 	webPath := s.cfg.WebPath
 	switch {
-	case strings.HasPrefix(r.URL.Path, webPath+"/checker_pages/"):
-		s.handleCheckerPages(w, r, reqData, ruleSet, pages)
 	case reqData.Uri == webPath+"/captcha/challenge":
 		handleCaptchaChallenge(w, r, reqData, ruleSet)
 	case reqData.Uri == webPath+"/captcha":
@@ -36,11 +31,10 @@ func (s *Server) CheckTorii(w http.ResponseWriter, r *http.Request, reqData requ
 		s.handleHealthCheck(w, reqData)
 	case strings.HasPrefix(reqData.Uri, webPath+"/external_migration"):
 		s.handleExternalMigration(w, r, reqData, ruleSet, pages)
-	case r.URL.Path == webPath+"/gossip" && s.cfg.EnableGossip && s.gossip != nil:
-		s.gossip.HandleGossip(w, r)
 	default:
-		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
+		return false
 	}
+	return true
 }
 
 // handleCaptchaSubmission answers the script of the CAPTCHA page, which acts on the response body.
@@ -112,6 +106,10 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	builder.WriteString("\n")
 	builder.WriteString("sliver=")
 	builder.WriteString(s.cfg.NodeName)
+	// What became of the request reports of the connector; all zero means none arrive.
+	reports := s.reports.Load().Stats()
+	fmt.Fprintf(&builder, "\nreports_received=%d\nreports_accepted=%d\nreports_malformed=%d\nreports_unknown_site=%d\nreports_dropped=%d",
+		reports.Received, reports.Accepted, reports.Malformed, reports.Unknown, reports.Dropped)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -278,10 +276,11 @@ func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacV
 		"&hmac=" + url.QueryEscape(hmacValue)
 }
 
-// handleCheckerPages serves the page nginx shows for each verdict of the checker.
-func (s *Server) handleCheckerPages(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
-	switch r.URL.Path {
-	case s.cfg.WebPath + "/checker_pages/CAPTCHA":
+// serveVerdict answers a request the checks did not let through with the response the visitor
+// should get: an error page, the CAPTCHA page, or the redirect to the external provider.
+func (s *Server) serveVerdict(w http.ResponseWriter, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages, verdict action.Verdict) {
+	switch verdict {
+	case action.VerdictCaptcha:
 		page := config.PageCaptcha
 		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
 			page = config.PageCaptchaAltcha
@@ -293,13 +292,13 @@ func (s *Server) handleCheckerPages(w http.ResponseWriter, r *http.Request, reqD
 		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
 		writeHTML(w, reqData, http.StatusServiceUnavailable, body)
 
-	case s.cfg.WebPath + "/checker_pages/429":
+	case action.VerdictRateLimit:
 		s.serveErrorPage(w, reqData, pages, config.PageTooManyRequests, http.StatusTooManyRequests)
 
-	case s.cfg.WebPath + "/checker_pages/EXTERNAL":
+	case action.VerdictExternal:
 		s.redirectToExternalMigration(w, reqData, ruleSet)
 
-	default: // including /checker_pages/403
+	default:
 		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
 	}
 }

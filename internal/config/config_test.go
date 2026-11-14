@@ -73,9 +73,6 @@ func TestLoadMainConfig_ValidPartialConfigOverlaysDefaults(t *testing.T) {
 	if cfg.EnableGossip {
 		t.Fatal("EnableGossip = true, want default false")
 	}
-	if len(cfg.ConnectingHostHeaders) != len(DefaultConnectingHostHeaders) || cfg.ConnectingHostHeaders[0] != DefaultConnectingHostHeaders[0] {
-		t.Fatalf("ConnectingHostHeaders = %v, want %v", cfg.ConnectingHostHeaders, DefaultConnectingHostHeaders)
-	}
 	if len(cfg.Sites) != len(DefaultSites) || cfg.Sites[0] != DefaultSites[0] {
 		t.Fatalf("Sites = %v, want %v", cfg.Sites, DefaultSites)
 	}
@@ -92,7 +89,7 @@ func TestLoadMainConfig_ValidFullConfigUsesDecodedValues(t *testing.T) {
 	}
 
 	configPath := filepath.Join(tempDir, "torii.yml")
-	content := []byte("port: \"8081\"\nweb_path: \"/edge\"\nerror_page: \"/tmp/errors\"\nlog_path: \"/tmp/logs/\"\nglobal_secret: \"12345678901234567890123456789012\"\nnode_name: \"node-a\"\nenable_gossip: true\nconnecting_host_headers:\n  - \"X-Host\"\nconnecting_ip_headers:\n  - \"X-IP\"\nconnecting_uri_headers:\n  - \"X-URI\"\nconnecting_feature_control_headers:\n  - \"X-Feature\"\nsites:\n  - host: \"default_site\"\n    rule_path: \"" + filepath.ToSlash(ruleDir) + "\"\npeers:\n  - name: \"peer-a\"\n    address: \"https://example.com\"\n    host: \"peer.example.com\"\n")
+	content := []byte("port: \"8081\"\nweb_path: \"/edge\"\nerror_page: \"/tmp/errors\"\nlog_path: \"/tmp/logs/\"\nglobal_secret: \"12345678901234567890123456789012\"\nnode_name: \"node-a\"\nenable_gossip: true\nsites:\n  - id: \"default_site\"\n    rule_path: \"" + filepath.ToSlash(ruleDir) + "\"\npeers:\n  - name: \"peer-a\"\n    address: \"https://example.com\"\n    host: \"peer.example.com\"\n")
 	if err := os.WriteFile(configPath, content, 0o644); err != nil {
 		t.Fatalf("WriteFile failed: %v", err)
 	}
@@ -119,9 +116,6 @@ func TestLoadMainConfig_ValidFullConfigUsesDecodedValues(t *testing.T) {
 	}
 	if !cfg.EnableGossip {
 		t.Fatal("EnableGossip = false, want true")
-	}
-	if len(cfg.ConnectingHostHeaders) != 1 || cfg.ConnectingHostHeaders[0] != "X-Host" {
-		t.Fatalf("ConnectingHostHeaders = %v, want [X-Host]", cfg.ConnectingHostHeaders)
 	}
 	if len(cfg.Sites) != 1 || cfg.Sites[0].RulePath != filepath.ToSlash(ruleDir) {
 		t.Fatalf("Sites = %v, want decoded site rule path", cfg.Sites)
@@ -153,18 +147,6 @@ func assertMainConfigEqual(t *testing.T, got, want *MainConfig) {
 	}
 	if got.EnableGossip != want.EnableGossip {
 		t.Fatalf("EnableGossip = %v, want %v", got.EnableGossip, want.EnableGossip)
-	}
-	if len(got.ConnectingHostHeaders) != len(want.ConnectingHostHeaders) || got.ConnectingHostHeaders[0] != want.ConnectingHostHeaders[0] {
-		t.Fatalf("ConnectingHostHeaders = %v, want %v", got.ConnectingHostHeaders, want.ConnectingHostHeaders)
-	}
-	if len(got.ConnectingIPHeaders) != len(want.ConnectingIPHeaders) || got.ConnectingIPHeaders[0] != want.ConnectingIPHeaders[0] {
-		t.Fatalf("ConnectingIPHeaders = %v, want %v", got.ConnectingIPHeaders, want.ConnectingIPHeaders)
-	}
-	if len(got.ConnectingURIHeaders) != len(want.ConnectingURIHeaders) || got.ConnectingURIHeaders[0] != want.ConnectingURIHeaders[0] {
-		t.Fatalf("ConnectingURIHeaders = %v, want %v", got.ConnectingURIHeaders, want.ConnectingURIHeaders)
-	}
-	if len(got.ConnectingFeatureControlHeaders) != len(want.ConnectingFeatureControlHeaders) || got.ConnectingFeatureControlHeaders[0] != want.ConnectingFeatureControlHeaders[0] {
-		t.Fatalf("ConnectingFeatureControlHeaders = %v, want %v", got.ConnectingFeatureControlHeaders, want.ConnectingFeatureControlHeaders)
 	}
 	if len(got.Sites) != len(want.Sites) || got.Sites[0] != want.Sites[0] {
 		t.Fatalf("Sites = %v, want %v", got.Sites, want.Sites)

@@ -1,28 +1,33 @@
 port: "25555"
+# Addresses the HTTP server listens on: "host:port" for TCP, "unix:/path" for a Unix domain socket.
+# Both kinds can be listed together. When omitted, Torii listens on every interface on `port`.
+# `port` is also the default UDP port for request reports, see `log_listen`.
+# listen:
+#   - "127.0.0.1:25555"
+#   - "unix:/run/server_torii.sock"
+# Where the connector's request reports are received (`torii_log` in nginx): "host:port" for UDP,
+# "unix:/path" for a Unix datagram socket. Reports are trusted and not authenticated, so keep
+# this reachable from nginx only. When omitted, Torii listens on UDP 127.0.0.1:`port`.
+# log_listen:
+#   - "unix:/run/server_torii_log.sock"
+# Permission of the Unix sockets (octal). The nginx worker user must be able to write to the socket.
+# unix_socket_mode: "0666"
 web_path: "/torii"
 error_page: "/www/server_torii/config/error_page"
 log_path: "/www/server_torii/log/"
 global_secret: "0378b0f84c4310279918d71a5647ba5d"
 node_name: "Server Torii"
 enable_gossip: false
-connecting_host_headers:
-  - "Torii-Real-Host"
-connecting_ip_headers:
-  - "Torii-Real-IP"
-connecting_uri_headers:
-  - "Torii-Original-URI"
-connecting_feature_control_headers:
-  - "Torii-Feature-Control"
-connecting_method_headers:
-  - "Torii-Original-Method"
-
+# Every protected site has an ID. Nginx names the site of a request with `torii_site <id>;`.
+# An ID may contain letters, digits and underscores, at most 32 characters. Rate counters,
+# temporary blocks, logs and traffic analysis are kept per site.
 sites:
-  - host: "default_site"
+  - id: "default_site"
     rule_path: "/www/server_torii/config/rules/default"
-  - host: "example.com"
+  - id: "example"
     rule_path: "/www/server_torii/config/rules/example.com"
-  - host: "*.example.com"
-    rule_path: "/www/server_torii/config/rules/example.com"
+# The site for requests that name none. Remove it to give such requests no decision.
+default_site: "default_site"
 
 peers:
   - name: "Node-B"

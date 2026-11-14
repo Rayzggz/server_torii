@@ -34,6 +34,19 @@ func newManager(base string) *LogxManager {
 	return m
 }
 
+// unknownSite names the log directory of requests that belong to no site.
+const unknownSite = "unknown_site"
+
+// logName returns the log directory of the request: its site, never anything the client sent.
+// A host name would let clients create directories and open files without bound.
+func logName(reqData request.UserRequest) string {
+	if reqData.Site == "" {
+		return unknownSite
+	}
+	return reqData.Site
+}
+
+// getLogger returns the logger of one site, opening its files on first use.
 func (m *LogxManager) getLogger(host string) *zap.Logger {
 	m.mu.RLock()
 	if lg, ok := m.loggers[host]; ok {
@@ -84,7 +97,7 @@ func Info(reqData request.UserRequest, msg, msg2 string) {
 		log.Printf("LogxManager is not initialized")
 		return
 	}
-	lg := m.getLogger(reqData.Host)
+	lg := m.getLogger(logName(reqData))
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -103,7 +116,7 @@ func Error(reqData request.UserRequest, msg, msg2 string) {
 		log.Printf("LogxManager is not initialized")
 		return
 	}
-	lg := m.getLogger(reqData.Host)
+	lg := m.getLogger(logName(reqData))
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),
@@ -122,7 +135,7 @@ func Debug(reqData request.UserRequest, msg, msg2 string) {
 		log.Printf("LogxManager is not initialized")
 		return
 	}
-	lg := m.getLogger(reqData.Host)
+	lg := m.getLogger(logName(reqData))
 	line := fmt.Sprintf("%s - - [%s] %s %s %s %s %s",
 		reqData.RemoteIP,
 		time.Now().Format("02/Jan/2006:15:04:05 -0700"),

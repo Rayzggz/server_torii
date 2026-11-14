@@ -43,7 +43,7 @@ func TestReloadErrorPages(t *testing.T) {
 	pagesDir := t.TempDir()
 	page := filepath.Join(pagesDir, "403.html")
 	writeFile(t, page, "v1")
-	cfg := &MainConfig{ErrorPage: pagesDir, Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: rules}}}
+	cfg := &MainConfig{ErrorPage: pagesDir, Sites: []AllSiteRuleSet{{ID: "default_site", RulePath: rules}}}
 	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)

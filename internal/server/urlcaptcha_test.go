@@ -2,7 +2,6 @@ package server
 
 import (
 	"net"
-	"net/http/httptest"
 	"regexp"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
@@ -17,17 +16,14 @@ import (
 func TestURLCaptchaFeatureControl(t *testing.T) {
 	rules := featureControlRuleSet()
 	rules.IPCAPTCHARule = &config.IPListRule{Enabled: true}
-	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 	for _, tt := range []struct {
 		header        string
 		enabled, want bool
 	}{
-		{"", true, true}, {"__________0", true, false}, {"__________1", false, true}, {"___________", true, true}, {"__________", true, true},
+		{"", true, true}, {"-url_captcha", true, false}, {"+url_captcha", false, true}, {"-captcha", true, true}, {"+url_captcha", true, true},
 	} {
 		rules.URLCAPTCHARule = &config.URLListRule{Enabled: tt.enabled}
-		req := httptest.NewRequest("GET", "/", nil)
-		req.Header.Set("X-Features", tt.header)
-		got := processFeatureControl(cfg, req, rules)
+		got := featureBits(rules, tt.header)
 		want := uint16(request.FeatureCountryRule | request.FeatureIPCAPTCHA)
 		if tt.want {
 			want |= request.FeatureURLCAPTCHA
@@ -37,7 +33,7 @@ func TestURLCaptchaFeatureControl(t *testing.T) {
 		}
 	}
 	rules.URLCAPTCHARule = nil
-	if got := processFeatureControl(cfg, httptest.NewRequest("GET", "/", nil), rules); got&request.FeatureURLCAPTCHA != 0 {
+	if got := featureBits(rules, ""); got&request.FeatureURLCAPTCHA != 0 {
 		t.Fatal("absent rule enabled")
 	}
 }
@@ -57,13 +53,13 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			trie := &iptrie.TrieNode{}
 			_, network, _ := net.ParseCIDR("192.0.2.0/24")
 			trie.Insert(network)
-			wantStatus, wantAction := 200, ""
+			want := "pass"
 			switch scenario {
 			case "challenge":
-				wantStatus, wantAction = 445, "CAPTCHA"
+				want = "captcha"
 			case "regex":
 				req.Uri = "/admin/users?a=1"
-				wantStatus, wantAction = 445, "CAPTCHA"
+				want = "captcha"
 			case "clearance":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 			case "nonmatch":
@@ -85,30 +81,28 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			case "ip block":
 				rules.IPBlockRule.Trie = trie
 				req.FeatureControl |= request.FeatureIPBlock
-				wantStatus, wantAction = 445, "403"
+				want = "block"
 			case "url block":
 				rules.URLBlockRule.List = list
 				req.FeatureControl |= request.FeatureURLBlock
-				wantStatus, wantAction = 445, "403"
+				want = "block"
 			case "country precedence":
 				rules.CountryRule.UnknownAction = config.CountryBlock
 				req.FeatureControl |= request.FeatureCountryRule
-				wantStatus, wantAction = 445, "CAPTCHA"
+				want = "captcha"
 			case "clearance later block":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 				rules.CountryRule.UnknownAction = config.CountryBlock
 				req.FeatureControl |= request.FeatureCountryRule
-				wantStatus, wantAction = 445, "403"
+				want = "block"
 			case "failure limit":
 				rules.CAPTCHARule.CaptchaFailureLimit = map[int64]int64{1: 1}
 				rules.CAPTCHARule.FailureBlockDuration = 60
 				shared.CaptchaFailureLimitCounter.Load().Add(req.RemoteIP, 2)
-				wantStatus, wantAction = 445, "403"
+				want = "block"
 			}
-			recorder := httptest.NewRecorder()
-			NewServer(&config.MainConfig{}, nil, shared, nil).CheckMain(recorder, req, rules)
-			if recorder.Code != wantStatus || recorder.Header().Get("Torii-Action") != wantAction {
-				t.Fatalf("got %d %q, want %d %q", recorder.Code, recorder.Header().Get("Torii-Action"), wantStatus, wantAction)
+			if got := decide(shared, req, rules); got != want {
+				t.Fatalf("decision = %q, want %q", got, want)
 			}
 		})
 	}

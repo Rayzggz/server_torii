@@ -227,6 +227,23 @@ func isAsset(canonicalURI string, exts map[string]struct{}) bool {
 	return ok
 }
 
+// isAssetContentType reports whether a response of this type is something a browser loads while
+// rendering a page. It catches assets whose URI has no telling extension.
+func isAssetContentType(contentType string) bool {
+	mediaType, _, _ := strings.Cut(contentType, ";")
+	mediaType = strings.ToLower(strings.TrimSpace(mediaType))
+	switch {
+	case strings.HasPrefix(mediaType, "image/"), strings.HasPrefix(mediaType, "font/"):
+		return true
+	}
+	switch mediaType {
+	case "text/css", "text/javascript", "application/javascript", "application/x-javascript",
+		"application/font-woff", "application/font-woff2", "application/vnd.ms-fontobject":
+		return true
+	}
+	return false
+}
+
 // wilsonLower is the lower bound of the Wilson score interval for k successes in n trials.
 func wilsonLower(k, n int64) float64 {
 	if n <= 0 {

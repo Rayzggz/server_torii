@@ -34,6 +34,8 @@ func contractFixture() (request.UserRequest, config.RuleSet) {
 		config.RuleSet{
 			CAPTCHARule:           &config.CaptchaRule{SecretKey: contractKey, CaptchaValidateTime: 600, CaptchaChallengeSessionTimeout: 120},
 			ExternalMigrationRule: &config.ExternalMigrationRule{SecretKey: contractKey, SessionTimeout: 300},
+			// The site ID is part of every token, so a token of one site is useless on another.
+			ID: "shop",
 		}
 }
 
@@ -56,22 +58,22 @@ func TestCookieFormatContract(t *testing.T) {
 		gen    func(request.UserRequest, config.RuleSet) []byte
 		verify func(request.UserRequest, config.RuleSet, string) bool
 	}{
-		{"captcha clearance", "CAPTCHA-CLEARANCE", 600, GenClearance,
+		{"captcha clearance", "CAPTCHA-CLEARANCE@shop", 600, GenClearance,
 			func(r request.UserRequest, rs config.RuleSet, v string) bool {
 				r.ToriiClearance = v
 				return verifyClearanceCookie(r, rs)
 			}},
-		{"captcha session", "CAPTCHA-SESSION", 120, GenSessionID,
+		{"captcha session", "CAPTCHA-SESSION@shop", 120, GenSessionID,
 			func(r request.UserRequest, rs config.RuleSet, v string) bool {
 				r.ToriiSessionID = v
 				return VerifySessionIDCookie(r, rs)
 			}},
-		{"external clearance", "EXTERNAL-CLEARANCE", 300, GenExternalMigrationClearance,
+		{"external clearance", "EXTERNAL-CLEARANCE@shop", 300, GenExternalMigrationClearance,
 			func(r request.UserRequest, rs config.RuleSet, v string) bool {
 				r.ToriiClearance = v
 				return verifyExternalMigrationClearanceCookie(r, rs)
 			}},
-		{"external session", "EXTERNAL-SESSION", 0, GenExternalMigrationSessionID,
+		{"external session", "EXTERNAL-SESSION@shop", 0, GenExternalMigrationSessionID,
 			func(r request.UserRequest, rs config.RuleSet, v string) bool {
 				r.ToriiSessionID = v
 				return VerifyExternalMigrationSessionIDCookie(r, rs)

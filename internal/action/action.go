@@ -19,14 +19,14 @@ const (
 )
 
 var verdictNames = [...]string{
-	VerdictAllow:     "200",
-	VerdictBlock:     "403",
-	VerdictCaptcha:   "CAPTCHA",
-	VerdictRateLimit: "429",
-	VerdictExternal:  "EXTERNAL",
+	VerdictAllow:     "pass",
+	VerdictBlock:     "block",
+	VerdictCaptcha:   "captcha",
+	VerdictRateLimit: "rate_limit",
+	VerdictExternal:  "external",
 }
 
-// String returns the wire label of the verdict, as sent in the Torii-Action header.
+// String returns the wire label of the verdict, as sent in the Torii-Decision header.
 func (v Verdict) String() string {
 	if int(v) < len(verdictNames) {
 		return verdictNames[v]

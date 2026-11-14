@@ -229,6 +229,7 @@ func (gm *Manager) startAntiEntropy() {
 
 		for _, rule := range snapshot {
 			batch = append(batch, ActionRulePayload{
+				Site:      rule.Site,
 				RuleType:  rule.RuleType,
 				Value:     rule.Value,
 				Action:    string(rule.Action),
@@ -481,14 +482,14 @@ func (gm *Manager) processActionRule(msg Message, now time.Time) {
 	if ttl > 0 {
 		switch payload.RuleType {
 		case "IP":
-			gm.actionEngine.AddIPRule(payload.Value, action.ActionType(payload.Action), ttl)
+			gm.actionEngine.AddIPRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 		case "UA":
-			gm.actionEngine.AddUARule(payload.Value, action.ActionType(payload.Action), ttl)
+			gm.actionEngine.AddUARule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 		case "URI":
-			gm.actionEngine.AddURIRule(payload.Value, action.ActionType(payload.Action), ttl)
+			gm.actionEngine.AddURIRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 		}
 	}
-	log.Printf("[GOSSIP] Received ActionRule for %s:%s from %s (Exp: %d)", payload.RuleType, payload.Value, msg.OriginNode, payload.ExpiresAt)
+	log.Printf("[GOSSIP] Received ActionRule for %s:%s on site %s from %s (Exp: %d)", payload.RuleType, payload.Value, payload.Site, msg.OriginNode, payload.ExpiresAt)
 
 	// Epidemic: Re-broadcast to infect others
 	gm.epidemicBroadcast(msg)
@@ -521,11 +522,11 @@ func (gm *Manager) processSync(msg Message, now time.Time) {
 		if ttl > 0 {
 			switch payload.RuleType {
 			case "IP":
-				gm.actionEngine.AddIPRule(payload.Value, action.ActionType(payload.Action), ttl)
+				gm.actionEngine.AddIPRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 			case "UA":
-				gm.actionEngine.AddUARule(payload.Value, action.ActionType(payload.Action), ttl)
+				gm.actionEngine.AddUARule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 			case "URI":
-				gm.actionEngine.AddURIRule(payload.Value, action.ActionType(payload.Action), ttl)
+				gm.actionEngine.AddURIRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
 			}
 		}
 	}
@@ -542,6 +543,11 @@ func (gm *Manager) processSync(msg Message, now time.Time) {
 const maxGossipBlockDuration = 7 * 24 * time.Hour
 
 func validateActionRule(payload ActionRulePayload, now time.Time) error {
+	// A rule without a site matches no request; an invalid one cannot belong to any site.
+	if !config.ValidSiteID(payload.Site) {
+		return fmt.Errorf("invalid site: %q", payload.Site)
+	}
+
 	trimmed := strings.TrimSpace(payload.Value)
 	if trimmed == "" {
 		return fmt.Errorf("empty rule value")

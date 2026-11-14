@@ -17,7 +17,7 @@ func (f fakeBrowserEvidence) HasBrowserEvidence(ip string) bool { return f[ip] }
 func TestActionRuleCaptchaUnverified(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	engine.AddURIRule("/members/:id", action.ActionCaptchaUnverified, time.Minute)
+	engine.AddURIRule("", "/members/:id", action.ActionCaptchaUnverified, time.Minute)
 	rules := &config.RuleSet{CAPTCHARule: &config.CaptchaRule{
 		SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{},
 	}}

@@ -37,6 +37,8 @@ const (
 )
 
 type UserRequest struct {
+	// Site is the ID of the site the request belongs to.
+	Site           string
 	RemoteIP       string
 	Uri            string
 	FeatureControl uint16

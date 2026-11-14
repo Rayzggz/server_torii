@@ -12,7 +12,7 @@ The default starts **10 real Torii processes**, builds the current checkout once
 and exercises HTTP and UDP interfaces. It does not require Docker, Nginx, root,
 Python, or hCaptcha credentials. hCaptcha and browser rendering are intentionally
 excluded. No traffic is sent to a crawler or mitigation provider: crawler IPs are
-passed to local Torii instances using the configured proxy headers, and external
+passed to local Torii instances in the connector's request headers, and external
 mitigation callbacks are signed locally with test secrets.
 
 ## Ubuntu / WSL prerequisites
@@ -52,14 +52,15 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 
 | Group | Assertions |
 | --- | --- |
-| `routing` | Node identities and health, default/exact/wildcard sites, configured header aliases and precedence, feature overrides |
+| `routing` | Node identities and health, site selection by ID and the default site, feature overrides |
+| `connector` | Connector protocol v1: pass/deny decisions with the page as the response, sites named by ID, feature overrides, error answers without a decision, public endpoints, and the same checks over the Unix socket |
 | `access` | IPv4/CIDR and IPv4-mapped IPv6 allow/block/CAPTCHA lists, ignored native IPv6 rules, exact/regex URL rules, overlap precedence and nonmatches |
 | `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/captcha/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
 | `country` | Pinned US/AU/GB database records, default and unknown policies, missing database, rule precedence |
 | `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry |
 | `captcha` | ALTCHA challenge and shell solution, clearance, list integration, tampering, malformed proof, session binding/expiry, challenge/clearance expiry, failure block |
 | `external` | Redirect signature, callback/clearance, invalid signatures/sessions, old timestamps, unsafe redirect, custom pages |
-| `syslog` | UDP input, unknown tags, malformed messages, below-threshold/healthy controls, non-200 IP blocks, canonicalized URI challenges and propagation/expiry |
+| `syslog` | Request reports over UDP, unknown sites, malformed and legacy-format messages, report counters, below-threshold/healthy controls, non-200 IP blocks, canonicalized URI challenges and propagation/expiry |
 | `gossip` | Real-origin propagation, injected-message origin distinction, TTL, deduplication, signature/origin/ID/time validation, private IP, malformed/oversized input, IP/UA/URI snapshots and periodic anti-entropy |
 | `crawler` | Official Google range discovery plus forward/reverse DNS, real Googlebot acceptance, spoof rejection, disabled verification, ordinary traffic |
 | `reload` | SIGHUP rule reload, node isolation, malformed configuration rejection, recovery, retention of an existing GeoIP reader on failed reload |
@@ -85,7 +86,7 @@ reliable deadline for random dissemination. Allow several minutes for a full run
 ## Fixtures and diagnostics
 
 `fixtures/` contains reusable YAML, IP/URL lists, HTML templates, expected
-responses, a UDP syslog template, and pinned GeoIP expectations. All secrets
+responses, a request report template, and pinned GeoIP expectations. All secrets
 are **public test-only values; never deploy these configurations**. The suite
 copies fixtures to a unique temporary directory, generates per-node paths and
 peers, and modifies only those copies during reload tests. The existing bundled

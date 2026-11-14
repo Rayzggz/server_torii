@@ -24,7 +24,7 @@ func Captcha(reqData request.UserRequest, ruleSet *config.RuleSet, decision *act
 // requireCaptcha challenges a client without a clearance regardless of the Captcha feature switch.
 // Other checks call it when their own rule asks for a CAPTCHA.
 func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
-	failureCounter := rt.CaptchaFailureLimitCounter.Load()
+	failureCounter := rt.LimitersFor(reqData.Site).CaptchaFailureLimitCounter.Load()
 	if failureCounter == nil {
 		logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha rate checks")
 		decision.Set(action.Continue)
@@ -39,7 +39,7 @@ func requireCaptcha(reqData request.UserRequest, ruleSet *config.RuleSet, decisi
 		if count > limitCount {
 
 			if ruleSet.CAPTCHARule.FailureBlockDuration > 0 {
-				if !rt.BlockIP(ipKey, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second) {
+				if !rt.BlockIP(reqData.Site, ipKey, time.Duration(ruleSet.CAPTCHARule.FailureBlockDuration)*time.Second) {
 					logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
 				logx.Info(reqData, "", fmt.Sprintf("Captcha failure rate limit exceeded and blocked: IP %s window %d limit %d", ipKey, limitTime, limitCount))
@@ -99,7 +99,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 	}
 
 	failed := func(outcome CaptchaSubmission) CaptchaSubmission {
-		if failureCounter := rt.CaptchaFailureLimitCounter.Load(); failureCounter != nil {
+		if failureCounter := rt.LimitersFor(reqData.Site).CaptchaFailureLimitCounter.Load(); failureCounter != nil {
 			failureCounter.Add(reqData.RemoteIP, 1)
 		} else {
 			logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")

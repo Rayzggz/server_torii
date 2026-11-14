@@ -116,3 +116,20 @@ func skippableNames() []string {
 	}
 	return names
 }
+
+// ControlMaskByName returns the feature control bit of the check with the given name. Case,
+// underscores and hyphens are ignored, so "http_flood" and "HTTPFlood" name the same check.
+// It reports false for an unknown name and for a check that has no switch.
+func ControlMaskByName(name string) (uint16, bool) {
+	want := foldName(name)
+	for c := Check(0); c < Count; c++ {
+		if foldName(definitions[c].name) == want {
+			return definitions[c].control, definitions[c].control != 0
+		}
+	}
+	return 0, false
+}
+
+func foldName(name string) string {
+	return strings.ToLower(strings.NewReplacer("_", "", "-", "").Replace(name))
+}

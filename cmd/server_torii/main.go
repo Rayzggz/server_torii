@@ -53,7 +53,7 @@ func run() int {
 	configs := config.NewManager()
 	reload := func() error {
 		return configs.Reload(cfg, func(snap *config.SiteConfigSnapshot) {
-			rt.Resize(snap.CounterWindows())
+			rt.ResizeSites(snap.CounterWindows())
 		})
 	}
 	if err := reload(); err != nil {

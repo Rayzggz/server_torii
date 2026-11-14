@@ -60,7 +60,7 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
-		payload, _ := json.Marshal(ActionRulePayload{RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
 			ID:         msgID,
 			OriginNode: originNode,
@@ -103,7 +103,7 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 }
 
 func TestGossipAcceptsCaptchaUnverified(t *testing.T) {
-	payload := ActionRulePayload{RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
+	payload := ActionRulePayload{Site: "site_a", RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
 		ExpiresAt: time.Now().Add(time.Minute).Unix()}
 	if err := validateActionRule(payload, time.Now()); err != nil {
 		t.Fatal(err)

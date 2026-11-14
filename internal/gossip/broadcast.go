@@ -6,12 +6,13 @@ import (
 )
 
 // BroadcastActionRule sends an action rule event to the gossip channel
-func BroadcastActionRule(nodeName string, ruleType string, value string, action string, duration time.Duration, gossipChan chan Message) {
+func BroadcastActionRule(nodeName string, site string, ruleType string, value string, action string, duration time.Duration, gossipChan chan Message) {
 	if gossipChan == nil {
 		return
 	}
 
 	payload := ActionRulePayload{
+		Site:      site,
 		RuleType:  ruleType,
 		Value:     value,
 		Action:    action,

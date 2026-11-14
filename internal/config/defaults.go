@@ -13,36 +13,28 @@ const (
 	DefaultLogPath      = "/www/server_torii/log/"
 	DefaultGlobalSecret = "0378b0f84c4310279918d71a5647ba5d"
 	DefaultNodeName     = "Server Torii"
+	DefaultSiteID       = "default_site"
 )
 
-// Default header lists.
+// DefaultSites is the site list used when torii.yml names none.
 var (
-	DefaultConnectingHostHeaders           = []string{"Torii-Real-Host"}
-	DefaultConnectingIPHeaders             = []string{"Torii-Real-IP"}
-	DefaultConnectingURIHeaders            = []string{"Torii-Original-URI"}
-	DefaultConnectingFeatureControlHeaders = []string{"Torii-Feature-Control"}
-	DefaultConnectingMethodHeaders         = []string{"Torii-Original-Method"}
-	DefaultSites                           = []AllSiteRuleSet{
-		{Host: "default_site", RulePath: "/www/server_torii/config/rules/default"},
+	DefaultSites = []AllSiteRuleSet{
+		{ID: DefaultSiteID, RulePath: "/www/server_torii/config/rules/default"},
 	}
 )
 
 // DefaultMainConfig returns a fully populated MainConfig with all default values.
 func DefaultMainConfig() *MainConfig {
 	return &MainConfig{
-		Port:                            DefaultPort,
-		WebPath:                         DefaultWebPath,
-		ErrorPage:                       DefaultErrorPage,
-		LogPath:                         DefaultLogPath,
-		GlobalSecret:                    generateDefaultGlobalSecret(),
-		NodeName:                        DefaultNodeName,
-		EnableGossip:                    false,
-		ConnectingHostHeaders:           append([]string{}, DefaultConnectingHostHeaders...),
-		ConnectingIPHeaders:             append([]string{}, DefaultConnectingIPHeaders...),
-		ConnectingURIHeaders:            append([]string{}, DefaultConnectingURIHeaders...),
-		ConnectingFeatureControlHeaders: append([]string{}, DefaultConnectingFeatureControlHeaders...),
-		ConnectingMethodHeaders:         append([]string{}, DefaultConnectingMethodHeaders...),
-		Sites:                           append([]AllSiteRuleSet{}, DefaultSites...),
+		Port:         DefaultPort,
+		WebPath:      DefaultWebPath,
+		ErrorPage:    DefaultErrorPage,
+		LogPath:      DefaultLogPath,
+		GlobalSecret: generateDefaultGlobalSecret(),
+		NodeName:     DefaultNodeName,
+		EnableGossip: false,
+		Sites:        append([]AllSiteRuleSet{}, DefaultSites...),
+		DefaultSite:  DefaultSiteID,
 	}
 }
 

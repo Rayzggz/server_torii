@@ -16,7 +16,7 @@ type Analyzer interface {
 // Runtime is created once at startup and shared for the life of the process.
 // Every field is optional: a missing component disables the behavior that depends on it.
 type Runtime struct {
-	Limiters
+	SiteLimiters
 
 	ActionRuleEngine *action.ActionRuleEngine
 	CountryResolver  CountryResolver
@@ -61,24 +61,24 @@ const (
 	RuleTargetURI = "URI"
 )
 
-// ApplyRule installs a temporary action rule on this node and, when broadcast is set, shares it with peers.
-// It reports false, doing nothing, when no rule engine is running.
-func (rt *Runtime) ApplyRule(target, value string, act action.ActionType, ttl time.Duration, broadcast bool) bool {
+// ApplyRule installs a temporary action rule for one site on this node and, when broadcast is set,
+// shares it with peers. It reports false, doing nothing, when no rule engine is running.
+func (rt *Runtime) ApplyRule(site, target, value string, act action.ActionType, ttl time.Duration, broadcast bool) bool {
 	if rt == nil || rt.ActionRuleEngine == nil {
 		return false
 	}
 	if target == RuleTargetIP {
-		rt.ActionRuleEngine.AddIPRule(value, act, ttl)
+		rt.ActionRuleEngine.AddIPRule(site, value, act, ttl)
 	} else {
-		rt.ActionRuleEngine.AddURIRule(value, act, ttl)
+		rt.ActionRuleEngine.AddURIRule(site, value, act, ttl)
 	}
 	if broadcast {
-		gossip.BroadcastActionRule(rt.NodeName, target, value, string(act), ttl, rt.GossipChan)
+		gossip.BroadcastActionRule(rt.NodeName, site, target, value, string(act), ttl, rt.GossipChan)
 	}
 	return true
 }
 
-// BlockIP blocks ip on this node and shares the block with peers.
-func (rt *Runtime) BlockIP(ip string, ttl time.Duration) bool {
-	return rt.ApplyRule(RuleTargetIP, ip, action.ActionBlock, ttl, true)
+// BlockIP blocks ip on one site of this node and shares the block with peers.
+func (rt *Runtime) BlockIP(site, ip string, ttl time.Duration) bool {
+	return rt.ApplyRule(site, RuleTargetIP, ip, action.ActionBlock, ttl, true)
 }

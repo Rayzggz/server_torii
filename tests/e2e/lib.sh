@@ -83,8 +83,6 @@ preflight() {
     trap 'exit 130' INT
     trap 'exit 143' TERM
     mkdir -p "$RUN/responses"
-    ALLOWED=$(jq -r .allowed.body "$E2E/fixtures/responses.json")
-    CHALLENGED=$(jq -r .challenged.body "$E2E/fixtures/responses.json")
     log "Artifacts: $RUN"
 }
 setup_cluster() {
@@ -108,7 +106,7 @@ setup_cluster() {
         for site in non200 uri non200expiry uriexpiry; do
             cfg="$node/rules/$site/Server.yml"
             # Ranges end at the next top-level key so later sections such as CustomRules stay untouched.
-            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/; s/tag: disabled/tag: e2e-$site/" "$cfg"
+            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/" "$cfg"
             if [[ "$site" == non200* ]]; then
                 sed -i '/^  ip_detection:/,/^[^ ]/s/enabled: false/enabled: true/' "$cfg"
             else
@@ -152,26 +150,70 @@ request() {
         fail "Request $REQUESTS to node $node $endpoint failed (transport)"
     fi
     HTTP_BODY=$(cat "$RESPONSE.body")
-    HTTP_ACTION=$(header Torii-Action)
+    HTTP_DECISION=$(header Torii-Decision)
 }
 header() { awk -v key="$1:" 'tolower($1)==tolower(key) {$1=""; sub(/^ /, ""); sub(/\r$/, ""); print}' "$RESPONSE.headers"; }
+# The scenarios select checks with a 16-character mask, one character per check in this order:
+# 1 forces the check on, 0 forces it off, _ keeps the setting of the site. An empty mask
+# changes nothing.
+FEATURE_NAMES=(ip_allow ip_block url_allow url_block verify_bot http_flood captcha external_migration
+    country_rule ip_captcha url_captcha custom_rules)
+features_header() {
+    local mask=$1 i out=''
+    for ((i=0; i<${#FEATURE_NAMES[@]} && i<${#mask}; i++)); do
+        case "${mask:i:1}" in
+            1) out+=" +${FEATURE_NAMES[i]}" ;;
+            0) out+=" -${FEATURE_NAMES[i]}" ;;
+        esac
+    done
+    printf '%s' "${out# }"
+}
+# site_for HOST: the site ID nginx would send for a host, as torii_site in its server block does.
+# A host no server block claims gets no site ID, and Torii uses its default site.
+site_for() {
+    case "$1" in
+        default_site) printf default_site ;;
+        exact.e2e.test) printf exact ;;
+        *.e2e.test) printf wildcard ;;
+        failures.test|unknown.test|non200.test|uri.test|expiry.test|non200expiry.test|uriexpiry.test)
+            printf '%s' "${1%.test}" ;;
+    esac
+}
+# check NODE IP [MASK [URI [HOST [curl args]]]]: what the connector asks for every request.
 check() {
     local node=$1 ip=$2 features=${3-$ZERO} uri=${4:-/neutral} host=${5:-default_site}
     shift "$(( $# < 5 ? $# : 5 ))"
-    request "$node" /torii/checker -H "Torii-Real-IP: $ip" -H "Torii-Feature-Control: $features" \
-        -H "Torii-Original-URI: $uri" -H "Torii-Real-Host: $host" "$@"
+    request "$node" /v1/check -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
+        -H "Torii-Features: $(features_header "$features")" -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
 }
+# public NODE URI IP HOST [curl args]: a browser-facing endpoint, as the connector forwards it.
+public() {
+    local node=$1 uri=$2 ip=$3 host=$4
+    shift 4
+    request "$node" "/v1/public${uri#/torii}" -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
+        -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
+}
+# decision EXPECTED: the last check decided EXPECTED and answered with the matching response.
 decision() {
     local expected=$1
-    if [[ "$expected" == 200 ]]; then
-        assert_eq "$HTTP_CODE" 200 'checker status'
-        assert_eq "$HTTP_BODY" "$ALLOWED" 'checker body'
-        assert_eq "$HTTP_ACTION" '' 'allowed action header'
-    else
-        assert_eq "$HTTP_CODE" 445 'checker status'
-        assert_eq "$HTTP_BODY" "$CHALLENGED" 'checker body'
-        assert_eq "$HTTP_ACTION" "$expected" 'checker action'
-    fi
+    assert_eq "$HTTP_DECISION" "$expected" 'decision'
+    case "$expected" in
+        pass)
+            assert_eq "$HTTP_CODE" 204 'pass status'
+            assert_eq "$HTTP_BODY" '' 'pass body' ;;
+        block)
+            assert_eq "$HTTP_CODE" 403 'block status'
+            assert_contains "$HTTP_BODY" E2E-403 'block page' ;;
+        rate_limit)
+            assert_eq "$HTTP_CODE" 429 'rate limit status'
+            assert_contains "$HTTP_BODY" E2E-429 'rate limit page' ;;
+        captcha)
+            assert_eq "$HTTP_CODE" 503 'captcha status'
+            assert_contains "$HTTP_BODY" E2E-ALTCHA 'captcha page' ;;
+        external)
+            assert_eq "$HTTP_CODE" 302 'external status' ;;
+        *) fail "Unknown decision in test: $expected" ;;
+    esac
 }
 expect() { local expected=$1; shift; check "$@"; decision "$expected"; }
 wait_decision() {
@@ -179,26 +221,26 @@ wait_decision() {
     shift 2
     while true; do
         check "$@"
-        case "$HTTP_CODE/$HTTP_ACTION" in
-            200/) decision 200 ;;
-            445/403|445/429|445/CAPTCHA|445/EXTERNAL) decision "$HTTP_ACTION" ;;
-            *) fail "Unexpected checker response while polling: $HTTP_CODE/$HTTP_ACTION" ;;
+        case "$HTTP_DECISION" in
+            pass|block|rate_limit|captcha|external) decision "$HTTP_DECISION" ;;
+            *) fail "Unexpected checker response while polling: $HTTP_CODE/$HTTP_DECISION" ;;
         esac
-        if [[ "$expected" == 200 && "$HTTP_CODE" == 200 ]] || [[ "$HTTP_CODE" == 445 && "$HTTP_ACTION" == "$expected" ]]; then
-            return
-        fi
+        if [[ "$HTTP_DECISION" == "$expected" ]]; then return; fi
         alive
-        (( SECONDS < deadline )) || fail "Expected $expected within ${seconds}s; got $HTTP_CODE/$HTTP_ACTION"
+        (( SECONDS < deadline )) || fail "Expected $expected within ${seconds}s; got $HTTP_CODE/$HTTP_DECISION"
         sleep 0.2
     done
 }
+# cluster_decision EXPECTED IP [SKIP_NODE [MASK URI HOST]]: every node reaches the decision.
+# Temporary rules belong to one site, so name the host whose site the rule was made for.
 cluster_decision() {
     local expected=$1 ip=$2 skip=${3:-0} node remaining deadline=$((SECONDS+180))
+    shift "$(( $# < 3 ? $# : 3 ))"
     for ((node=1; node<=NUM_NODES; node++)); do
         (( node != skip )) || continue
         remaining=$((deadline-SECONDS))
         (( remaining > 0 )) || fail 'Cluster convergence exceeded 180 seconds'
-        wait_decision "$expected" "$remaining" "$node" "$ip"
+        wait_decision "$expected" "$remaining" "$node" "$ip" "$@"
     done
 }
 hmac() { printf '%s' "$1" | openssl dgst -sha512 -hmac "$2" | awk '{print $NF}'; }

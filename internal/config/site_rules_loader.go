@@ -294,7 +294,7 @@ func loadURLRules(filePath string, list *urllist.URLRuleList) error {
 	return scanner.Err()
 }
 
-// LoadSiteRules loads all site-specific rules and returns a map
+// LoadSiteRules loads the rules of every configured site, keyed by site ID.
 func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
 	siteRules := make(map[string]*RuleSet)
 
@@ -304,17 +304,28 @@ func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
 	}
 
 	// Load rules for each configured site
-	for _, site := range cfg.Sites {
+	for i, site := range cfg.Sites {
+		if site.ID == "" && site.Host != "" {
+			return nil, fmt.Errorf("sites[%d]: \"host: %s\" is no longer supported; give the site an \"id\" and name it with torii_site in nginx", i, site.Host)
+		}
+		if !ValidSiteID(site.ID) {
+			return nil, fmt.Errorf("sites[%d]: invalid id %q: use letters, digits and underscores, at most %d characters", i, site.ID, MaxSiteIDLength)
+		}
+		if _, exists := siteRules[site.ID]; exists {
+			return nil, fmt.Errorf("sites[%d]: duplicate id %q", i, site.ID)
+		}
 		ruleSet, err := LoadRules(site.RulePath)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load rules for site %s: %w", site.Host, err)
+			return nil, fmt.Errorf("failed to load rules for site %s: %w", site.ID, err)
 		}
-		siteRules[site.Host] = ruleSet
+		ruleSet.ID = site.ID
+		siteRules[site.ID] = ruleSet
 	}
 
-	// Check if default_site exists
-	if _, exists := siteRules["default_site"]; !exists {
-		return nil, fmt.Errorf("default_site is required but not found in configuration")
+	if cfg.DefaultSite != "" {
+		if _, exists := siteRules[cfg.DefaultSite]; !exists {
+			return nil, fmt.Errorf("default_site %q is not one of the configured sites", cfg.DefaultSite)
+		}
 	}
 
 	return siteRules, nil

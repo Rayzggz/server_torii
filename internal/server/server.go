@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"log"
-	"net"
 	"net/http"
-	"path"
 	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
@@ -14,11 +12,12 @@ import (
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 // HTTP server limits. Torii sits behind a reverse proxy and serves small
-// auth_request/checker requests, so these can be tight; they exist mainly to
+// check requests, so these can be tight; they exist mainly to
 // stop slow-connection attacks (slowloris) from exhausting goroutines/FDs.
 const (
 	httpReadHeaderTimeout = 5 * time.Second
@@ -44,12 +43,14 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 	}
 }
 
-// Server answers the nginx auth_request checker and serves Torii's own pages.
+// Server speaks the connector protocol to nginx and serves the endpoints of the node itself.
 type Server struct {
 	cfg     *config.MainConfig
 	configs *config.Manager
 	rt      *state.Runtime
 	gossip  *gossip.Manager // nil when gossip is disabled
+	// reports is the running request report listener, for the counters of the health check.
+	reports atomic.Pointer[analyzer.ReportListener]
 }
 
 // NewServer wires a server to its configuration and shared state; gossip may be nil.
@@ -57,31 +58,20 @@ func NewServer(cfg *config.MainConfig, configs *config.Manager, rt *state.Runtim
 	return &Server{cfg: cfg, configs: configs, rt: rt, gossip: gossipManager}
 }
 
-// ServeHTTP resolves the site rules for the request and dispatches it.
+// ServeHTTP dispatches a request: the connector protocol, and the endpoints of the node itself.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	userRequestData := processRequestData(s.cfg, r)
-
-	snap := s.configs.Get()
-	if snap == nil {
-		http.Error(w, "Service Unavailable: Configuration not loaded", http.StatusServiceUnavailable)
-		return
-	}
-
-	// Get site-specific rules based on the Host header
-	ruleSet := config.GetSiteRules(snap.SiteRules, userRequestData.Host)
-	if ruleSet == nil {
-		log.Printf("[ERROR] No rules found for host: %s", userRequestData.Host)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
-
-	// Process feature control after ruleSet is loaded
-	userRequestData.FeatureControl = processFeatureControl(s.cfg, r, ruleSet)
-
-	if r.URL.Path == path.Join(s.cfg.WebPath, "/checker") {
-		s.CheckMain(w, userRequestData, ruleSet)
-	} else {
-		s.CheckTorii(w, r, userRequestData, ruleSet, snap.Pages)
+	switch {
+	case r.URL.Path == v1CheckPath:
+		s.serveV1Check(w, r)
+	case strings.HasPrefix(r.URL.Path, v1PublicPrefix):
+		s.serveV1Public(w, r)
+	case r.URL.Path == s.cfg.WebPath+"/gossip" && s.cfg.EnableGossip && s.gossip != nil:
+		s.gossip.HandleGossip(w, r)
+	case r.URL.Path == s.cfg.WebPath+"/health_check":
+		// Reachable without the connector, for monitoring and readiness probes.
+		s.handleHealthCheck(w, request.UserRequest{})
+	default:
+		http.NotFound(w, r)
 	}
 }
 
@@ -96,24 +86,34 @@ func (s *Server) Run(ctx context.Context) error {
 	ata.Start()
 	defer ata.Stop()
 
-	// Start Syslog UDP Listener
-	syslogListener := analyzer.NewSyslogListener(s.cfg.Port, ata)
-	if err := syslogListener.Start(); err != nil {
-		log.Printf("[ERROR] Failed to start Syslog UDP listener: %v", err)
+	// Request reports from the connector feed the traffic analyzer.
+	reports := analyzer.NewReportListener(s.cfg.LogListenAddrs(), s.cfg.SocketMode(), ata)
+	if err := reports.Start(); err != nil {
+		log.Printf("[ERROR] Failed to start the request report listener: %v", err)
 	} else {
-		defer syslogListener.Stop()
+		s.reports.Store(reports)
+		defer func() {
+			s.reports.Store(nil)
+			reports.Stop()
+		}()
 	}
 
-	srv := newHTTPServer(":"+s.cfg.Port, s)
-	listenErr := make(chan error, 1)
-	go func() {
-		log.Printf("HTTP Server listening on :%s ...", s.cfg.Port)
-		listenErr <- srv.ListenAndServe()
-	}()
+	listeners, err := listenAll(s.cfg.ListenAddrs(), s.cfg.SocketMode())
+	if err != nil {
+		return err
+	}
+
+	srv := newHTTPServer("", s)
+	serveErr := make(chan error, len(listeners))
+	for _, ln := range listeners {
+		log.Printf("HTTP Server listening on %s ...", ln.Addr())
+		go func() { serveErr <- srv.Serve(ln) }()
+	}
 
 	select {
-	case err := <-listenErr:
-		// Listener failed (e.g. port in use) before any shutdown was requested.
+	case err := <-serveErr:
+		// One listener failed before any shutdown was requested; stop the others too.
+		_ = srv.Close()
 		return err
 	case <-ctx.Done():
 	}
@@ -125,26 +125,13 @@ func (s *Server) Run(ctx context.Context) error {
 		log.Printf("[WARNING] Graceful shutdown did not complete: %v; forcing close", err)
 		_ = srv.Close()
 	}
-	if err := <-listenErr; err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return err
+	var firstErr error
+	for range listeners {
+		if err := <-serveErr; err != nil && !errors.Is(err, http.ErrServerClosed) && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return nil
-}
-
-func processRequestData(cfg *config.MainConfig, r *http.Request) request.UserRequest {
-
-	userRequest := request.UserRequest{
-		RemoteIP:       getClientIP(cfg, r),
-		Uri:            getReqURI(cfg, r),
-		FeatureControl: 0,
-		ToriiClearance: getHeader(r, "__torii_clearance"),
-		ToriiSessionID: getHeader(r, "__torii_session_id"),
-		UserAgent:      r.UserAgent(),
-		Host:           getReqHost(cfg, r),
-		Method:         getReqMethod(cfg, r),
-		Headers:        r.Header,
-	}
-	return userRequest
+	return firstErr
 }
 
 func getHeader(r *http.Request, headerName string) string {
@@ -155,111 +142,13 @@ func getHeader(r *http.Request, headerName string) string {
 	return cookie.Value
 }
 
-// processFeatureControl processes the feature control header and combines it with config rules
-// Header format: "10_1_0__..." where 1=enable, 0=disable, _=inherit from config
-// Header positions are the feature control bits declared in package request.
-func processFeatureControl(cfg *config.MainConfig, r *http.Request, ruleSet *config.RuleSet) uint16 {
-	// Build config baseline from ruleSet
-	var configBits uint16
+// configFeatureBits returns the feature control bits the site configuration turns on.
+func configFeatureBits(ruleSet *config.RuleSet) uint16 {
+	var bits uint16
 	for _, c := range feature.Pipeline() {
 		if ruleSet.FeatureEnabled(c) {
-			configBits |= c.ControlMask()
+			bits |= c.ControlMask()
 		}
 	}
-
-	// Get header value
-	var headerValue string
-	for _, headerName := range cfg.ConnectingFeatureControlHeaders {
-		if featureVal := r.Header.Get(headerName); featureVal != "" {
-			headerValue = featureVal
-			break
-		}
-	}
-
-	// If no header, return config baseline
-	if headerValue == "" {
-		return configBits
-	}
-
-	// Process header - pad to 16 characters with '_' for inherit
-	finalBits := configBits
-	for i, char := range headerValue {
-		if i >= 16 { // uint16 has 16 bits max
-			break
-		}
-
-		featureMask := uint16(1 << i)
-
-		switch char {
-		case '1': // Force enable
-			finalBits |= featureMask
-		case '0': // Force disable
-			finalBits &= ^featureMask
-		case '_': // Inherit from config (keep current state)
-			// Do nothing, keep the bit as it is from configBits
-		}
-	}
-
-	return finalBits
-}
-
-func getReqURI(cfg *config.MainConfig, r *http.Request) string {
-	var clientURI string
-	for _, headerName := range cfg.ConnectingURIHeaders {
-		if uriVal := r.Header.Get(headerName); uriVal != "" {
-			clientURI = uriVal
-			break
-		}
-	}
-	if clientURI == "" {
-		clientURI = r.RequestURI
-	}
-	return clientURI
-}
-
-func getClientIP(cfg *config.MainConfig, r *http.Request) string {
-	var clientIP string
-	for _, headerName := range cfg.ConnectingIPHeaders {
-		if ipVal := r.Header.Get(headerName); ipVal != "" {
-			if strings.Contains(ipVal, ",") {
-				parts := strings.Split(ipVal, ",")
-				clientIP = strings.TrimSpace(parts[0])
-			} else {
-				clientIP = ipVal
-			}
-			break
-		}
-	}
-
-	if clientIP == "" {
-		remoteAddr := r.RemoteAddr
-		ipStr, _, err := net.SplitHostPort(remoteAddr)
-		if err != nil {
-			clientIP = remoteAddr
-		} else {
-			clientIP = ipStr
-		}
-	}
-	return clientIP
-}
-
-// getReqMethod reads the original method: Nginx auth_request subrequests are always GET.
-func getReqMethod(cfg *config.MainConfig, r *http.Request) string {
-	for _, headerName := range cfg.ConnectingMethodHeaders {
-		if methodVal := r.Header.Get(headerName); methodVal != "" {
-			return methodVal
-		}
-	}
-	return r.Method
-}
-
-func getReqHost(cfg *config.MainConfig, r *http.Request) string {
-	var clientHost = ""
-	for _, headerName := range cfg.ConnectingHostHeaders {
-		if hostVal := r.Header.Get(headerName); hostVal != "" {
-			clientHost = hostVal
-			break
-		}
-	}
-	return clientHost
+	return bits
 }

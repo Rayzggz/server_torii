@@ -1,77 +1,64 @@
 package server
 
 import (
-	"net/http/httptest"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/rules"
-	"strings"
 	"testing"
 )
 
-// The feature control header is part of the nginx-facing interface: position N of the header
-// switches the feature below, whatever order the checks run in.
-func TestFeatureControlContract(t *testing.T) {
+// The names in the Torii-Features header are part of the nginx-facing interface: each one
+// switches the feature below, however it is capitalized or separated.
+func TestFeatureNameContract(t *testing.T) {
 	features := []struct {
-		name   string
+		names  []string
 		mask   uint16
 		enable func(*config.RuleSet)
 	}{
-		{"IPAllow", request.FeatureIPAllow, func(rs *config.RuleSet) { rs.IPAllowRule.Enabled = true }},
-		{"IPBlock", request.FeatureIPBlock, func(rs *config.RuleSet) { rs.IPBlockRule.Enabled = true }},
-		{"URLAllow", request.FeatureURLAllow, func(rs *config.RuleSet) { rs.URLAllowRule.Enabled = true }},
-		{"URLBlock", request.FeatureURLBlock, func(rs *config.RuleSet) { rs.URLBlockRule.Enabled = true }},
-		{"VerifyBot", request.FeatureVerifyBot, func(rs *config.RuleSet) { rs.VerifyBotRule.Enabled = true }},
-		{"HTTPFlood", request.FeatureHTTPFlood, func(rs *config.RuleSet) { rs.HTTPFloodRule.Enabled = true }},
-		{"Captcha", request.FeatureCaptcha, func(rs *config.RuleSet) { rs.CAPTCHARule.Enabled = true }},
-		{"ExternalMigration", request.FeatureExternalMigration, func(rs *config.RuleSet) { rs.ExternalMigrationRule.Enabled = true }},
-		{"CountryRule", request.FeatureCountryRule, func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
-		{"IPCAPTCHA", request.FeatureIPCAPTCHA, func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
-		{"URLCAPTCHA", request.FeatureURLCAPTCHA, func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
-		{"CustomRules", request.FeatureCustomRules, func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
+		{[]string{"IPAllow", "ip_allow"}, request.FeatureIPAllow, func(rs *config.RuleSet) { rs.IPAllowRule.Enabled = true }},
+		{[]string{"IPBlock", "ip_block"}, request.FeatureIPBlock, func(rs *config.RuleSet) { rs.IPBlockRule.Enabled = true }},
+		{[]string{"URLAllow", "url_allow"}, request.FeatureURLAllow, func(rs *config.RuleSet) { rs.URLAllowRule.Enabled = true }},
+		{[]string{"URLBlock", "url_block"}, request.FeatureURLBlock, func(rs *config.RuleSet) { rs.URLBlockRule.Enabled = true }},
+		{[]string{"VerifyBot", "verify_bot"}, request.FeatureVerifyBot, func(rs *config.RuleSet) { rs.VerifyBotRule.Enabled = true }},
+		{[]string{"HTTPFlood", "http_flood"}, request.FeatureHTTPFlood, func(rs *config.RuleSet) { rs.HTTPFloodRule.Enabled = true }},
+		{[]string{"Captcha", "CAPTCHA", "captcha"}, request.FeatureCaptcha, func(rs *config.RuleSet) { rs.CAPTCHARule.Enabled = true }},
+		{[]string{"ExternalMigration", "external_migration"}, request.FeatureExternalMigration, func(rs *config.RuleSet) { rs.ExternalMigrationRule.Enabled = true }},
+		{[]string{"CountryRule", "country_rule"}, request.FeatureCountryRule, func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
+		{[]string{"IPCAPTCHA", "ip_captcha"}, request.FeatureIPCAPTCHA, func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
+		{[]string{"URLCAPTCHA", "url_captcha"}, request.FeatureURLCAPTCHA, func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
+		{[]string{"CustomRules", "custom_rules"}, request.FeatureCustomRules, func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
 	}
-	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 	allOff := func() *config.RuleSet {
 		rs := featureControlRuleSet()
 		rs.CountryRule.Enabled = false
 		return rs
 	}
-	control := func(rs *config.RuleSet, header string) uint16 {
-		req := httptest.NewRequest("GET", "/", nil)
-		if header != "" {
-			req.Header.Set("X-Features", header)
-		}
-		return processFeatureControl(cfg, req, rs)
-	}
 
-	if got := control(allOff(), ""); got != 0 {
+	if got := featureBits(allOff(), ""); got != 0 {
 		t.Fatalf("nothing enabled: bits %b", got)
 	}
-	all := uint16(0)
-	for position, f := range features {
-		if f.mask != 1<<position {
-			t.Errorf("%s mask = %b, want bit %d", f.name, f.mask, position)
+	seen := uint16(0)
+	for _, f := range features {
+		if f.mask == 0 || f.mask&(f.mask-1) != 0 || seen&f.mask != 0 {
+			t.Errorf("%s: mask %b is not a distinct single bit", f.names[0], f.mask)
 		}
-		all |= f.mask
+		seen |= f.mask
 
 		// Enabled in the site configuration, no header.
 		rs := allOff()
 		f.enable(rs)
-		if got := control(rs, ""); got != f.mask {
-			t.Errorf("%s enabled in config: bits %b, want %b", f.name, got, f.mask)
+		if got := featureBits(rs, ""); got != f.mask {
+			t.Errorf("%s enabled in config: bits %b, want %b", f.names[0], got, f.mask)
 		}
-		// Forced off by the header.
-		if got := control(rs, strings.Repeat("_", position)+"0"); got != 0 {
-			t.Errorf("%s forced off: bits %b", f.name, got)
+		for _, name := range f.names {
+			if got := featureBits(rs, "-"+name); got != 0 {
+				t.Errorf("-%s: bits %b, want forced off", name, got)
+			}
+			if got := featureBits(allOff(), "+"+name); got != f.mask {
+				t.Errorf("+%s: bits %b, want %b", name, got, f.mask)
+			}
 		}
-		// Forced on by the header.
-		if got := control(allOff(), strings.Repeat("_", position)+"1"); got != f.mask {
-			t.Errorf("%s forced on: bits %b, want %b", f.name, got, f.mask)
-		}
-	}
-	if got := control(allOff(), strings.Repeat("1", 16)); got&all != all {
-		t.Errorf("all forced on: bits %b", got)
 	}
 }
 

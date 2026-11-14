@@ -23,9 +23,9 @@ test_crawler() {
     [[ -n "$selected" ]] || fail 'DEPENDENCY: no forward/reverse verified Google crawler found within 30 published prefixes'
     log "Verified Google crawler $selected -> $hostname (saved official range list)"
     # CAPTCHA proves that VerifyBot actually short-circuits the remaining checks.
-    expect 200 1 "$selected" 0000101000000000 /neutral default_site -A 'Googlebot/2.1'
-    expect CAPTCHA 1 "$selected" 0000001000000000 /neutral default_site -A 'Googlebot/2.1'
-    expect 403 1 192.0.2.1 0000100000000000 /neutral default_site -A 'Googlebot/2.1'
-    expect 200 1 192.0.2.1 "$ZERO" /neutral default_site -A 'Googlebot/2.1'
-    expect 200 1 203.0.113.210 0000100000000000
+    expect pass 1 "$selected" 0000101000000000 /neutral default_site -A 'Googlebot/2.1'
+    expect captcha 1 "$selected" 0000001000000000 /neutral default_site -A 'Googlebot/2.1'
+    expect block 1 192.0.2.1 0000100000000000 /neutral default_site -A 'Googlebot/2.1'
+    expect pass 1 192.0.2.1 "$ZERO" /neutral default_site -A 'Googlebot/2.1'
+    expect pass 1 203.0.113.210 0000100000000000
 }

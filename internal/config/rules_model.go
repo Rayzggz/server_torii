@@ -48,7 +48,6 @@ const (
 
 type AdaptiveTrafficAnalyzerRule struct {
 	Enabled          bool                `yaml:"enabled"`
-	Tag              string              `yaml:"tag" validate:"required"`
 	AnalysisInterval int64               `yaml:"analysis_interval" validate:"min=0"`
 	WindowBuckets    int                 `yaml:"window_buckets" validate:"min=0"`
 	BrowserEvidence  BrowserEvidenceRule `yaml:"browser_evidence"`

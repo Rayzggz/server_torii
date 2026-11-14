@@ -41,7 +41,6 @@ ExternalMigration:
   session_timeout: 5
 AdaptiveTrafficAnalyzer:
   enabled: false
-  tag: disabled
   analysis_interval: 2
   window_buckets: 2
   uri_detection:

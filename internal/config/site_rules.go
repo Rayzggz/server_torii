@@ -5,11 +5,14 @@ import (
 	"server_torii/internal/iptrie"
 	"server_torii/internal/rules"
 	"server_torii/internal/urllist"
-	"strings"
 )
 
 // RuleSet stores all rules for a single site.
 type RuleSet struct {
+	// ID is the site's ID from torii.yml. Runtime state that belongs to the site (rate counters,
+	// temporary action rules, log files, traffic analysis) is kept under it.
+	ID string
+
 	IPAllowRule                 *IPListRule
 	IPBlockRule                 *IPListRule
 	URLAllowRule                *URLListRule
@@ -43,29 +46,6 @@ func NewRuleSet() *RuleSet {
 		CountryRule:                 &CountryRule{DefaultAction: CountryContinue, UnknownAction: CountryContinue, Countries: make(map[string]CountryAction)},
 		CustomRules:                 &rules.CustomRules{},
 	}
-}
-
-// GetSiteRules returns the rules for a specific host.
-func GetSiteRules(siteRules map[string]*RuleSet, host string) *RuleSet {
-	if ruleSet, ok := siteRules[host]; ok {
-		return ruleSet
-	}
-
-	// Check for wildcard match (e.g., *.example.com)
-	parts := strings.Split(host, ".")
-	if len(parts) > 1 {
-		wildcardHost := "*." + strings.Join(parts[1:], ".")
-		if ruleSet, ok := siteRules[wildcardHost]; ok {
-			return ruleSet
-		}
-	}
-
-	// Return default site rules
-	if ruleSet, ok := siteRules["default_site"]; ok {
-		return ruleSet
-	}
-
-	return nil
 }
 
 // FeatureEnabled reports whether the site's configuration turns the check on.

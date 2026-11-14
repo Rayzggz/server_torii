@@ -35,39 +35,38 @@ func TestCheckMainCustomRules(t *testing.T) {
 		shared.HTTPFloodFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	}
 	for _, tc := range []struct {
-		name       string
-		rules      func(t *testing.T) []*rules.Rule
-		setup      func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime)
-		wantStatus int
-		wantAction string
+		name  string
+		rules func(t *testing.T) []*rules.Rule
+		setup func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime)
+		want  string
 	}{
 		{
 			name: "no match continues",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.referer contains "spam"`)}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "block on referer",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.referer wildcard "https://evil.example/*"`)}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "block on method header",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.request.method eq "POST" and http.request.uri.path eq "/login"`)}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "captcha",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionCaptcha, `ip.src in {192.0.2.0/24}`)}
 			},
-			wantStatus: 445, wantAction: "CAPTCHA",
+			want: "captcha",
 		},
 		{
 			name: "captcha with clearance continues",
@@ -77,14 +76,14 @@ func TestCheckMainCustomRules(t *testing.T) {
 			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
 				req.ToriiClearance = string(check.GenClearance(*req, *rs))
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "external",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{customRule(t, "r", rules.ActionExternal, `http.host eq "example.com"`)}
 			},
-			wantStatus: 445, wantAction: "EXTERNAL",
+			want: "external",
 		},
 		{
 			name: "allow bypasses later flood and country",
@@ -96,7 +95,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				req.FeatureControl |= request.FeatureHTTPFlood | request.FeatureCountryRule
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "skip HTTPFlood",
@@ -107,7 +106,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= request.FeatureHTTPFlood
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "skip HTTPFlood keeps country",
@@ -119,7 +118,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				req.FeatureControl |= request.FeatureHTTPFlood | request.FeatureCountryRule
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "flood still applies without skip",
@@ -130,7 +129,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				floodLimited(rs, shared)
 				req.FeatureControl |= request.FeatureHTTPFlood
 			},
-			wantStatus: 445, wantAction: "429",
+			want: "rate_limit",
 		},
 		{
 			name: "skip continues to next rule",
@@ -140,7 +139,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 					customRule(t, "b", rules.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "skip CustomRules stops rule evaluation",
@@ -150,7 +149,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 					customRule(t, "b", rules.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "log continues to next rule",
@@ -160,7 +159,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 					customRule(t, "b", rules.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "continue stops rule evaluation",
@@ -170,7 +169,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 					customRule(t, "b", rules.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "continue does not bypass later checks",
@@ -181,7 +180,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				req.FeatureControl |= request.FeatureCountryRule
 				rs.CountryRule.UnknownAction = config.CountryBlock
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "URL allow list runs before custom rules",
@@ -193,7 +192,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				rs.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/login?next=/"})
 				req.FeatureControl |= request.FeatureURLAllow
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "feature bit off disables rules",
@@ -203,7 +202,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 			setup: func(_ *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
 				req.FeatureControl &^= request.FeatureCustomRules
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -227,40 +226,38 @@ func TestCheckMainCustomRules(t *testing.T) {
 			if tc.setup != nil {
 				tc.setup(rs, &req, shared)
 			}
-			recorder := httptest.NewRecorder()
-			NewServer(&config.MainConfig{}, nil, shared, nil).CheckMain(recorder, req, rs)
-			if recorder.Code != tc.wantStatus || recorder.Header().Get("Torii-Action") != tc.wantAction {
-				t.Fatalf("got %d %q, want %d %q", recorder.Code, recorder.Header().Get("Torii-Action"), tc.wantStatus, tc.wantAction)
+			if got := decide(shared, req, rs); got != tc.want {
+				t.Fatalf("decision = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestProcessFeatureControlCustomRulesBit(t *testing.T) {
+func TestFeatureOverridesCustomRulesBit(t *testing.T) {
 	rs := featureControlRuleSet()
 	rs.CustomRules = &rules.CustomRules{Enabled: true}
-	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 
-	if processFeatureControl(cfg, httptest.NewRequest("GET", "/", nil), rs)&request.FeatureCustomRules == 0 {
+	if featureBits(rs, "")&request.FeatureCustomRules == 0 {
 		t.Fatal("CustomRules baseline bit is disabled, want enabled")
 	}
-	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("X-Features", "___________0")
-	if processFeatureControl(cfg, r, rs)&request.FeatureCustomRules != 0 {
-		t.Fatal("CustomRules bit remains enabled after position 11 override")
+	if featureBits(rs, "-custom_rules")&request.FeatureCustomRules != 0 {
+		t.Fatal("CustomRules bit remains enabled after the override")
 	}
 }
 
-func TestProcessRequestDataMethod(t *testing.T) {
-	cfg := config.DefaultMainConfig()
-	r := httptest.NewRequest("GET", "/torii/checker", nil)
-	if got := processRequestData(cfg, r).Method; got != "GET" {
-		t.Fatalf("Method without header = %q, want GET", got)
+// Nginx subrequests are always GET, so the connector reports the original method in a header.
+func TestV1RequestMethod(t *testing.T) {
+	s := newV1Server(t)
+	r := httptest.NewRequest("GET", v1CheckPath, nil)
+	r.Header.Set(headerClientIP, "203.0.113.5")
+	r.Header.Set(headerURI, "/")
+	if data, _, _, ok := s.v1Request(httptest.NewRecorder(), r); !ok || data.Method != "GET" {
+		t.Fatalf("Method without header = %q, want GET", data.Method)
 	}
-	r.Header.Set("Torii-Original-Method", "DELETE")
+	r.Header.Set(headerMethod, "DELETE")
 	r.Header.Set("Referer", "https://a.example/")
-	data := processRequestData(cfg, r)
-	if data.Method != "DELETE" || data.Headers.Get("Referer") != "https://a.example/" {
+	data, _, _, ok := s.v1Request(httptest.NewRecorder(), r)
+	if !ok || data.Method != "DELETE" || data.Headers.Get("Referer") != "https://a.example/" {
 		t.Fatalf("got method %q referer %q", data.Method, data.Headers.Get("Referer"))
 	}
 }

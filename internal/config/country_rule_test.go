@@ -89,7 +89,7 @@ func TestExampleCountryRulesLoad(t *testing.T) {
 func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
 	dir := t.TempDir()
 	writeRuleFiles(t, dir, map[string]string{"IP_AllowList.conf": "", "IP_BlockList.conf": "", "URL_AllowList.conf": "", "URL_BlockList.conf": "", "Server.yml": "CountryRule: { default_action: block }"})
-	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: dir}}}
+	cfg := &MainConfig{Sites: []AllSiteRuleSet{{ID: "default_site", RulePath: dir}}}
 	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)

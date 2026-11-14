@@ -32,11 +32,11 @@ func requireExternalMigration(reqData request.UserRequest, ruleSet *config.RuleS
 }
 
 func externalClearanceSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.ExternalMigrationRule.SecretKey, Label: "EXTERNAL-CLEARANCE"}
+	return token.Signer{Key: ruleSet.ExternalMigrationRule.SecretKey, Label: siteLabel(ruleSet, "EXTERNAL-CLEARANCE")}
 }
 
 func externalSessionSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.ExternalMigrationRule.SecretKey, Label: "EXTERNAL-SESSION"}
+	return token.Signer{Key: ruleSet.ExternalMigrationRule.SecretKey, Label: siteLabel(ruleSet, "EXTERNAL-SESSION")}
 }
 
 // GenExternalMigrationClearance issues the cookie that lets a client back in after the external provider cleared it.

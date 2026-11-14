@@ -58,7 +58,7 @@ func (d *trafficDetector) Analyze(ctx *analysisContext) {
 		window:   ctx.Interval * time.Duration(rule.WindowBuckets),
 		halfLife: time.Duration(rule.URIDetection.Baseline.HalfLife) * time.Second,
 		assets:   toSet(rule.BrowserEvidence.AssetExtensions),
-		enforce:  newEnforcer(ctx.Runtime, rule.IPDetection.MaxBroadcastPerTick),
+		enforce:  newEnforcer(ctx.Runtime, ctx.Rule.ID, rule.IPDetection.MaxBroadcastPerTick),
 	}
 	det.run()
 }
@@ -117,7 +117,7 @@ func (det *detection) buildBucket() *bucket {
 				ib.errPaths[canonical] = struct{}{}
 			}
 		}
-		if isAsset(canonical, det.assets) {
+		if isAsset(canonical, det.assets) || isAssetContentType(l.ContentType) {
 			if l.Status < 400 {
 				ib.evidence = true
 			}
@@ -528,19 +528,20 @@ func escalate(base, maxDur time.Duration, prior int) time.Duration {
 }
 
 func (det *detection) logf(format string, args ...any) {
-	log.Printf("[AdaptiveTrafficAnalyzer] [%s] %s", det.rule.Tag, fmt.Sprintf(format, args...))
+	log.Printf("[AdaptiveTrafficAnalyzer] [%s] %s", det.ctx.Rule.ID, fmt.Sprintf(format, args...))
 }
 
 // enforcer turns detections into action rules and gossip broadcasts.
 type enforcer struct {
 	rt           *state.Runtime
+	site         string
 	maxBroadcast int
 	broadcasts   int
 	suppressed   int
 }
 
-func newEnforcer(rt *state.Runtime, maxBroadcast int) *enforcer {
-	return &enforcer{rt: rt, maxBroadcast: maxBroadcast}
+func newEnforcer(rt *state.Runtime, site string, maxBroadcast int) *enforcer {
+	return &enforcer{rt: rt, site: site, maxBroadcast: maxBroadcast}
 }
 
 func (e *enforcer) engine() *action.ActionRuleEngine {
@@ -552,7 +553,7 @@ func (e *enforcer) engine() *action.ActionRuleEngine {
 
 func (e *enforcer) hasIPRule(ip string) bool {
 	engine := e.engine()
-	return engine != nil && engine.HasIPRule(ip)
+	return engine != nil && engine.HasIPRule(e.site, ip)
 }
 
 // apply records the rule. limited broadcasts count toward maxBroadcast; the rest stay local.
@@ -580,7 +581,7 @@ func (e *enforcer) apply(ruleType, value string, act config.AnalyzerAction, dur 
 			e.broadcasts++
 		}
 	}
-	e.rt.ApplyRule(ruleType, value, at, dur, broadcast)
+	e.rt.ApplyRule(e.site, ruleType, value, at, dur, broadcast)
 }
 
 func actionVerb(act config.AnalyzerAction) string {

@@ -58,13 +58,13 @@ func TestURLCaptchaReloadAndIsolation(t *testing.T) {
 	second := ipCaptchaDirectory(t, "")
 	file := filepath.Join(first, "URL_CAPTCHAList.conf")
 	writeFile(t, file, "/login")
-	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: first}, {Host: "other.example", RulePath: second}}}
+	cfg := &MainConfig{Sites: []AllSiteRuleSet{{ID: "default_site", RulePath: first}, {ID: "other_site", RulePath: second}}}
 	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	before := manager.Get()
-	if before.SiteRules["other.example"].URLCAPTCHARule.List.Match("/login") {
+	if before.SiteRules["other_site"].URLCAPTCHARule.List.Match("/login") {
 		t.Fatal("cross-site list leak")
 	}
 	writeFile(t, file, "/admin")

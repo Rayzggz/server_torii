@@ -10,6 +10,7 @@ type Message struct {
 }
 
 type ActionRulePayload struct {
+	Site      string `json:"site"`       // ID of the site the rule belongs to
 	RuleType  string `json:"rule_type"`  // "IP", "UA", "URI"
 	Value     string `json:"value"`      // The actual IP, UA, or URI
 	Action    string `json:"action"`     // "BLOCK", "CAPTCHA", etc.

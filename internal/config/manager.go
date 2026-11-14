@@ -9,11 +9,26 @@ import (
 
 // SiteConfigSnapshot represents a complete, immutable snapshot of the active site configurations and their derived states.
 type SiteConfigSnapshot struct {
+	// SiteRules holds every site by its ID.
 	SiteRules map[string]*RuleSet
-	Pages     *ErrorPages
+	// DefaultSite is the ID of the site for requests that name none; it may be empty.
+	DefaultSite string
+	Pages       *ErrorPages
 }
 
-// CounterWindows is the longest window, in seconds, each shared rate counter must cover.
+// Site returns the site with the given ID. An empty ID selects the default site. It returns nil
+// for an unknown ID, and for an empty one when no default site is configured.
+func (s *SiteConfigSnapshot) Site(id string) *RuleSet {
+	if id == "" {
+		id = s.DefaultSite
+	}
+	if id == "" {
+		return nil
+	}
+	return s.SiteRules[id]
+}
+
+// CounterWindows is the longest window, in seconds, each rate counter of a site must cover.
 type CounterWindows struct {
 	HTTPFloodSpeed   int64
 	HTTPFloodSameURI int64
@@ -21,16 +36,23 @@ type CounterWindows struct {
 	CaptchaFailure   int64
 }
 
-// CounterWindows returns the longest rate-limit windows configured across all sites.
-func (s *SiteConfigSnapshot) CounterWindows() CounterWindows {
-	var w CounterWindows
-	for _, rules := range s.SiteRules {
-		w.HTTPFloodSpeed = max(w.HTTPFloodSpeed, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSpeedLimit))
-		w.HTTPFloodSameURI = max(w.HTTPFloodSameURI, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodSameURILimit))
-		w.HTTPFloodFailure = max(w.HTTPFloodFailure, ratelimit.FindMaxRateTime(rules.HTTPFloodRule.HTTPFloodFailureLimit))
-		w.CaptchaFailure = max(w.CaptchaFailure, ratelimit.FindMaxRateTime(rules.CAPTCHARule.CaptchaFailureLimit))
+// CounterWindows returns the longest rate-limit windows the site configures.
+func (rs *RuleSet) CounterWindows() CounterWindows {
+	return CounterWindows{
+		HTTPFloodSpeed:   ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSpeedLimit),
+		HTTPFloodSameURI: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSameURILimit),
+		HTTPFloodFailure: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodFailureLimit),
+		CaptchaFailure:   ratelimit.FindMaxRateTime(rs.CAPTCHARule.CaptchaFailureLimit),
 	}
-	return w
+}
+
+// CounterWindows returns the rate-limit windows of every site by site ID.
+func (s *SiteConfigSnapshot) CounterWindows() map[string]CounterWindows {
+	windows := make(map[string]CounterWindows, len(s.SiteRules))
+	for id, rules := range s.SiteRules {
+		windows[id] = rules.CounterWindows()
+	}
+	return windows
 }
 
 // Manager handles the thread-safe swapping of site configuration snapshots.
@@ -69,7 +91,7 @@ func LoadSnapshot(cfg *MainConfig) (*SiteConfigSnapshot, error) {
 		return nil, fmt.Errorf("failed to reload error pages: %w", err)
 	}
 
-	return &SiteConfigSnapshot{SiteRules: siteRules, Pages: pages}, nil
+	return &SiteConfigSnapshot{SiteRules: siteRules, DefaultSite: cfg.DefaultSite, Pages: pages}, nil
 }
 
 // Reload re-reads all site rules and swaps the snapshot without interrupting current requests.

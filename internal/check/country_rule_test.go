@@ -62,7 +62,7 @@ func TestCountryRulePolicies(t *testing.T) {
 				}
 				decision := action.NewDecision()
 				CountryRule(req, rules, decision, shared)
-				want := map[config.CountryAction]string{config.CountryContinue: "200", config.CountryBlock: "403", config.CountryCaptcha: "CAPTCHA"}[policy]
+				want := map[config.CountryAction]string{config.CountryContinue: "pass", config.CountryBlock: "block", config.CountryCaptcha: "captcha"}[policy]
 				if decision.Verdict.String() != want || (decision.State == action.Done) != (policy != config.CountryContinue) {
 					t.Fatalf("decision = %#v, want %s", decision, want)
 				}

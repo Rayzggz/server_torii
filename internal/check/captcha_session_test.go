@@ -84,6 +84,6 @@ func testCaptchaSessionRequestData() request.UserRequest {
 
 func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
 	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", timestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
+	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION@", timestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return fmt.Sprintf("%d:%x", timestamp, mac.Sum(nil))
 }

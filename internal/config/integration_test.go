@@ -65,7 +65,7 @@ ExternalMigration:
 web_path: "/edge"
 node_name: "integration-node"
 sites:
-  - host: "default_site"
+  - id: "default_site"
     rule_path: "`+filepath.ToSlash(ruleDir)+`"
 `)
 
@@ -97,9 +97,13 @@ sites:
 		t.Fatal("manager.Get() returned nil snapshot")
 	}
 
-	rules := GetSiteRules(snapshot.SiteRules, "unknown.example.com")
-	if rules == nil {
-		t.Fatal("GetSiteRules returned nil for default_site fallback")
+	// A request that names no site belongs to the default site.
+	rules := snapshot.Site("")
+	if rules == nil || rules.ID != "default_site" {
+		t.Fatalf("Site(\"\") = %+v, want the default site", rules)
+	}
+	if snapshot.Site("unknown_site") != nil {
+		t.Fatal("an unknown site ID fell back to another site")
 	}
 
 	if !rules.IPAllowRule.Enabled {
@@ -145,7 +149,7 @@ sites:
 		t.Fatal("ExternalMigrationRule.Enabled = false, want true")
 	}
 
-	if got, want := snapshot.CounterWindows(), (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, CaptchaFailure: 120}); got != want {
+	if got, want := snapshot.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, CaptchaFailure: 120}); got != want {
 		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
@@ -196,7 +200,7 @@ HTTPFlood:
 	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
 		t.Fatal("CountryRule should remain present and disabled when omitted")
 	}
-	if got, want := reloaded.CounterWindows(), (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, CaptchaFailure: 240}); got != want {
+	if got, want := reloaded.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, CaptchaFailure: 240}); got != want {
 		t.Fatalf("CounterWindows after reload = %+v, want %+v", got, want)
 	}
 }

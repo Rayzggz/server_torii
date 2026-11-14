@@ -29,8 +29,8 @@ func TestIPListRules(t *testing.T) {
 		code    string
 		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", request.FeatureIPAllow, "200", IPAllowList},
-		{"block", request.FeatureIPBlock, "403", IPBlockList},
+		{"allow", request.FeatureIPAllow, "pass", IPAllowList},
+		{"block", request.FeatureIPBlock, "block", IPBlockList},
 	} {
 		for _, tc := range []struct {
 			name, ip        string
@@ -49,7 +49,7 @@ func TestIPListRules(t *testing.T) {
 				}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)
-				wantCode := "200"
+				wantCode := "pass"
 				if tc.match {
 					wantCode = checker.code
 				}
@@ -75,8 +75,8 @@ func TestURLListRules(t *testing.T) {
 		code    string
 		run     func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 	}{
-		{"allow", request.FeatureURLAllow, "200", URLAllowList},
-		{"block", request.FeatureURLBlock, "403", URLBlockList},
+		{"allow", request.FeatureURLAllow, "pass", URLAllowList},
+		{"block", request.FeatureURLBlock, "block", URLBlockList},
 	} {
 		for _, tc := range []struct {
 			name, uri       string
@@ -93,7 +93,7 @@ func TestURLListRules(t *testing.T) {
 				}
 				decision := action.NewDecision()
 				checker.run(req, rules, decision, nil)
-				wantCode := "200"
+				wantCode := "pass"
 				if tc.match {
 					wantCode = checker.code
 				}

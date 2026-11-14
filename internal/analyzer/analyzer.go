@@ -8,13 +8,38 @@ import (
 	"time"
 )
 
-// LogEntry represents a simplified log entry for analysis
+// LogEntry is one served request as the connector reported it.
+//
+// Site, IP, URI and Status drive the analysis. The remaining fields are kept for detections
+// that do not exist yet; nothing reads them so far, except ContentType.
 type LogEntry struct {
-	Tag       string
-	IP        string
-	URI       string
-	Status    int
+	Site   string // ID of the site, resolved: never empty once the entry is in the buffer
+	IP     string
+	URI    string
+	Status int
+	// Timestamp is when the request ended according to the sender, in milliseconds. Analysis
+	// windows are built from arrival time instead, which the sender cannot influence.
 	Timestamp int64
+
+	Host     string
+	Method   string
+	Decision string // Torii's decision; empty when the request was not checked
+	Reason   string
+
+	UserAgent    string
+	Referer      string
+	Proto        string
+	ConnRequests int64  // requests made over the connection so far
+	Fetch        string // Sec-Fetch-Dest/Mode/Site
+	HasLanguage  bool   // the client sent Accept-Language
+	ContentType  string // of the response
+
+	RequestTime    time.Duration
+	UpstreamTime   time.Duration
+	UpstreamStatus int
+	Cache          string
+	Bytes          int64
+	RequestLength  int64
 }
 
 // LogBuffer is a thread-safe buffer for LogEntries
@@ -85,7 +110,6 @@ type ingestSettings struct {
 }
 
 type analysisWindow struct {
-	tag      string
 	interval time.Duration
 	start    time.Time
 	next     time.Time
@@ -143,6 +167,27 @@ func (ata *AdaptiveTrafficAnalyzer) Stop() {
 	ata.workers.Wait()
 }
 
+// submit takes a reported request whose site is as the connector sent it. It reports false,
+// keeping nothing, when the site does not exist or has traffic analysis switched off.
+func (ata *AdaptiveTrafficAnalyzer) submit(entry LogEntry) bool {
+	snap := ata.configs.Get()
+	if snap == nil {
+		return false
+	}
+	rules := snap.Site(entry.Site)
+	if !analyzed(rules) {
+		return false
+	}
+	entry.Site = rules.ID
+	ata.AddLog(entry)
+	return true
+}
+
+// analyzed reports whether the site exists and has traffic analysis switched on.
+func analyzed(rules *config.RuleSet) bool {
+	return rules != nil && rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled
+}
+
 func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
 	ata.recordEvidence(entry, time.Now())
 	ata.buffer.Add(entry)
@@ -154,12 +199,12 @@ func (ata *AdaptiveTrafficAnalyzer) recordEvidence(entry LogEntry, now time.Time
 	if entry.IP == "" || entry.Status >= 400 {
 		return
 	}
-	rules := ata.findRuleByTag(entry.Tag)
+	rules := ata.siteRules(entry.Site)
 	if rules == nil {
 		return
 	}
 	settings := ata.ingestSettingsFor(rules.AdaptiveTrafficAnalyzerRule)
-	if entry.Status == 304 || isAsset(stripQuery(entry.URI), settings.assets) {
+	if entry.Status == 304 || isAsset(stripQuery(entry.URI), settings.assets) || isAssetContentType(entry.ContentType) {
 		ata.evidence.set(entry.IP, now.Add(settings.ttl))
 	}
 }
@@ -223,39 +268,34 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 		clear(ata.windows)
 		return
 	}
-	logsByTag := make(map[string][]LogEntry)
+	logsBySite := make(map[string][]LogEntry)
 	for _, l := range logs {
-		logsByTag[l.Tag] = append(logsByTag[l.Tag], l)
+		logsBySite[l.Site] = append(logsBySite[l.Site], l)
 	}
 	for site := range ata.windows {
-		rules := snap.SiteRules[site]
-		if rules == nil || rules.AdaptiveTrafficAnalyzerRule == nil ||
-			!rules.AdaptiveTrafficAnalyzerRule.Enabled || rules.AdaptiveTrafficAnalyzerRule.Tag == "" {
+		if !analyzed(snap.SiteRules[site]) {
 			delete(ata.windows, site)
 		}
 	}
 	for site, rules := range snap.SiteRules {
-		if rules == nil || rules.AdaptiveTrafficAnalyzerRule == nil {
+		if !analyzed(rules) {
 			continue
 		}
 		rule := rules.AdaptiveTrafficAnalyzerRule
-		if !rule.Enabled || rule.Tag == "" {
-			continue
-		}
 		interval := time.Duration(rule.AnalysisInterval) * time.Second
 		if interval <= 0 {
 			interval = config.DefaultATAAnalysisInterval * time.Second
 		}
 		window := ata.windows[site]
-		if window == nil || window.tag != rule.Tag {
-			window = &analysisWindow{tag: rule.Tag, start: now, state: newSiteState(now)}
+		if window == nil {
+			window = &analysisWindow{start: now, state: newSiteState(now)}
 			ata.windows[site] = window
 		}
 		if window.interval != interval {
 			window.interval = interval
 			window.next = window.start.Add(interval)
 		}
-		window.logs = append(window.logs, logsByTag[rule.Tag]...)
+		window.logs = append(window.logs, logsBySite[site]...)
 		if now.Before(window.next) {
 			continue
 		}
@@ -281,16 +321,14 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 	}
 }
 
-// findRuleByTag looks up the RuleSet that matches the given tag from the current snapshot
-func (ata *AdaptiveTrafficAnalyzer) findRuleByTag(tag string) *config.RuleSet {
+// siteRules returns the rules of the site with the given ID when its traffic is analyzed.
+func (ata *AdaptiveTrafficAnalyzer) siteRules(site string) *config.RuleSet {
 	snap := ata.configs.Get()
 	if snap == nil {
 		return nil
 	}
-	for _, rules := range snap.SiteRules {
-		if rules != nil && rules.AdaptiveTrafficAnalyzerRule != nil && rules.AdaptiveTrafficAnalyzerRule.Enabled && rules.AdaptiveTrafficAnalyzerRule.Tag == tag {
-			return rules
-		}
+	if rules := snap.SiteRules[site]; analyzed(rules) {
+		return rules
 	}
 	return nil
 }
