@@ -1,3 +1,5 @@
+# A section left out keeps its check disabled. A section that is present must be complete and
+# valid even with `enabled: false`: unknown keys and invalid values reject the whole file.
 IPAllow:
   enabled: true
 IPBlock:

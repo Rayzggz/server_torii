@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,15 @@ var validate *validator.Validate
 
 func init() {
 	validate = validator.New()
+
+	// Report fields by the key the operator wrote, not by the Go field name.
+	validate.RegisterTagNameFunc(func(f reflect.StructField) string {
+		name, _, _ := strings.Cut(f.Tag.Get("yaml"), ",")
+		if name == "" || name == "-" {
+			return f.Name
+		}
+		return name
+	})
 
 	// Register custom validation for directory paths
 	err := validate.RegisterValidation("dir", validateDir)
@@ -35,6 +45,11 @@ func init() {
 	}
 	if err = validate.RegisterValidation("socket_mode", validateSocketMode); err != nil {
 		log.Fatalf("failed to register \"socket_mode\" validator: %v", err)
+	}
+	if err = validate.RegisterValidation("site_id", func(fl validator.FieldLevel) bool {
+		return ValidSiteID(fl.Field().String())
+	}); err != nil {
+		log.Fatalf("failed to register \"site_id\" validator: %v", err)
 	}
 }
 
@@ -74,22 +89,27 @@ func validateDir(fl validator.FieldLevel) bool {
 	return err == nil && info.IsDir()
 }
 
-// validateConfiguration validates a struct and logs warnings for validation errors.
-func validateConfiguration(cfg interface{}, configName string) {
-	if err := validate.Struct(cfg); err != nil {
-		var validationErrors validator.ValidationErrors
-		if errors.As(err, &validationErrors) {
-			for _, validationError := range validationErrors {
-				log.Printf("[WARNING] Configuration issue in %s.%s may affect runtime: %s (current value: '%v')",
-					configName,
-					validationError.Field(),
-					getValidationErrorMessage(validationError),
-					validationError.Value())
-			}
-		} else {
-			log.Printf("[WARNING] Configuration validation failed for %s: %v", configName, err)
-		}
+// validateStruct checks cfg against its validate tags. It returns every violation, one per
+// line, each naming the offending key under section. Values are left out: some are secrets.
+func validateStruct(cfg any, section string) error {
+	err := validate.Struct(cfg)
+	if err == nil {
+		return nil
 	}
+	var validationErrors validator.ValidationErrors
+	if !errors.As(err, &validationErrors) {
+		return fmt.Errorf("%s: %w", section, err)
+	}
+	problems := make([]error, 0, len(validationErrors))
+	for _, fe := range validationErrors {
+		// The namespace starts with the Go type name; the section name replaces it.
+		_, key, _ := strings.Cut(fe.Namespace(), ".")
+		if section != "" {
+			key = section + "." + key
+		}
+		problems = append(problems, fmt.Errorf("%s: %s", key, getValidationErrorMessage(fe)))
+	}
+	return errors.Join(problems...)
 }
 
 // getValidationErrorMessage returns a human-readable validation error message.
@@ -97,7 +117,20 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 	switch fe.Tag() {
 	case "required":
 		return "field is required but missing or empty"
+	case "required_if":
+		return "field is required when gossip is enabled"
+	case "oneof":
+		return fmt.Sprintf("value must be one of: %s", fe.Param())
+	case "site_id":
+		return fmt.Sprintf("value must be 1 to %d letters, digits or underscores", MaxSiteIDLength)
 	case "min":
+		// For lists and strings the bound is a length, not a value.
+		switch fe.Kind() {
+		case reflect.Slice:
+			return fmt.Sprintf("list needs at least %s entry", fe.Param())
+		case reflect.String:
+			return fmt.Sprintf("value must be at least %s characters long", fe.Param())
+		}
 		return fmt.Sprintf("value must be at least %s", fe.Param())
 	case "max":
 		return fmt.Sprintf("value must be at most %s", fe.Param())
@@ -122,19 +155,22 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 	}
 }
 
-// validateMainConfig validates the main configuration object.
-func validateMainConfig(cfg *MainConfig) {
-	validateConfiguration(cfg, "MainConfig")
-	warnPublicGlobalSecret(cfg)
-}
-
-// warnPublicGlobalSecret reports whether global_secret is DefaultGlobalSecret, which is published in
-// config_example/torii.yml, and logs a warning if so. Anyone can forge gossip messages signed with it.
-func warnPublicGlobalSecret(cfg *MainConfig) bool {
-	if cfg.GlobalSecret != DefaultGlobalSecret {
-		return false
+// validateMainConfig returns every problem in the main configuration.
+func validateMainConfig(cfg *MainConfig) error {
+	problems := []error{validateStruct(cfg, "")}
+	if cfg.EnableGossip && cfg.GlobalSecret == DefaultGlobalSecret {
+		problems = append(problems, errors.New("global_secret: this is the public value from the example configuration, "+
+			"so anyone could forge gossip messages; set a random one, e.g. the output of `openssl rand -hex 16`"))
 	}
-	log.Printf("[WARNING] Configuration issue in MainConfig.GlobalSecret: global_secret is the public default value from the example configuration; " +
-		"anyone can forge gossip messages signed with it. Set it to a random value, e.g. the output of `openssl rand -hex 16`.")
-	return true
+	seen := make(map[string]bool, len(cfg.Sites))
+	for i, site := range cfg.Sites {
+		if seen[site.ID] {
+			problems = append(problems, fmt.Errorf("sites[%d].id: duplicate id %q", i, site.ID))
+		}
+		seen[site.ID] = true
+	}
+	if cfg.DefaultSite != "" && !seen[cfg.DefaultSite] {
+		problems = append(problems, fmt.Errorf("default_site: %q is not one of the configured sites", cfg.DefaultSite))
+	}
+	return errors.Join(problems...)
 }

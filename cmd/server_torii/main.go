@@ -32,7 +32,8 @@ func run() int {
 	// Load MainConfig
 	cfg, err := config.LoadMainConfig(inputConfigPath)
 	if err != nil {
-		log.Printf("[WARNING] Load config failed: %v. Using default config.", err)
+		log.Printf("[ERROR] %v", err)
+		return 1
 	}
 
 	engine := action.NewActionRuleEngine(time.Minute)

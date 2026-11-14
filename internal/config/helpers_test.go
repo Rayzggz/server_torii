@@ -6,6 +6,13 @@ import (
 	"testing"
 )
 
+// decodeServerRules decodes the text of a Server.yml the way the loader does.
+func decodeServerRules(data []byte) (ruleSetWrapper, error) {
+	var wrapper ruleSetWrapper
+	err := decodeStrict(data, &wrapper)
+	return wrapper, err
+}
+
 func mustMkdirAll(t *testing.T, path string) {
 	t.Helper()
 

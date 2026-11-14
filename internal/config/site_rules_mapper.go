@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
@@ -26,7 +25,7 @@ type ruleSetWrapper struct {
 	URLCAPTCHARule              *URLListRule                 `yaml:"URLCAPTCHA"`
 	CAPTCHARule                 *captchaRuleWrapper          `yaml:"CAPTCHA"`
 	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
-	HTTPFloodRule               httpFloodRuleWrapper         `yaml:"HTTPFlood"`
+	HTTPFloodRule               *httpFloodRuleWrapper        `yaml:"HTTPFlood"`
 	ExternalMigrationRule       *ExternalMigrationRule       `yaml:"ExternalMigration"`
 	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
 	CountryRule                 *countryRuleWrapper          `yaml:"CountryRule"`
@@ -34,26 +33,24 @@ type ruleSetWrapper struct {
 }
 
 type customRulesWrapper struct {
-	Enabled       bool                 `yaml:"enabled"`
-	Rules         []customRuleWrapper  `yaml:"rules"`
-	UnknownFields map[string]yaml.Node `yaml:",inline"`
+	Enabled bool                `yaml:"enabled"`
+	Rules   []customRuleWrapper `yaml:"rules"`
 }
 
 type customRuleWrapper struct {
-	ID            string               `yaml:"id"`
-	Description   string               `yaml:"description"`
-	Enabled       *bool                `yaml:"enabled"`
-	Expression    string               `yaml:"expression"`
-	Action        string               `yaml:"action"`
-	Skip          []string             `yaml:"skip"`
-	UnknownFields map[string]yaml.Node `yaml:",inline"`
+	ID          string   `yaml:"id"`
+	Description string   `yaml:"description"`
+	Enabled     *bool    `yaml:"enabled"`
+	Expression  string   `yaml:"expression"`
+	Action      string   `yaml:"action"`
+	Skip        []string `yaml:"skip"`
 }
 
 type httpFloodRuleWrapper struct {
 	Enabled               bool     `yaml:"enabled"`
-	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"required,dive"`
-	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"required,dive"`
-	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"required,dive"`
+	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"min=1,dive"`
+	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"min=1,dive"`
+	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"min=1,dive"`
 	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
@@ -66,16 +63,15 @@ type captchaRuleWrapper struct {
 	HCaptchaSecret                 string   `yaml:"hcaptcha_secret"`
 	AltchaHMACSecret               string   `yaml:"altcha_hmac_secret"`
 	AltchaCost                     int      `yaml:"altcha_cost"`
-	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"required,dive"`
+	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"min=1,dive"`
 	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
 type countryRuleWrapper struct {
-	Enabled       bool                 `yaml:"enabled"`
-	DefaultAction yaml.Node            `yaml:"default_action"`
-	UnknownAction yaml.Node            `yaml:"unknown_action"`
-	Countries     map[string]string    `yaml:"countries"`
-	UnknownFields map[string]yaml.Node `yaml:",inline"`
+	Enabled       bool              `yaml:"enabled"`
+	DefaultAction yaml.Node         `yaml:"default_action"`
+	UnknownAction yaml.Node         `yaml:"unknown_action"`
+	Countries     map[string]string `yaml:"countries"`
 }
 
 // A zero node means omitted; an explicit empty or null action is invalid.
@@ -100,9 +96,6 @@ func parseCountryAction(value string) (CountryAction, error) {
 }
 
 func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
-	for field := range wrapper.UnknownFields {
-		return fmt.Errorf("CountryRule: unknown field %q", field)
-	}
 	var err error
 	dest.Enabled = wrapper.Enabled
 	if dest.DefaultAction, err = countryActionOrDefault(wrapper.DefaultAction); err != nil {
@@ -155,7 +148,9 @@ func normalizeCountryCode(code string) (string, error) {
 }
 
 func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *CaptchaRule) error {
-	validateConfiguration(wrapper, "CAPTCHARule")
+	if err := validateStruct(wrapper, "CAPTCHA"); err != nil {
+		return err
+	}
 	dest.Enabled = wrapper.Enabled
 	dest.Provider = wrapper.Provider
 	if dest.Provider == "" {
@@ -180,22 +175,21 @@ func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *CaptchaRule) error {
 	return err
 }
 
-func mapAdaptiveTrafficAnalyzerRule(wrapper *AdaptiveTrafficAnalyzerRule, dest *AdaptiveTrafficAnalyzerRule) {
-	validateConfiguration(wrapper, "AdaptiveTrafficAnalyzerRule")
-	*dest = *wrapper
-	for name, a := range map[string]AnalyzerAction{
-		"ip_detection.action":  wrapper.IPDetection.Action,
-		"uri_detection.action": wrapper.URIDetection.Action,
-	} {
-		if _, ok := NormalizeAnalyzerAction(a); !ok {
-			log.Printf("[WARNING] AdaptiveTrafficAnalyzer %s %q is invalid, falling back to observe", name, a)
-		}
+// mapAdaptiveTrafficAnalyzerRule copies the section and fills the thresholds it leaves at zero
+// with their defaults.
+func mapAdaptiveTrafficAnalyzerRule(wrapper *AdaptiveTrafficAnalyzerRule, dest *AdaptiveTrafficAnalyzerRule) error {
+	if err := validateStruct(wrapper, "AdaptiveTrafficAnalyzer"); err != nil {
+		return err
 	}
+	*dest = *wrapper
 	NormalizeAdaptiveTrafficAnalyzerRule(dest)
+	return nil
 }
 
 func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error {
-	validateConfiguration(wrapper, "HTTPFloodRule")
+	if err := validateStruct(wrapper, "HTTPFlood"); err != nil {
+		return err
+	}
 	dest.Enabled = wrapper.Enabled
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
@@ -216,9 +210,6 @@ func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error 
 
 // mapCustomRules compiles every enabled rule; any error rejects the whole file so a reload keeps the old rules.
 func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error {
-	for field := range wrapper.UnknownFields {
-		return fmt.Errorf("CustomRules: unknown field %q", field)
-	}
 	dest.Enabled = wrapper.Enabled
 	dest.Rules = make([]*rules.Rule, 0, len(wrapper.Rules))
 	seen := make(map[string]bool, len(wrapper.Rules))
@@ -226,9 +217,6 @@ func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error 
 		label := fmt.Sprintf("CustomRules rule #%d", i+1)
 		if w.ID != "" {
 			label = fmt.Sprintf("CustomRules rule %q", w.ID)
-		}
-		for field := range w.UnknownFields {
-			return fmt.Errorf("%s: unknown field %q", label, field)
 		}
 		if w.ID == "" {
 			return fmt.Errorf("%s: id is required", label)

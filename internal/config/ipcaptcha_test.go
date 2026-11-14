@@ -35,7 +35,8 @@ func TestIPCaptchaConfiguration(t *testing.T) {
 		{"invalid captcha", "IPCAPTCHA: { enabled: true }\nCAPTCHA: { enabled: false }", "192.0.2.10", false, true},
 		{"disabled populated no captcha", "", "192.0.2.10", false, true},
 		{"disabled populated valid captcha", ipCaptchaSettings, "192.0.2.10", false, false},
-		{"unsupported entries", "", "bad\n2001:db8::1\n2001:db8::/32\n# comment\n", false, false},
+		{"comments only", "", "\n# comment\n", false, false},
+		{"invalid entry", "", "bad\n", false, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := ipCaptchaDirectory(t, tt.settings)
@@ -55,7 +56,7 @@ func TestIPCaptchaConfiguration(t *testing.T) {
 
 func TestIPCaptchaUsesIPAllowMatching(t *testing.T) {
 	dir := ipCaptchaDirectory(t, ipCaptchaSettings)
-	list := "192.0.2.10\n198.51.100.0/24\nbad\n2001:db8::/32\n2001:db8::1\n::ffff:203.0.113.5\n\n"
+	list := "192.0.2.10\n198.51.100.0/24\n::ffff:203.0.113.5\n\n"
 	writeFile(t, filepath.Join(dir, "IP_AllowList.conf"), list)
 	writeFile(t, filepath.Join(dir, "IP_CAPTCHAList.conf"), list)
 	rules, err := LoadRules(dir)

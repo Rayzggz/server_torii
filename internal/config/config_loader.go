@@ -1,8 +1,12 @@
 package config
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -27,12 +31,19 @@ func resolveConfigPath(basePath string) string {
 	return configPath
 }
 
-// readConfigFile reads the configuration file
-func readConfigFile(path string) ([]byte, error) {
-	return os.ReadFile(path)
-}
+// unknownFieldError matches how yaml.v3 reports a key the target struct does not have.
+var unknownFieldError = regexp.MustCompile(`field (\S+) not found in type \S+`)
 
-// decodeConfig unmarshals the configuration
-func decodeConfig(data []byte, cfg *MainConfig) error {
-	return yaml.Unmarshal(data, cfg)
+// decodeStrict decodes YAML into out and rejects keys out has no field for, so a misspelled
+// key is an error instead of a setting that silently keeps its default. An empty document
+// leaves out unchanged.
+func decodeStrict(data []byte, out any) error {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	err := dec.Decode(out)
+	if err == nil || errors.Is(err, io.EOF) {
+		return nil
+	}
+	// The Go type name means nothing to whoever edits the file.
+	return errors.New(unknownFieldError.ReplaceAllString(err.Error(), `unknown field "$1"`))
 }

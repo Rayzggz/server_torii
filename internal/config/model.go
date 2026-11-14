@@ -17,14 +17,16 @@ type MainConfig struct {
 	// UDP on the loopback address and Port.
 	LogListen []string `yaml:"log_listen" validate:"omitempty,dive,listen_addr"`
 	// UnixSocketMode is the octal permission of the Unix sockets in Listen and LogListen; empty means 0666.
-	UnixSocketMode string           `yaml:"unix_socket_mode" validate:"omitempty,socket_mode"`
-	WebPath        string           `yaml:"web_path" validate:"required,startswith=/"`
-	ErrorPage      string           `yaml:"error_page" validate:"required"`
-	LogPath        string           `yaml:"log_path" validate:"required"`
-	GlobalSecret   string           `yaml:"global_secret" validate:"required,min=32"`
-	NodeName       string           `yaml:"node_name" validate:"required"`
-	EnableGossip   bool             `yaml:"enable_gossip"`
-	Sites          []AllSiteRuleSet `yaml:"sites" validate:"required,dive"`
+	UnixSocketMode string `yaml:"unix_socket_mode" validate:"omitempty,socket_mode"`
+	WebPath        string `yaml:"web_path" validate:"required,startswith=/"`
+	ErrorPage      string `yaml:"error_page" validate:"required"`
+	LogPath        string `yaml:"log_path" validate:"required"`
+	// GlobalSecret signs gossip messages; it is required, and must not be the published
+	// example value, when gossip is enabled.
+	GlobalSecret string           `yaml:"global_secret" validate:"required_if=EnableGossip true,omitempty,min=32"`
+	NodeName     string           `yaml:"node_name" validate:"required"`
+	EnableGossip bool             `yaml:"enable_gossip"`
+	Sites        []AllSiteRuleSet `yaml:"sites" validate:"min=1,dive"`
 	// DefaultSite is the ID of the site used for requests whose connector names no site.
 	// Empty means such requests get no decision.
 	DefaultSite string `yaml:"default_site"`
@@ -44,10 +46,8 @@ type Peer struct {
 // also a directory name under the log path, so it is limited to letters, digits and
 // underscores, at most 32 characters.
 type AllSiteRuleSet struct {
-	ID       string `yaml:"id"`
+	ID       string `yaml:"id" validate:"site_id"`
 	RulePath string `yaml:"rule_path" validate:"required,dir"`
-	// Host is the key older configurations used; it is only read to report the rename.
-	Host string `yaml:"host"`
 }
 
 // MaxSiteIDLength is the longest site ID.

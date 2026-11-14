@@ -18,7 +18,7 @@ func TestURLCaptchaConfiguration(t *testing.T) {
 		{"invalid captcha", "URLCAPTCHA: { enabled: true }\nCAPTCHA: { enabled: false }", "/login", false, true},
 		{"disabled populated no captcha", "URLCAPTCHA: { enabled: false }", "/login", false, true},
 		{"disabled populated valid captcha", ipCaptchaSettings, "/login", false, false},
-		{"invalid regex skipped", "", "^(\n\n", false, false},
+		{"invalid regex", "", "^(\n\n", false, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			dir := ipCaptchaDirectory(t, tt.settings)
@@ -38,7 +38,7 @@ func TestURLCaptchaConfiguration(t *testing.T) {
 
 func TestURLCaptchaUsesURLAllowMatching(t *testing.T) {
 	dir := ipCaptchaDirectory(t, ipCaptchaSettings)
-	list := "/login\n^/admin(/|$)\n^(\n\n"
+	list := "/login\n^/admin(/|$)\n\n"
 	writeFile(t, filepath.Join(dir, "URL_AllowList.conf"), list)
 	writeFile(t, filepath.Join(dir, "URL_CAPTCHAList.conf"), list)
 	rules, err := LoadRules(dir)

@@ -3,7 +3,6 @@ package config
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,16 +11,7 @@ import (
 	"server_torii/internal/rules"
 	"server_torii/internal/urllist"
 	"strings"
-
-	"gopkg.in/yaml.v3"
 )
-
-// decodeServerRules keeps YAML decoding at the configuration loading boundary.
-func decodeServerRules(data []byte) (ruleSetWrapper, error) {
-	var wrapper ruleSetWrapper
-	err := yaml.Unmarshal(data, &wrapper)
-	return wrapper, err
-}
 
 // LoadRules Load all rules from the specified path
 func LoadRules(rulePath string) (*RuleSet, error) {
@@ -80,6 +70,10 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 }
 
 // loadServerRules fills rs, which must come from NewRuleSet, from the site's Server.yml.
+//
+// A section the file leaves out keeps its rule disabled. A section that is present must be
+// complete and valid even when it is disabled, because the connector can enable a check per
+// request. Nothing is repaired or skipped: any problem rejects the file.
 func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
@@ -90,51 +84,56 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		}
 	}
 
-	wrapper, err := decodeServerRules(yamlData)
-	if err != nil {
+	var wrapper ruleSetWrapper
+	if err := decodeStrict(yamlData, &wrapper); err != nil {
 		return fmt.Errorf("failed to parse rules file %s: %w", YAMLFile, err)
 	}
+	if err := mapServerRules(&wrapper, rs); err != nil {
+		return fmt.Errorf("invalid rules file %s:\n%w", YAMLFile, err)
+	}
+	return nil
+}
 
+func mapServerRules(wrapper *ruleSetWrapper, rs *RuleSet) error {
 	if wrapper.IPAllowRule != nil {
-		validateConfiguration(wrapper.IPAllowRule, "IPAllowRule")
 		rs.IPAllowRule.Enabled = wrapper.IPAllowRule.Enabled
 	}
 	if wrapper.IPBlockRule != nil {
-		validateConfiguration(wrapper.IPBlockRule, "IPBlockRule")
 		rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
 	}
 	if wrapper.IPCAPTCHARule != nil {
 		rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
 	}
 	if wrapper.URLAllowRule != nil {
-		validateConfiguration(wrapper.URLAllowRule, "URLAllowRule")
 		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
 	}
 	if wrapper.URLCAPTCHARule != nil {
 		rs.URLCAPTCHARule.Enabled = wrapper.URLCAPTCHARule.Enabled
 	}
 	if wrapper.URLBlockRule != nil {
-		validateConfiguration(wrapper.URLBlockRule, "URLBlockRule")
 		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
-	}
-	if err := validateListCaptchaDependencies(wrapper.CAPTCHARule, rs); err != nil {
-		return err
 	}
 	if wrapper.CAPTCHARule != nil {
 		if err := mapCaptchaRule(wrapper.CAPTCHARule, rs.CAPTCHARule); err != nil {
 			return err
 		}
 	}
+	if err := validateListCaptchaDependencies(wrapper.CAPTCHARule, rs); err != nil {
+		return err
+	}
 	if wrapper.VerifyBotRule != nil {
-		validateConfiguration(wrapper.VerifyBotRule, "VerifyBotRule")
 		*rs.VerifyBotRule = *wrapper.VerifyBotRule
 	}
 	if wrapper.ExternalMigrationRule != nil {
-		validateConfiguration(wrapper.ExternalMigrationRule, "ExternalMigrationRule")
+		if err := validateStruct(wrapper.ExternalMigrationRule, "ExternalMigration"); err != nil {
+			return err
+		}
 		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
 	}
 	if wrapper.AdaptiveTrafficAnalyzerRule != nil {
-		mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule)
+		if err := mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule); err != nil {
+			return err
+		}
 	}
 	if wrapper.CountryRule != nil {
 		if err := mapCountryRule(wrapper.CountryRule, rs.CountryRule); err != nil {
@@ -142,44 +141,32 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 		}
 	}
 
-	if countryRequiresCaptcha(rs.CountryRule) {
-		if wrapper.CAPTCHARule == nil {
-			return fmt.Errorf("CountryRule captcha action requires CAPTCHA configuration")
-		}
-		if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
-			return fmt.Errorf("CountryRule requires valid CAPTCHA configuration: %w", err)
-		}
+	if countryRequiresCaptcha(rs.CountryRule) && wrapper.CAPTCHARule == nil {
+		return fmt.Errorf("CountryRule captcha action requires CAPTCHA configuration")
 	}
 
 	if wrapper.CustomRules != nil {
 		if err := mapCustomRules(wrapper.CustomRules, rs.CustomRules); err != nil {
 			return err
 		}
-		if rs.CustomRules.Uses(rules.ActionCaptcha) {
-			if wrapper.CAPTCHARule == nil {
-				return fmt.Errorf("CustomRules captcha action requires CAPTCHA configuration")
-			}
-			if err := validate.Struct(wrapper.CAPTCHARule); err != nil {
-				return fmt.Errorf("CustomRules requires valid CAPTCHA configuration: %w", err)
-			}
+		if rs.CustomRules.Uses(rules.ActionCaptcha) && wrapper.CAPTCHARule == nil {
+			return fmt.Errorf("CustomRules captcha action requires CAPTCHA configuration")
 		}
-		if rs.CustomRules.Uses(rules.ActionExternal) {
-			if wrapper.ExternalMigrationRule == nil {
-				return fmt.Errorf("CustomRules external action requires ExternalMigration configuration")
-			}
-			if err := validate.Struct(wrapper.ExternalMigrationRule); err != nil {
-				return fmt.Errorf("CustomRules requires valid ExternalMigration configuration: %w", err)
-			}
+		if rs.CustomRules.Uses(rules.ActionExternal) && wrapper.ExternalMigrationRule == nil {
+			return fmt.Errorf("CustomRules external action requires ExternalMigration configuration")
 		}
 	}
 
-	if err := mapHTTPFloodRule(&wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {
-		return err
+	if wrapper.HTTPFloodRule != nil {
+		if err := mapHTTPFloodRule(wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// validateListCaptchaDependencies keeps dependency checks separate from rule mapping.
+// validateListCaptchaDependencies rejects CAPTCHA lists without a CAPTCHA section; a section
+// that is present has already been validated.
 func validateListCaptchaDependencies(captcha *captchaRuleWrapper, rs *RuleSet) error {
 	for _, dependency := range []struct {
 		name     string
@@ -194,9 +181,6 @@ func validateListCaptchaDependencies(captcha *captchaRuleWrapper, rs *RuleSet) e
 		if captcha == nil {
 			return fmt.Errorf("%s requires CAPTCHA configuration", dependency.name)
 		}
-		if err := validate.Struct(captcha); err != nil {
-			return fmt.Errorf("%s requires valid CAPTCHA configuration: %w", dependency.name, err)
-		}
 	}
 	return nil
 }
@@ -208,7 +192,8 @@ func isSkippableListLine(line string) bool {
 	return line == "" || strings.HasPrefix(line, "#")
 }
 
-// loadIPRules read the IP rule file and insert the rules into the trie
+// loadIPRules reads the IP rule file and inserts the rules into the trie. A line that is not
+// an address or CIDR is an error: skipping it would leave a block or allow rule out unnoticed.
 func loadIPRules(filePath string, trie *iptrie.TrieNode) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -227,8 +212,7 @@ func loadIPRules(filePath string, trie *iptrie.TrieNode) error {
 
 		ipNet, ok := parseIPRule(line)
 		if !ok {
-			log.Printf("[WARNING] %s:%d: invalid IP or CIDR %q, line ignored", filePath, lineNo, line)
-			continue
+			return fmt.Errorf("%s:%d: invalid IP or CIDR %q", filePath, lineNo, line)
 		}
 		trie.Insert(ipNet)
 	}
@@ -254,7 +238,7 @@ func parseIPRule(line string) (*net.IPNet, bool) {
 	return &net.IPNet{IP: ip, Mask: net.CIDRMask(8*net.IPv6len, 8*net.IPv6len)}, true
 }
 
-// loadURLRules Load URL rules from the specified file
+// loadURLRules loads URL rules from the specified file. A regex that does not compile is an error.
 func loadURLRules(filePath string, list *urllist.URLRuleList) error {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -279,8 +263,7 @@ func loadURLRules(filePath string, list *urllist.URLRuleList) error {
 		if isRegex {
 			compiled, err = regexp.Compile(line)
 			if err != nil {
-				log.Printf("[WARNING] %s:%d: invalid regex %q, line ignored: %v", filePath, lineNo, line, err)
-				continue
+				return fmt.Errorf("%s:%d: invalid regex %q: %w", filePath, lineNo, line, err)
 			}
 		}
 		rule := &urllist.URLRule{
@@ -305,9 +288,6 @@ func LoadSiteRules(cfg *MainConfig) (map[string]*RuleSet, error) {
 
 	// Load rules for each configured site
 	for i, site := range cfg.Sites {
-		if site.ID == "" && site.Host != "" {
-			return nil, fmt.Errorf("sites[%d]: \"host: %s\" is no longer supported; give the site an \"id\" and name it with torii_site in nginx", i, site.Host)
-		}
 		if !ValidSiteID(site.ID) {
 			return nil, fmt.Errorf("sites[%d]: invalid id %q: use letters, digits and underscores, at most %d characters", i, site.ID, MaxSiteIDLength)
 		}

@@ -1,3 +1,6 @@
+# Torii refuses to start when this file is missing or has a YAML error, an unknown key or an
+# invalid value, and reports every problem it finds. The same holds for each site's rules;
+# on reload (SIGHUP) a rejected rule set leaves the rules already in use untouched.
 port: "25555"
 # Addresses the HTTP server listens on: "host:port" for TCP, "unix:/path" for a Unix domain socket.
 # Both kinds can be listed together. When omitted, Torii listens on every interface on `port`.
@@ -15,6 +18,9 @@ port: "25555"
 web_path: "/torii"
 error_page: "/www/server_torii/config/error_page"
 log_path: "/www/server_torii/log/"
+# Signs gossip messages; every node of a cluster needs the same value, at least 32 characters.
+# Required when `enable_gossip` is true, and this example value is refused then: generate your
+# own, e.g. with `openssl rand -hex 16`.
 global_secret: "0378b0f84c4310279918d71a5647ba5d"
 node_name: "Server Torii"
 enable_gossip: false

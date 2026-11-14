@@ -37,11 +37,10 @@ func TestCustomRulesSchema(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			wrapper, err := decodeServerRules([]byte("CustomRules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
-			if err != nil {
-				t.Fatalf("decode: %v", err)
-			}
 			dest := &rules.CustomRules{}
-			err = mapCustomRules(wrapper.CustomRules, dest)
+			if err == nil {
+				err = mapCustomRules(wrapper.CustomRules, dest)
+			}
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)

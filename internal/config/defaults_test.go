@@ -1,11 +1,8 @@
 package config
 
-import (
-	"encoding/hex"
-	"testing"
-)
+import "testing"
 
-func TestDefaultMainConfig_ReturnsFullConfig(t *testing.T) {
+func TestDefaultMainConfig(t *testing.T) {
 	cfg := DefaultMainConfig()
 
 	if cfg.Port != DefaultPort {
@@ -14,14 +11,11 @@ func TestDefaultMainConfig_ReturnsFullConfig(t *testing.T) {
 	if cfg.WebPath != DefaultWebPath {
 		t.Errorf("WebPath = %q, want %q", cfg.WebPath, DefaultWebPath)
 	}
-	if len(cfg.GlobalSecret) != 32 {
-		t.Errorf("GlobalSecret length = %d, want %d", len(cfg.GlobalSecret), 32)
+	if cfg.GlobalSecret != "" {
+		t.Errorf("GlobalSecret = %q, want none: a secret must be configured, not defaulted", cfg.GlobalSecret)
 	}
-	if _, err := hex.DecodeString(cfg.GlobalSecret); err != nil {
-		t.Errorf("GlobalSecret = %q, want valid hex: %v", cfg.GlobalSecret, err)
-	}
-	if len(cfg.Sites) != 1 {
-		t.Errorf("Sites should have 1 entry, got %d", len(cfg.Sites))
+	if len(cfg.Sites) != 1 || cfg.DefaultSite != cfg.Sites[0].ID {
+		t.Errorf("Sites = %v, DefaultSite = %q", cfg.Sites, cfg.DefaultSite)
 	}
 }
 
@@ -29,14 +23,8 @@ func TestDefaultMainConfig_ReturnsCopies(t *testing.T) {
 	cfg1 := DefaultMainConfig()
 	cfg2 := DefaultMainConfig()
 
-	cfg1.Sites[0].Host = "modified"
-	if cfg2.Sites[0].Host == "modified" {
+	cfg1.Sites[0].ID = "modified"
+	if cfg2.Sites[0].ID == "modified" {
 		t.Error("DefaultMainConfig should return independent copies of slices")
-	}
-}
-
-func TestDefaultGlobalSecret_IsHexWithExpectedLength(t *testing.T) {
-	if _, err := hex.DecodeString(DefaultGlobalSecret); err != nil {
-		t.Fatalf("DefaultGlobalSecret = %q, want valid hex: %v", DefaultGlobalSecret, err)
 	}
 }

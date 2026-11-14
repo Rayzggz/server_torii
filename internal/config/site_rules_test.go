@@ -70,8 +70,7 @@ func TestLoadSiteRulesIdentity(t *testing.T) {
 		return siteDir
 	}
 	plain := writeSite("plain", "")
-	// A "tag" left over from older configurations is ignored: reports name the site by its ID.
-	tagged := writeSite("tagged", "AdaptiveTrafficAnalyzer:\n  enabled: true\n  tag: other_tag\n")
+	tagged := writeSite("tagged", "AdaptiveTrafficAnalyzer:\n  enabled: true\n")
 
 	// The site ID becomes the identity of the rule set.
 	rules, err := LoadSiteRules(&MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: tagged}, {ID: "blog", RulePath: plain}}, DefaultSite: "blog"})
@@ -90,7 +89,6 @@ func TestLoadSiteRulesIdentity(t *testing.T) {
 	}{
 		"invalid id":      {MainConfig{Sites: []AllSiteRuleSet{{ID: "example.com", RulePath: plain}}}, "invalid id"},
 		"missing id":      {MainConfig{Sites: []AllSiteRuleSet{{RulePath: plain}}}, "invalid id"},
-		"legacy host key": {MainConfig{Sites: []AllSiteRuleSet{{Host: "example.com", RulePath: plain}}}, "no longer supported"},
 		"duplicate id":    {MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: plain}, {ID: "shop", RulePath: plain}}}, "duplicate id"},
 		"unknown default": {MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: plain}}, DefaultSite: "blog"}, "default_site"},
 		"no sites":        {MainConfig{}, "no sites configured"},

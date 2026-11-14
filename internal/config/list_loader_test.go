@@ -9,10 +9,9 @@ import (
 	"testing"
 )
 
-func TestLoadIPRules_CommentsSkippedInvalidLogged(t *testing.T) {
-	buf := captureLog(t)
+func TestLoadIPRules(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "IP_BlockList.conf")
-	writeFile(t, path, "# office range\n10.0.0.0/8\n\n  # indented comment\nnot-an-ip\n192.0.2.1\n")
+	writeFile(t, path, "# office range\n10.0.0.0/8\n\n  # indented comment\n192.0.2.1\n")
 
 	trie := &iptrie.TrieNode{}
 	if err := loadIPRules(path, trie); err != nil {
@@ -22,19 +21,17 @@ func TestLoadIPRules_CommentsSkippedInvalidLogged(t *testing.T) {
 		t.Fatal("valid entries were not loaded")
 	}
 
-	out := buf.String()
-	if strings.Count(out, "[WARNING]") != 1 {
-		t.Fatalf("want exactly one warning, got:\n%s", out)
-	}
-	if !strings.Contains(out, path+":5:") || !strings.Contains(out, `"not-an-ip"`) {
-		t.Fatalf("warning lacks file:line or value:\n%s", out)
+	// A line that is not an address rejects the file: skipping it would drop a rule unnoticed.
+	writeFile(t, path, "10.0.0.0/8\n\n# comment\nnot-an-ip\n192.0.2.1\n")
+	err := loadIPRules(path, &iptrie.TrieNode{})
+	if err == nil || !strings.Contains(err.Error(), path+":4:") || !strings.Contains(err.Error(), `"not-an-ip"`) {
+		t.Fatalf("error = %v, want file:line and the value", err)
 	}
 }
 
-func TestLoadURLRules_CommentsSkippedInvalidLogged(t *testing.T) {
-	buf := captureLog(t)
+func TestLoadURLRules(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "URL_BlockList.conf")
-	writeFile(t, path, "# admin paths\n/admin\n^/bad[regex$\n^/api/.*$\n")
+	writeFile(t, path, "# admin paths\n/admin\n^/api/.*$\n")
 
 	list := &urllist.URLRuleList{}
 	if err := loadURLRules(path, list); err != nil {
@@ -47,11 +44,9 @@ func TestLoadURLRules_CommentsSkippedInvalidLogged(t *testing.T) {
 		t.Fatal("valid entries were not loaded")
 	}
 
-	out := buf.String()
-	if strings.Count(out, "[WARNING]") != 1 {
-		t.Fatalf("want exactly one warning, got:\n%s", out)
-	}
-	if !strings.Contains(out, path+":3:") || !strings.Contains(out, "invalid regex") {
-		t.Fatalf("warning lacks file:line or reason:\n%s", out)
+	writeFile(t, path, "/admin\n^/bad[regex$\n")
+	err := loadURLRules(path, &urllist.URLRuleList{})
+	if err == nil || !strings.Contains(err.Error(), path+":2:") || !strings.Contains(err.Error(), "invalid regex") {
+		t.Fatalf("error = %v, want file:line and the reason", err)
 	}
 }
