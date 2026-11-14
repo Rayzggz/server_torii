@@ -279,3 +279,52 @@ func TestBotLRUDropsExpired(t *testing.T) {
 		t.Fatalf("expired entry kept: len %d", l.len())
 	}
 }
+
+// A flood of spoofed crawler user agents from many addresses must not become as many lookups.
+func TestBotVerifierCapsConcurrentLookups(t *testing.T) {
+	r := googleResolver()
+	r.block = make(chan struct{})
+	v := newBotVerifier(r)
+
+	var wg sync.WaitGroup
+	for i := 0; i < botMaxLookups; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, _ = v.verify(net.IPv4(198, 51, 100, byte(i)), "google", googleDomains)
+		}(i)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for int(r.ptrCalls.Load()) < botMaxLookups && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if got := int(r.ptrCalls.Load()); got != botMaxLookups {
+		t.Fatalf("%d lookups in progress, want %d", got, botMaxLookups)
+	}
+
+	// At the cap: answered at once as unverified, without a lookup, even for a real crawler.
+	crawler := net.ParseIP("66.249.66.1")
+	start := time.Now()
+	for i := 0; i < 100; i++ {
+		ok, fresh, err := v.verify(crawler, "google", googleDomains)
+		if ok || fresh || err != nil {
+			t.Fatalf("verify at the cap = (%v, %v, %v), want unverified without a lookup", ok, fresh, err)
+		}
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("refusals took %v, want them immediate", elapsed)
+	}
+	if got := int(r.ptrCalls.Load()); got != botMaxLookups {
+		t.Fatalf("lookups = %d after refusals, want still %d", got, botMaxLookups)
+	}
+
+	// The refusal was not cached: with room again the crawler is verified.
+	close(r.block)
+	wg.Wait()
+	if ok, fresh, err := v.verify(crawler, "google", googleDomains); !ok || !fresh || err != nil {
+		t.Fatalf("verify after the flood = (%v, %v, %v), want a fresh verification", ok, fresh, err)
+	}
+	if len(v.slots) != 0 {
+		t.Fatalf("%d lookup slots still held", len(v.slots))
+	}
+}

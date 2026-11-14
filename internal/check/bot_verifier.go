@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"sync"
 	"time"
@@ -24,6 +25,12 @@ const (
 	botVerifiedMaxEntries = 10_000
 	// botRejectedMaxEntries caps rejections and lookup errors, the segment spoofed traffic churns.
 	botRejectedMaxEntries = 100_000
+	// botMaxLookups caps lookups in progress. Each one holds a request and a resolver query for
+	// up to botLookupTimeout, so without a cap a flood of spoofed crawler user agents from many
+	// addresses becomes as many goroutines and DNS queries.
+	botMaxLookups = 64
+	// botBusyLogInterval spaces the log lines about lookups refused at the cap.
+	botBusyLogInterval = time.Minute
 )
 
 // botResolver is the part of *net.Resolver that bot verification uses.
@@ -112,6 +119,9 @@ type botVerifier struct {
 	verified *botLRU
 	rejected *botLRU
 	inflight map[string]*botInflight
+	slots    chan struct{} // one token per lookup in progress
+	refused  int64         // lookups refused at the cap since the last log line
+	busyLog  time.Time
 }
 
 func newBotVerifier(resolver botResolver) *botVerifier {
@@ -122,6 +132,7 @@ func newBotVerifier(resolver botResolver) *botVerifier {
 		verified: newBotLRU(botVerifiedMaxEntries),
 		rejected: newBotLRU(botRejectedMaxEntries),
 		inflight: make(map[string]*botInflight),
+		slots:    make(chan struct{}, botMaxLookups),
 	}
 }
 
@@ -129,6 +140,10 @@ var defaultBotVerifier = newBotVerifier(net.DefaultResolver)
 
 // verify reports whether ip forward-confirms to a host under one of domains.
 // fresh is true when this call performed the lookup; err is set only on fresh calls.
+//
+// When botMaxLookups lookups are already in progress the address is not looked up: it counts
+// as unverified for this request only. Nothing is cached, so it is checked again as soon as
+// there is room.
 func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified, fresh bool, err error) {
 	key := bot + "|" + ip.String()
 
@@ -147,6 +162,13 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 		<-f.done
 		return f.verdict.verified, false, nil
 	}
+	select {
+	case v.slots <- struct{}{}:
+	default:
+		v.noteRefusedLocked(now)
+		v.mu.Unlock()
+		return false, false, nil
+	}
 	f := &botInflight{done: make(chan struct{})}
 	v.inflight[key] = f
 	v.mu.Unlock()
@@ -164,6 +186,7 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 			v.rejected.put(key, f.verdict)
 		}
 		v.mu.Unlock()
+		<-v.slots
 		close(f.done)
 	}()
 
@@ -177,6 +200,18 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 		ttl = botRejectedTTL
 	}
 	return verified, true, err
+}
+
+// noteRefusedLocked counts a lookup refused at the cap and logs the count now and then, not once
+// per request: the cap is reached under a flood. The caller holds v.mu.
+func (v *botVerifier) noteRefusedLocked(now time.Time) {
+	v.refused++
+	if now.Sub(v.busyLog) < botBusyLogInterval {
+		return
+	}
+	log.Printf("[WARNING] VerifyBot: %d lookups refused, %d already in progress; the clients are treated as unverified", v.refused, botMaxLookups)
+	v.refused = 0
+	v.busyLog = now
 }
 
 // lookup returns a nil error with verified=false when DNS answered but did not confirm the crawler.
