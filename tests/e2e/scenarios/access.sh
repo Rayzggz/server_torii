@@ -6,7 +6,7 @@ test_access() {
         expect pass 1 "$ip" 1101000000000000 /blocked
     done
     for ip in 198.51.100.10 198.51.100.41 ::ffff:198.51.100.41; do expect block 1 "$ip" 0100000000000000; done
-    for ip in 198.51.100.48 2001:db8:4::42 invalid-ip; do expect pass 1 "$ip" 0100000000000000; done
+    for ip in 198.51.100.48 2001:db8:4::42; do expect pass 1 "$ip" 0100000000000000; done
     for uri in /allowed /overlap /public/123; do
         expect pass 1 203.0.113.110 0011001000000000 "$uri"
     done

@@ -41,6 +41,17 @@ test_connector() {
     request 1 /v1/check -H 'Torii-Site: default_site'
     assert_eq "$HTTP_CODE" 400 'missing request headers'
     assert_eq "$(header Torii-Decision)" '' 'bad request has no decision'
+    # A client address that is not an IP address means the connector is set up wrongly: no
+    # check judges the request, on the check endpoint and on the public ones alike.
+    local bad
+    for bad in invalid-ip unix: '203.0.113.120, 10.0.0.1'; do
+        v1 1 /v1/check "$bad" /neutral -H 'Torii-Site: default_site'
+        assert_eq "$HTTP_CODE" 400 "client address <$bad>"
+        assert_eq "$(header Torii-Decision)" '' "client address <$bad> has no decision"
+        assert_contains "$HTTP_BODY" 'Torii-Client-IP is not an IP address'
+    done
+    v1 1 /v1/public/health_check invalid-ip /torii/health_check -H 'Torii-Site: default_site'
+    assert_eq "$HTTP_CODE" 400 'public endpoint with an invalid client address'
     # Browser-facing endpoints.
     v1 1 /v1/public/health_check 203.0.113.120 /torii/health_check
     assert_eq "$HTTP_CODE" 200 'public health check'

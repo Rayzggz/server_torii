@@ -10,7 +10,8 @@ test_country() {
             expect pass 1 "$ip" 0000000010000000 /neutral unknown.test
         fi
     done < "$E2E/fixtures/countries.tsv"
-    for ip in 127.0.0.1 192.168.1.1 invalid-ip; do
+    # Addresses that are not public have no country: the unknown policy applies.
+    for ip in 127.0.0.1 192.168.1.1; do
         expect pass 1 "$ip" 0000000010000000
         expect block 1 "$ip" 0000000010000000 /neutral unknown.test
     done
