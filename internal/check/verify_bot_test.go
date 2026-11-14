@@ -11,10 +11,12 @@ import (
 
 type recordingMarker struct{ neutral, verified []string }
 
-func (m *recordingMarker) MarkVerified(ip string, _ time.Duration) {
+func (m *recordingMarker) MarkVerified(_, ip string, _ time.Duration) {
 	m.verified = append(m.verified, ip)
 }
-func (m *recordingMarker) MarkNeutral(ip string, _ time.Duration) { m.neutral = append(m.neutral, ip) }
+func (m *recordingMarker) MarkNeutral(_, ip string, _ time.Duration) {
+	m.neutral = append(m.neutral, ip)
+}
 
 func allBotsRuleSet() *config.RuleSet {
 	return &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{

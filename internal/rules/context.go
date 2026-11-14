@@ -13,9 +13,9 @@ type CountryResolver interface {
 	Country(netip.Addr) (string, error)
 }
 
-// BrowserEvidence reports whether an IP has recently behaved like a browser.
+// BrowserEvidence reports whether an IP has recently behaved like a browser on a site.
 type BrowserEvidence interface {
-	HasBrowserEvidence(ip string) bool
+	HasBrowserEvidence(site, ip string) bool
 }
 
 // Context holds one request plus lazily computed fields, so each field is parsed at most once
@@ -137,7 +137,7 @@ func (c *Context) countryCode() string {
 func (c *Context) browserEvidence() bool {
 	if !c.evidenceDone {
 		c.evidenceDone = true
-		c.hasEvidence = c.evidence != nil && c.evidence.HasBrowserEvidence(c.req.RemoteIP)
+		c.hasEvidence = c.evidence != nil && c.evidence.HasBrowserEvidence(c.req.Site, c.req.RemoteIP)
 	}
 	return c.hasEvidence
 }

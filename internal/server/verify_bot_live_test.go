@@ -91,7 +91,7 @@ func TestVerifyBotLiveAcceptsRealCrawlers(t *testing.T) {
 			if got := botDecision(verifyBotRuleSet(), sharedMem, c.ip, c.ua, ""); got != "pass" {
 				t.Fatalf("decision = %q, want pass", got)
 			}
-			if !ata.Marked(c.ip, time.Now()) {
+			if !ata.Marked("", c.ip, time.Now()) {
 				t.Fatal("verified crawler was not exempted from traffic analysis")
 			}
 		})
@@ -119,7 +119,7 @@ func TestVerifyBotLiveRejectsMismatchedCrawlers(t *testing.T) {
 			if got := botDecision(verifyBotRuleSet(), sharedMem, tt.ip, tt.ua, ""); got != "block" {
 				t.Fatalf("decision = %q, want block", got)
 			}
-			if ata.Marked(tt.ip, time.Now()) {
+			if ata.Marked("", tt.ip, time.Now()) {
 				t.Fatal("rejected client was exempted from traffic analysis")
 			}
 		})
@@ -149,7 +149,7 @@ func TestVerifyBotLiveFeatureControl(t *testing.T) {
 			if got := botDecision(rs, sharedMem, c.ip, c.ua, tt.feature); got != tt.want {
 				t.Fatalf("decision = %q, want %q", got, tt.want)
 			}
-			if marked := ata.Marked(c.ip, time.Now()); marked != (tt.want == "pass") {
+			if marked := ata.Marked("", c.ip, time.Now()); marked != (tt.want == "pass") {
 				t.Fatalf("marked = %v", marked)
 			}
 		})
@@ -192,7 +192,7 @@ func TestVerifyBotLiveBlocksFakeCrawlers(t *testing.T) {
 			if got := botDecision(verifyBotRuleSet(), sharedMem, f.ip, f.ua, ""); got != "block" {
 				t.Fatalf("decision = %q, want block", got)
 			}
-			if ata.Marked(f.ip, time.Now()) {
+			if ata.Marked("", f.ip, time.Now()) {
 				t.Fatal("fake crawler was exempted from traffic analysis")
 			}
 		})
@@ -216,7 +216,7 @@ func TestVerifyBotLiveLookalikeUserAgentsGetNoBypass(t *testing.T) {
 			if got := botDecision(verifyBotRuleSet(), sharedMem, liveCrawlers[0].ip, ua, ""); got != "captcha" {
 				t.Fatalf("decision = %q, want captcha", got)
 			}
-			if ata.Marked(liveCrawlers[0].ip, time.Now()) {
+			if ata.Marked("", liveCrawlers[0].ip, time.Now()) {
 				t.Fatal("unverified client was exempted from traffic analysis")
 			}
 		})

@@ -559,7 +559,7 @@ func TestRecordEvidenceAtIngest(t *testing.T) {
 		{LogEntry{Site: "site", IP: "1.0.0.8", URI: "/api/items", Status: 200, ContentType: "application/json"}, false},
 	} {
 		a.AddLog(tc.entry)
-		if got := a.HasBrowserEvidence(tc.entry.IP); got != tc.want {
+		if got := a.HasBrowserEvidence(tc.entry.Site, tc.entry.IP); got != tc.want {
 			t.Errorf("%+v: evidence %v, want %v", tc.entry, got, tc.want)
 		}
 	}

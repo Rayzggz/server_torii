@@ -12,7 +12,7 @@ import (
 
 type fakeBrowserEvidence map[string]bool
 
-func (f fakeBrowserEvidence) HasBrowserEvidence(ip string) bool { return f[ip] }
+func (f fakeBrowserEvidence) HasBrowserEvidence(_, ip string) bool { return f[ip] }
 
 func TestActionRuleCaptchaUnverified(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)

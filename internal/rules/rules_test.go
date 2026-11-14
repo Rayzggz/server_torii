@@ -14,7 +14,7 @@ func (r stubResolver) Country(netip.Addr) (string, error) { return r.country, ni
 
 type stubEvidence struct{ ip string }
 
-func (e stubEvidence) HasBrowserEvidence(ip string) bool { return ip == e.ip }
+func (e stubEvidence) HasBrowserEvidence(_, ip string) bool { return ip == e.ip }
 
 func testRequest() *request.UserRequest {
 	headers := http.Header{}

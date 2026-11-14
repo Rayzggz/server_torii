@@ -22,7 +22,7 @@ func ActionRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *
 	case action.ActionCaptcha:
 		requireCaptcha(reqData, ruleSet, decision, rt)
 	case action.ActionCaptchaUnverified:
-		if rt.HasBrowserEvidence(reqData.RemoteIP) {
+		if rt.HasBrowserEvidence(reqData.Site, reqData.RemoteIP) {
 			decision.Set(action.Continue)
 			return
 		}

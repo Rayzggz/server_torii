@@ -225,14 +225,14 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 		t.Fatal("no clearance cookie set")
 	}
 	now := time.Now()
-	if !ata.Marked(reqData.RemoteIP, now) {
+	if !ata.Marked("", reqData.RemoteIP, now) {
 		t.Fatal("solving the CAPTCHA did not exempt the IP from traffic analysis")
 	}
 	ttl := time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime) * time.Second
-	if ata.Marked(reqData.RemoteIP, now.Add(ttl+time.Second)) {
+	if ata.Marked("", reqData.RemoteIP, now.Add(ttl+time.Second)) {
 		t.Fatal("verified mark outlives the CAPTCHA validate time")
 	}
-	if ata.Marked("203.0.113.78", now) {
+	if ata.Marked("", "203.0.113.78", now) {
 		t.Fatal("another IP was marked")
 	}
 }
@@ -268,7 +268,7 @@ func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 			if clearanceFrom(t, rec) != "" {
 				t.Fatal("clearance set after a failed CAPTCHA")
 			}
-			if ata.Marked(r.RemoteIP, time.Now()) {
+			if ata.Marked("", r.RemoteIP, time.Now()) {
 				t.Fatal("failed CAPTCHA exempted the IP")
 			}
 		})
@@ -324,9 +324,9 @@ func TestCaptchaEndpointRejectsGet(t *testing.T) {
 func TestRuntimeMarksReachAnalyzer(t *testing.T) {
 	// Marking without an analyzer, or without any runtime, is a no-op rather than a panic.
 	for _, rt := range []*state.Runtime{nil, {}} {
-		rt.MarkVerified("198.51.100.1", time.Minute)
-		rt.MarkNeutral("198.51.100.2", time.Minute)
-		if rt.HasBrowserEvidence("198.51.100.1") {
+		rt.MarkVerified("", "198.51.100.1", time.Minute)
+		rt.MarkNeutral("", "198.51.100.2", time.Minute)
+		if rt.HasBrowserEvidence("", "198.51.100.1") {
 			t.Fatal("runtime without analyzer reported browser evidence")
 		}
 	}
@@ -336,13 +336,13 @@ func TestRuntimeMarksReachAnalyzer(t *testing.T) {
 	rt.SetAnalyzer(ata)
 
 	now := time.Now()
-	rt.MarkVerified("198.51.100.1", time.Minute)
-	rt.MarkNeutral("198.51.100.2", time.Minute)
+	rt.MarkVerified("", "198.51.100.1", time.Minute)
+	rt.MarkNeutral("", "198.51.100.2", time.Minute)
 	for _, ip := range []string{"198.51.100.1", "198.51.100.2"} {
-		if !ata.Marked(ip, now) {
+		if !ata.Marked("", ip, now) {
 			t.Errorf("%s not marked", ip)
 		}
-		if ata.Marked(ip, now.Add(2*time.Minute)) {
+		if ata.Marked("", ip, now.Add(2*time.Minute)) {
 			t.Errorf("%s mark did not expire", ip)
 		}
 	}

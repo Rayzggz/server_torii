@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"log"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/state"
 	"sync"
@@ -10,8 +11,8 @@ import (
 
 // LogEntry is one served request as the connector reported it.
 //
-// Site, IP, URI and Status drive the analysis. The remaining fields are kept for detections
-// that do not exist yet; nothing reads them so far, except ContentType.
+// Site, IP, URI, Status, Decision and ContentType drive the analysis. The remaining fields are
+// kept for detections that do not exist yet; nothing reads them so far.
 type LogEntry struct {
 	Site   string // ID of the site, resolved: never empty once the entry is in the buffer
 	IP     string
@@ -40,6 +41,13 @@ type LogEntry struct {
 	Cache          string
 	Bytes          int64
 	RequestLength  int64
+}
+
+// answeredByTorii reports whether the response came from Torii (a block, challenge, rate limit
+// or redirect) instead of the site. Such a response says what Torii decided, not how the site
+// reacted to the client, so it is neither a failure of the client nor a sign of a browser.
+func (e *LogEntry) answeredByTorii() bool {
+	return e.Decision != "" && e.Decision != action.VerdictAllow.String()
 }
 
 // LogBuffer is a thread-safe buffer for LogEntries
@@ -79,8 +87,8 @@ type analysisContext struct {
 	Rule     *config.RuleSet
 	State    *siteState
 	Runtime  *state.Runtime
-	Marks    *ipExpiry // exempt clients
-	Evidence *ipExpiry // browser-like clients
+	Marks    *ipExpiry // the site's exempt clients
+	Evidence *ipExpiry // the site's browser-like clients
 	Now      time.Time
 	Interval time.Duration
 }
@@ -97,9 +105,9 @@ type AdaptiveTrafficAnalyzer struct {
 	lifecycleMu sync.Mutex
 	processMu   sync.Mutex
 	windows     map[string]*analysisWindow
-	marks       *ipExpiry
-	evidence    *ipExpiry
-	ingest      sync.Map // *config.AdaptiveTrafficAnalyzerRule -> *ingestSettings
+	marks       *siteExpiry // exempt clients, per site
+	evidence    *siteExpiry // browser-like clients, per site
+	ingest      sync.Map    // *config.AdaptiveTrafficAnalyzerRule -> *ingestSettings
 	lastSweep   time.Time
 }
 
@@ -127,8 +135,8 @@ func NewAdaptiveTrafficAnalyzer(rt *state.Runtime, configs *config.Manager) *Ada
 		configs:   configs,
 		stopCh:    make(chan struct{}),
 		windows:   make(map[string]*analysisWindow),
-		marks:     newIPExpiry(maxMarkedClients),
-		evidence:  newIPExpiry(maxEvidenceEntries),
+		marks:     newSiteExpiry(maxMarkedClients),
+		evidence:  newSiteExpiry(maxEvidenceEntries),
 	}
 }
 
@@ -196,7 +204,7 @@ func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
 // recordEvidence marks browser evidence as soon as a log arrives, so a page view followed
 // quickly by a click onto a challenged URI is not challenged while waiting for the next analysis.
 func (ata *AdaptiveTrafficAnalyzer) recordEvidence(entry LogEntry, now time.Time) {
-	if entry.IP == "" || entry.Status >= 400 {
+	if entry.IP == "" || entry.Status >= 400 || entry.answeredByTorii() {
 		return
 	}
 	rules := ata.siteRules(entry.Site)
@@ -205,7 +213,7 @@ func (ata *AdaptiveTrafficAnalyzer) recordEvidence(entry LogEntry, now time.Time
 	}
 	settings := ata.ingestSettingsFor(rules.AdaptiveTrafficAnalyzerRule)
 	if entry.Status == 304 || isAsset(stripQuery(entry.URI), settings.assets) || isAssetContentType(entry.ContentType) {
-		ata.evidence.set(entry.IP, now.Add(settings.ttl))
+		ata.evidence.site(entry.Site).set(entry.IP, now.Add(settings.ttl))
 	}
 }
 
@@ -223,24 +231,32 @@ func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *config.AdaptiveTraff
 	return settings
 }
 
-// HasBrowserEvidence reports whether the IP recently loaded assets, revalidated a page, or browsed several pages.
-func (ata *AdaptiveTrafficAnalyzer) HasBrowserEvidence(ip string) bool {
-	return ata.evidence.active(ip, time.Now())
+// Evidence and marks belong to one site: what a client did, or proved, on one site says nothing
+// about its traffic to another.
+
+// HasBrowserEvidence reports whether the IP recently loaded assets, revalidated a page, or
+// browsed several pages on the site.
+func (ata *AdaptiveTrafficAnalyzer) HasBrowserEvidence(site, ip string) bool {
+	return ata.evidence.existing(site).active(ip, time.Now())
 }
 
-// Marked reports whether the IP is exempt from analysis at the given time.
-func (ata *AdaptiveTrafficAnalyzer) Marked(ip string, at time.Time) bool {
-	return ata.marks.active(ip, at)
+// Marked reports whether the IP is exempt from the site's analysis at the given time.
+func (ata *AdaptiveTrafficAnalyzer) Marked(site, ip string, at time.Time) bool {
+	return ata.marks.existing(site).active(ip, at)
 }
 
-// MarkVerified exempts an IP that solved a CAPTCHA.
-func (ata *AdaptiveTrafficAnalyzer) MarkVerified(ip string, ttl time.Duration) {
-	ata.marks.set(ip, time.Now().Add(ttl))
+// MarkVerified exempts an IP that solved a CAPTCHA on the site.
+func (ata *AdaptiveTrafficAnalyzer) MarkVerified(site, ip string, ttl time.Duration) {
+	ata.mark(site, ip, ttl)
 }
 
-// MarkNeutral exempts an IP that is trusted for another reason, such as a verified crawler.
-func (ata *AdaptiveTrafficAnalyzer) MarkNeutral(ip string, ttl time.Duration) {
-	ata.marks.set(ip, time.Now().Add(ttl))
+// MarkNeutral exempts an IP the site trusts for another reason, such as a verified crawler.
+func (ata *AdaptiveTrafficAnalyzer) MarkNeutral(site, ip string, ttl time.Duration) {
+	ata.mark(site, ip, ttl)
+}
+
+func (ata *AdaptiveTrafficAnalyzer) mark(site, ip string, ttl time.Duration) {
+	ata.marks.site(site).set(ip, time.Now().Add(ttl))
 }
 
 func (ata *AdaptiveTrafficAnalyzer) ProcessBatch() {
@@ -305,8 +321,8 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 				Rule:     rules,
 				State:    window.state,
 				Runtime:  ata.rt,
-				Marks:    ata.marks,
-				Evidence: ata.evidence,
+				Marks:    ata.marks.site(site),
+				Evidence: ata.evidence.site(site),
 				Now:      now,
 				Interval: interval,
 			}
@@ -331,6 +347,51 @@ func (ata *AdaptiveTrafficAnalyzer) siteRules(site string) *config.RuleSet {
 		return rules
 	}
 	return nil
+}
+
+// siteExpiry holds one ipExpiry per site, each bounded on its own so a flood of addresses on
+// one site cannot use up the room of another.
+type siteExpiry struct {
+	mu    sync.RWMutex
+	sites map[string]*ipExpiry
+	limit int
+}
+
+func newSiteExpiry(limit int) *siteExpiry {
+	return &siteExpiry{sites: make(map[string]*ipExpiry), limit: limit}
+}
+
+// existing returns the site's entries, or nil, which is an empty set, when it has none.
+func (s *siteExpiry) existing(site string) *ipExpiry {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.sites[site]
+}
+
+// site returns the site's entries, creating them when needed.
+func (s *siteExpiry) site(site string) *ipExpiry {
+	if m := s.existing(site); m != nil {
+		return m
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	m := s.sites[site]
+	if m == nil {
+		m = newIPExpiry(s.limit)
+		s.sites[site] = m
+	}
+	return m
+}
+
+// sweep drops expired entries, and sites left without any, such as ones removed from the configuration.
+func (s *siteExpiry) sweep(now time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for site, m := range s.sites {
+		if m.sweep(now) == 0 {
+			delete(s.sites, site)
+		}
+	}
 }
 
 // ipExpiry holds IPs until an expiry time, bounded to limit entries.
@@ -369,7 +430,8 @@ func (m *ipExpiry) active(ip string, now time.Time) bool {
 	return m.entries[ip].After(now)
 }
 
-func (m *ipExpiry) sweep(now time.Time) {
+// sweep drops expired entries and returns how many remain.
+func (m *ipExpiry) sweep(now time.Time) int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for ip, until := range m.entries {
@@ -377,4 +439,5 @@ func (m *ipExpiry) sweep(now time.Time) {
 			delete(m.entries, ip)
 		}
 	}
+	return len(m.entries)
 }

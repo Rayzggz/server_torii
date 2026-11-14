@@ -12,11 +12,12 @@ type CountryResolver interface {
 
 // TrafficMarker lets request handlers report clients the traffic analyzer must not punish.
 type TrafficMarker interface {
-	MarkVerified(ip string, ttl time.Duration)
-	MarkNeutral(ip string, ttl time.Duration)
+	MarkVerified(site, ip string, ttl time.Duration)
+	MarkNeutral(site, ip string, ttl time.Duration)
 }
 
-// BrowserEvidence reports whether the traffic analyzer has recently seen an IP behave like a browser.
+// BrowserEvidence reports whether the traffic analyzer has recently seen an IP behave like a
+// browser on a site.
 type BrowserEvidence interface {
-	HasBrowserEvidence(ip string) bool
+	HasBrowserEvidence(site, ip string) bool
 }

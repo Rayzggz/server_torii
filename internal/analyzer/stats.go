@@ -30,9 +30,9 @@ type pageHits struct {
 
 // ipBucket is one IP's traffic within a single analysis interval.
 type ipBucket struct {
-	total     int64
-	clientErr int64
-	pageTotal int64
+	total     int64               // requests the site answered; ones Torii answered itself are left out
+	clientErr int64               // of total, answered with 4xx
+	pageTotal int64               // page requests, whoever answered them
 	pages     map[string]pageHits // canonical page URI -> hits
 	okPages   map[string]struct{} // raw page paths answered with content
 	errPaths  map[string]struct{} // canonical URIs answered with 4xx

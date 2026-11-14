@@ -36,23 +36,23 @@ func (rt *Runtime) SetAnalyzer(a Analyzer) {
 	rt.BrowserEvidence = a
 }
 
-// MarkVerified tells the analyzer that ip solved a CAPTCHA.
-func (rt *Runtime) MarkVerified(ip string, ttl time.Duration) {
+// MarkVerified tells the analyzer that ip solved a CAPTCHA on site.
+func (rt *Runtime) MarkVerified(site, ip string, ttl time.Duration) {
 	if rt != nil && rt.TrafficMarker != nil {
-		rt.TrafficMarker.MarkVerified(ip, ttl)
+		rt.TrafficMarker.MarkVerified(site, ip, ttl)
 	}
 }
 
-// MarkNeutral tells the analyzer that ip is trusted for another reason, such as a verified crawler.
-func (rt *Runtime) MarkNeutral(ip string, ttl time.Duration) {
+// MarkNeutral tells the analyzer that site trusts ip for another reason, such as a verified crawler.
+func (rt *Runtime) MarkNeutral(site, ip string, ttl time.Duration) {
 	if rt != nil && rt.TrafficMarker != nil {
-		rt.TrafficMarker.MarkNeutral(ip, ttl)
+		rt.TrafficMarker.MarkNeutral(site, ip, ttl)
 	}
 }
 
-// HasBrowserEvidence reports whether the analyzer recently saw ip behave like a browser.
-func (rt *Runtime) HasBrowserEvidence(ip string) bool {
-	return rt != nil && rt.BrowserEvidence != nil && rt.BrowserEvidence.HasBrowserEvidence(ip)
+// HasBrowserEvidence reports whether the analyzer recently saw ip behave like a browser on site.
+func (rt *Runtime) HasBrowserEvidence(site, ip string) bool {
+	return rt != nil && rt.BrowserEvidence != nil && rt.BrowserEvidence.HasBrowserEvidence(site, ip)
 }
 
 // Rule targets understood by ApplyRule.

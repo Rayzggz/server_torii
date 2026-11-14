@@ -110,15 +110,21 @@ func (det *detection) buildBucket() *bucket {
 			b.ips[l.IP] = ib
 		}
 		canonical := action.CanonicalizeURI(l.URI)
-		ib.total++
-		if isClientError(l.Status) {
-			ib.clientErr++
-			if len(ib.errPaths) < scanCap {
-				ib.errPaths[canonical] = struct{}{}
+		// A response Torii produced is not the site's verdict on the client. Counting its 403
+		// or 429 as a failure would make every block feed the score that caused it, and its
+		// redirect to a verification page is no sign of a browser.
+		torii := l.answeredByTorii()
+		if !torii {
+			ib.total++
+			if isClientError(l.Status) {
+				ib.clientErr++
+				if len(ib.errPaths) < scanCap {
+					ib.errPaths[canonical] = struct{}{}
+				}
 			}
 		}
 		if isAsset(canonical, det.assets) || isAssetContentType(l.ContentType) {
-			if l.Status < 400 {
+			if l.Status < 400 && !torii {
 				ib.evidence = true
 			}
 			continue
@@ -127,6 +133,8 @@ func (det *detection) buildBucket() *bucket {
 		if l.Status == 304 {
 			ib.evidence = true
 		}
+		// Page hits keep counting challenged and blocked requests: hot URI detection has to
+		// see that an attack is still going on while Torii is answering it.
 		ib.pageTotal++
 		if cur, seen := ib.pages[canonical]; seen || len(ib.pages) < maxPagesPerIP {
 			cur.all++
