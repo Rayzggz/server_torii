@@ -58,7 +58,7 @@ func verifyBotRuleSet() *config.RuleSet {
 		VerifyAppleBot:  true,
 	}
 	// CAPTCHA runs after VerifyBot, so a pass proves VerifyBot short-circuited the chain.
-	rs.CAPTCHARule = &config.CaptchaRule{Enabled: true, SecretKey: "1234567890abcdef", CaptchaValidateTime: 600}
+	rs.Challenge = &config.ChallengeRule{Enabled: true, SecretKey: "1234567890abcdef", ClearanceTTL: 600}
 	return rs
 }
 
@@ -76,7 +76,7 @@ func botDecision(rs *config.RuleSet, sharedMem *state.Runtime, ip, ua, features 
 func newVerifyBotEnv() (*state.Runtime, *analyzer.AdaptiveTrafficAnalyzer) {
 	sharedMem := &state.Runtime{}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
-	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
+	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(ata)
 	return sharedMem, ata
@@ -137,8 +137,8 @@ func TestVerifyBotLiveFeatureControl(t *testing.T) {
 		want    string
 	}{
 		// Without VerifyBot the crawler falls through to CAPTCHA like any client.
-		{"disabled in config", "", false, "captcha"},
-		{"forced off by header", "-verify_bot", true, "captcha"},
+		{"disabled in config", "", false, "challenge"},
+		{"forced off by header", "-verify_bot", true, "challenge"},
 		{"forced on by header", "+verify_bot", false, "pass"},
 	}
 	for _, tt := range tests {
@@ -213,7 +213,7 @@ func TestVerifyBotLiveLookalikeUserAgentsGetNoBypass(t *testing.T) {
 	} {
 		t.Run(ua, func(t *testing.T) {
 			sharedMem, ata := newVerifyBotEnv()
-			if got := botDecision(verifyBotRuleSet(), sharedMem, liveCrawlers[0].ip, ua, ""); got != "captcha" {
+			if got := botDecision(verifyBotRuleSet(), sharedMem, liveCrawlers[0].ip, ua, ""); got != "challenge" {
 				t.Fatalf("decision = %q, want captcha", got)
 			}
 			if ata.Marked("", liveCrawlers[0].ip, time.Now()) {

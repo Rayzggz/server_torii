@@ -16,14 +16,23 @@ import (
 
 func testExternalRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		ExternalMigrationRule: &config.ExternalMigrationRule{
-			Enabled:        true,
-			RedirectUrl:    "https://mitigation.invalid/verify",
-			SecretKey:      "external-secret-0123456789",
-			SessionTimeout: 600,
+		Challenge: &config.ChallengeRule{Mode: config.ChallengeExternal,
+			Enabled:      true,
+			RedirectURL:  "https://mitigation.invalid/verify",
+			SecretKey:    "external-secret-0123456789",
+			ClearanceTTL: 600,
 		},
-		CAPTCHARule: &config.CaptchaRule{SecretKey: "external-secret-0123456789"},
 	}
+}
+
+// captchaTwin is the same site with the same key, challenging with a CAPTCHA instead.
+func captchaTwin(ruleSet *config.RuleSet) config.RuleSet {
+	twin := *ruleSet
+	rule := *ruleSet.Challenge
+	rule.Mode = config.ChallengeHCaptcha
+	rule.SessionTTL = 120
+	twin.Challenge = &rule
+	return twin
 }
 
 func testExternalRequest() request.UserRequest {
@@ -32,7 +41,7 @@ func testExternalRequest() request.UserRequest {
 		Host:           "example.com",
 		UserAgent:      "Mozilla/5.0 test-agent",
 		Uri:            "/protected",
-		FeatureControl: feature.ExternalMigration.ControlMask(),
+		FeatureControl: feature.Challenge.ControlMask(),
 	}
 }
 
@@ -45,16 +54,16 @@ func signExternalClearance(reqData request.UserRequest, secret string, ts int64)
 
 func runExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet) *action.Decision {
 	decision := action.NewDecision()
-	ExternalMigration(reqData, ruleSet, decision, &state.Runtime{})
+	Challenge(reqData, ruleSet, decision, &state.Runtime{})
 	return decision
 }
 
 func TestExternalMigrationClearance(t *testing.T) {
 	ruleSet := testExternalRuleSet()
 	base := testExternalRequest()
-	valid := string(GenExternalMigrationClearance(base, *ruleSet))
+	valid := string(GenClearance(base, *ruleSet))
 	now := time.Now().Unix()
-	timeout := ruleSet.ExternalMigrationRule.SessionTimeout
+	timeout := ruleSet.Challenge.ClearanceTTL
 	ts, hash, _ := strings.Cut(valid, ":")
 	flipped := "0"
 	if hash[0] == '0' {
@@ -82,19 +91,19 @@ func TestExternalMigrationClearance(t *testing.T) {
 			r.UserAgent = "curl/8.0"
 		}, false},
 		{"within timeout", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.ExternalMigrationRule.SecretKey, now-timeout+5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SecretKey, now-timeout+5)
 		}, true},
 		{"expired", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.ExternalMigrationRule.SecretKey, now-timeout-5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SecretKey, now-timeout-5)
 		}, false},
 		{"signed with another key", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, "another-secret-0123456789", now)
 		}, false},
 		{"CAPTCHA clearance with the same key", func(r *request.UserRequest) {
-			r.ToriiClearance = string(GenClearance(*r, *ruleSet))
+			r.ToriiClearance = string(GenClearance(*r, captchaTwin(ruleSet)))
 		}, false},
 		{"external session id is not a clearance", func(r *request.UserRequest) {
-			r.ToriiClearance = string(GenExternalMigrationSessionID(*r, *ruleSet))
+			r.ToriiClearance = string(GenSessionID(*r, *ruleSet))
 		}, false},
 	}
 
@@ -109,8 +118,8 @@ func TestExternalMigrationClearance(t *testing.T) {
 				}
 				return
 			}
-			if decision.State != action.Done || decision.Verdict != action.VerdictExternal {
-				t.Fatalf("decision = (%v, %q), want (Done, EXTERNAL)", decision.State, decision.Verdict)
+			if decision.State != action.Done || decision.Verdict != action.VerdictChallenge {
+				t.Fatalf("decision = (%v, %q), want (Done, challenge)", decision.State, decision.Verdict)
 			}
 		})
 	}
@@ -119,7 +128,7 @@ func TestExternalMigrationClearance(t *testing.T) {
 func TestExternalMigrationSessionID(t *testing.T) {
 	ruleSet := testExternalRuleSet()
 	base := testExternalRequest()
-	valid := string(GenExternalMigrationSessionID(base, *ruleSet))
+	valid := string(GenSessionID(base, *ruleSet))
 	ts, hash, _ := strings.Cut(valid, ":")
 
 	tests := []struct {
@@ -139,10 +148,10 @@ func TestExternalMigrationSessionID(t *testing.T) {
 		}, false, ""},
 		{"other key", func(r *request.UserRequest) { r.ToriiSessionID = valid }, false, "another-secret-0123456789"},
 		{"clearance is not a session", func(r *request.UserRequest) {
-			r.ToriiSessionID = string(GenExternalMigrationClearance(*r, *ruleSet))
+			r.ToriiSessionID = string(GenClearance(*r, *ruleSet))
 		}, false, ""},
 		{"CAPTCHA session is not an external session", func(r *request.UserRequest) {
-			r.ToriiSessionID = string(GenSessionID(*r, *ruleSet))
+			r.ToriiSessionID = string(GenSessionID(*r, captchaTwin(ruleSet)))
 		}, false, ""},
 	}
 
@@ -152,12 +161,12 @@ func TestExternalMigrationSessionID(t *testing.T) {
 			tt.mutate(&reqData)
 			rs := *ruleSet
 			if tt.keyOver != "" {
-				rule := *ruleSet.ExternalMigrationRule
+				rule := *ruleSet.Challenge
 				rule.SecretKey = tt.keyOver
-				rs.ExternalMigrationRule = &rule
+				rs.Challenge = &rule
 			}
-			if got := VerifyExternalMigrationSessionIDCookie(reqData, rs); got != tt.wantOK {
-				t.Fatalf("VerifyExternalMigrationSessionIDCookie = %v, want %v", got, tt.wantOK)
+			if got := VerifySessionIDCookie(reqData, rs); got != tt.wantOK {
+				t.Fatalf("VerifySessionIDCookie = %v, want %v", got, tt.wantOK)
 			}
 		})
 	}

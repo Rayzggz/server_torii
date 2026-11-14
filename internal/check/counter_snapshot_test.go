@@ -33,30 +33,31 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	}
 }
 
-func TestCaptchaNilCounterContinue(t *testing.T) {
+// Without a failure counter the failure limit cannot be enforced, but the client is still challenged.
+func TestChallengeNilCounterStillChallenges(t *testing.T) {
 	decision := action.NewDecision()
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			CaptchaFailureLimit: map[int64]int64{1: 1},
+		Challenge: &config.ChallengeRule{
+			SecretKey:            "1234567890abcdef",
+			ClearanceTTL:         60,
+			FailureLimit:         map[int64]int64{1: 1},
+			FailureBlockDuration: 60,
 		},
 	}
-	reqData := request.UserRequest{
-		RemoteIP:       "127.0.0.1",
-		FeatureControl: feature.Captcha.ControlMask(),
-	}
+	reqData := request.UserRequest{RemoteIP: "127.0.0.1"}
 
-	Captcha(reqData, ruleSet, decision, rt)
+	Challenge(reqData, ruleSet, decision, rt)
 
-	if decision.State != action.Continue {
-		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
+	if decision.State != action.Done || decision.Verdict != action.VerdictChallenge {
+		t.Fatalf("decision = %+v, want a challenge", decision)
 	}
 }
 
 func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{},
+		Challenge: &config.ChallengeRule{},
 	}
 	reqData := request.UserRequest{
 		RemoteIP: "127.0.0.1",

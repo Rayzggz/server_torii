@@ -60,8 +60,9 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
-		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
+			Version:    ProtocolVersion,
 			ID:         msgID,
 			OriginNode: originNode,
 			Type:       TypeActionRule,
@@ -103,9 +104,52 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 }
 
 func TestGossipAcceptsCaptchaUnverified(t *testing.T) {
-	payload := ActionRulePayload{Site: "site_a", RuleType: "URI", Value: "/members/:id", Action: string(action.ActionCaptchaUnverified),
+	payload := ActionRulePayload{Site: "site_a", RuleType: "URI", Value: "/members/:id", Action: string(action.ActionChallengeUnverified),
 		ExpiresAt: time.Now().Add(time.Minute).Unix()}
 	if err := validateActionRule(payload, time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A node only installs what a temporary rule can be: a known kind and action, named the way
+// protocol version 2 names them.
+func TestValidateActionRuleVocabulary(t *testing.T) {
+	now := time.Now()
+	rule := func(kind, value, act string) ActionRulePayload {
+		return ActionRulePayload{Site: "site_a", RuleType: kind, Value: value, Action: act, ExpiresAt: now.Add(time.Hour).Unix()}
+	}
+	for name, tt := range map[string]struct {
+		payload ActionRulePayload
+		valid   bool
+	}{
+		"ip block":                 {rule("IP", "1.2.3.4", "block"), true},
+		"uri challenge":            {rule("URI", "/login", "challenge"), true},
+		"uri challenge unverified": {rule("URI", "/login", "challenge_unverified"), true},
+		"version 1 action":         {rule("IP", "1.2.3.4", "BLOCK"), false},
+		"captcha":                  {rule("URI", "/login", "captcha"), false},
+		"allow":                    {rule("IP", "1.2.3.4", "allow"), false},
+		"no action":                {rule("IP", "1.2.3.4", ""), false},
+		"user agent rule":          {rule("UA", "BadBot", "block"), false},
+	} {
+		if err := validateActionRule(tt.payload, now); (err == nil) != tt.valid {
+			t.Errorf("%s: error = %v, want valid = %v", name, err, tt.valid)
+		}
+	}
+}
+
+// A message of another protocol version installs nothing.
+func TestProcessRemoteMessageIgnoresOtherVersions(t *testing.T) {
+	engine := action.NewActionRuleEngine(time.Minute)
+	defer engine.Stop()
+	gm := NewManager(&config.MainConfig{NodeName: "node-a"}, engine)
+	payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(time.Hour).Unix()})
+
+	gm.processRemoteMessage(Message{Version: 1, ID: "old", Type: TypeActionRule, OriginNode: "node-b", Content: string(payload)})
+	if engine.HasIPRule("site_a", "1.2.3.4") {
+		t.Fatal("a version 1 message installed a rule")
+	}
+	gm.processRemoteMessage(Message{Version: ProtocolVersion, ID: "new", Type: TypeActionRule, OriginNode: "node-b", Content: string(payload)})
+	if !engine.HasIPRule("site_a", "1.2.3.4") {
+		t.Fatal("a current message installed no rule")
 	}
 }

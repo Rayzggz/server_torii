@@ -1,5 +1,5 @@
-# A section left out keeps its check disabled. A section that is present must be complete and
-# valid even with `enabled: false`: unknown keys and invalid values reject the whole file.
+# Every section of this file is required and must be complete and valid, also with
+# `enabled: false`: a missing section, an unknown key or an invalid value rejects the whole file.
 IPAllow:
   enabled: true
 IPBlock:
@@ -18,17 +18,22 @@ CountryRule:
   unknown_action: continue
   countries:
     GB: continue
-    US: captcha
-CAPTCHA:
+    US: challenge
+# The one challenge of the site: how a client proves itself. `enabled: true` challenges every
+# client. With `enabled: false` only the clients a rule singles out are challenged: the IP and
+# URL CAPTCHA lists, a country or custom rule with the `challenge` action, and the traffic
+# analyzer. A rule that asks for a challenge needs this section.
+Challenge:
   enabled: true
-  provider: "hcaptcha"
-  secret_key: "0378b0f84c4310279918d71a5647ba5d"
-  captcha_validate_time: 600
-  captcha_challenge_session_timeout: 120
+  mode: "hcaptcha" # hcaptcha | altcha: a CAPTCHA page; external: a redirect to an external provider
+  secret_key: "0378b0f84c4310279918d71a5647ba5d" # signs the cookies; every node of a cluster needs the same value
+  clearance_ttl: 600 # seconds a client stays cleared after passing
+  session_ttl: 120 # seconds a client has to answer the CAPTCHA; not used by the external mode
   hcaptcha_secret: ""
   altcha_hmac_secret: "0378b0f84c4310279918d71a5647ba5d"
   altcha_cost: 50000
-  CaptchaFailureLimit:
+  # redirect_url: "https://example.com/migration" # where the external mode sends the client
+  failure_limit: # a client challenged more often than this without passing is blocked
     - "300/300s"
   failure_block_duration: 1200
 HTTPFlood:
@@ -48,21 +53,16 @@ VerifyBot:
   verify_yandex_bot: true
   verify_sogou_bot: true
   verify_apple_bot: true
-ExternalMigration:
-  enabled: false
-  redirect_url: "https://example.com/migration"
-  secret_key: "0378b0f84c4310279918d71a5647ba5d"
-  session_timeout: 1800
 AdaptiveTrafficAnalyzer:
   enabled: true
   analysis_interval: 10
   window_buckets: 30
-  browser_evidence: # decides which clients look like browsers; used by both detections and captcha_unverified
+  browser_evidence: # decides which clients look like browsers; used by both detections and challenge_unverified
     ttl: 21600
     distinct_pages: 3
     asset_extensions: [] # empty uses the built-in static asset list
   uri_detection:
-    action: captcha_unverified # observe | captcha_unverified | captcha | block; captcha_unverified challenges only clients without browser evidence
+    action: challenge_unverified # observe | challenge_unverified | challenge | block; challenge_unverified challenges only clients without browser evidence
     block_duration: 600
     min_requests: 100
     min_distinct_ips: 50
@@ -75,7 +75,7 @@ AdaptiveTrafficAnalyzer:
       min_reference_requests: 200
   ip_detection:
     enabled: true
-    action: observe # observe | captcha | block
+    action: observe # observe | challenge_unverified | challenge | block
     block_duration: 600
     max_block_duration: 86400
     score_threshold: 50
@@ -95,9 +95,10 @@ CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after 
   # Logic: not !, and &&, xor ^^, or || (in this precedence order), parentheses
   # Functions: lower(), upper(), url_decode(), len(), starts_with(f, "x"), ends_with(f, "x")
   # Actions: allow (pass now, skip every later check), skip (skip the checks in `skip`, keep evaluating rules),
-  #   continue (stop evaluating rules), log (log and keep evaluating), block, captcha, external
+  #   continue (stop evaluating rules), log (log and keep evaluating), block,
+  #   challenge (stop evaluating rules; the client is challenged unless a later check blocks or rate-limits it)
   # Skip targets: CustomRules (the remaining rules), IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule,
-  #   HTTPFlood, ExternalMigration, Captcha
+  #   HTTPFlood, Challenge (only the challenge of every client: one a rule asked for is never skipped)
   rules:
     - id: block-wp-scan
       description: "WordPress probes on a non-WordPress site"
@@ -105,7 +106,7 @@ CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after 
       action: block
     - id: admin-hotlink
       expression: 'starts_with(http.request.uri.path, "/admin") and not http.referer wildcard "https://example.com/*"'
-      action: captcha
+      action: challenge
     - id: api-key-skip-flood
       expression: 'starts_with(http.request.uri.path, "/api/") and http.request.headers["x-api-key"] ne ""'
       action: skip

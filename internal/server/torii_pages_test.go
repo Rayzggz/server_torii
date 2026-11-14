@@ -74,8 +74,8 @@ func TestVerdictPagesRenderTemplates(t *testing.T) {
 
 func TestVerdictPagesMissingTemplates(t *testing.T) {
 	cfg := &config.MainConfig{WebPath: "/torii", ErrorPage: t.TempDir()}
-	ruleSet := captchaPageRuleSet(check.CaptchaProviderAltcha)
-	for _, verdict := range []action.Verdict{action.VerdictBlock, action.VerdictRateLimit, action.VerdictCaptcha} {
+	ruleSet := captchaPageRuleSet(config.ChallengeAltcha)
+	for _, verdict := range []action.Verdict{action.VerdictBlock, action.VerdictRateLimit, action.VerdictChallenge} {
 		t.Run(verdict.String(), func(t *testing.T) {
 			rec := serveVerdictPage(verdict, request.UserRequest{}, ruleSet, cfg, pagesFor(cfg))
 			if rec.Code != http.StatusInternalServerError {
@@ -169,13 +169,13 @@ func TestNodeEndpoints(t *testing.T) {
 }
 
 func testAltchaServerRuleSet() *config.RuleSet {
-	return &config.RuleSet{CAPTCHARule: &config.CaptchaRule{
-		Provider:                       check.CaptchaProviderAltcha,
-		SecretKey:                      "1234567890abcdef",
-		CaptchaValidateTime:            600,
-		CaptchaChallengeSessionTimeout: 120,
-		AltchaHMACSecret:               "altcha-secret",
-		AltchaCost:                     1,
+	return &config.RuleSet{Challenge: &config.ChallengeRule{
+		Mode:             config.ChallengeAltcha,
+		SecretKey:        "1234567890abcdef",
+		ClearanceTTL:     600,
+		SessionTTL:       120,
+		AltchaHMACSecret: "altcha-secret",
+		AltchaCost:       1,
 	}}
 }
 
@@ -211,7 +211,7 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 	reqData := request.UserRequest{RemoteIP: "203.0.113.77", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 	sharedMem := &state.Runtime{}
-	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
+	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(ata)
 
@@ -228,7 +228,7 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 	if !ata.Marked("", reqData.RemoteIP, now) {
 		t.Fatal("solving the CAPTCHA did not exempt the IP from traffic analysis")
 	}
-	ttl := time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime) * time.Second
+	ttl := time.Duration(ruleSet.Challenge.ClearanceTTL) * time.Second
 	if ata.Marked("", reqData.RemoteIP, now.Add(ttl+time.Second)) {
 		t.Fatal("verified mark outlives the CAPTCHA validate time")
 	}
@@ -241,7 +241,7 @@ func TestCaptchaFailureDoesNotMarkClient(t *testing.T) {
 	ruleSet := testAltchaServerRuleSet()
 	reqData := request.UserRequest{RemoteIP: "203.0.113.79", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	sharedMem := &state.Runtime{}
-	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
+	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)
 	sharedMem.SetAnalyzer(ata)
 
@@ -291,14 +291,13 @@ func TestCaptchaVerifierErrorReturnsRetryableStatus(t *testing.T) {
 	solveRuleSet := testAltchaServerRuleSet()
 	// Empty secrets make the ALTCHA verifier itself fail, standing in for an unreachable provider.
 	brokenRuleSet := testAltchaServerRuleSet()
-	brokenRuleSet.CAPTCHARule.SecretKey = ""
-	brokenRuleSet.CAPTCHARule.AltchaHMACSecret = ""
+	brokenRuleSet.Challenge.AltchaHMACSecret = ""
 
 	reqData := request.UserRequest{RemoteIP: "203.0.113.81", Host: "example.com", UserAgent: "Mozilla/5.0 test"}
 	reqData.ToriiSessionID = string(check.GenSessionID(reqData, *brokenRuleSet))
 	sharedMem := &state.Runtime{}
 	counter := ratelimit.NewCounter(1, 60)
-	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+	sharedMem.ChallengeFailureLimitCounter.Store(counter)
 
 	rec := postCaptcha(reqData, brokenRuleSet, sharedMem, solveAltcha(t, solveRuleSet, reqData))
 

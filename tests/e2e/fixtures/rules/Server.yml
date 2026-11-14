@@ -9,16 +9,19 @@ CountryRule:
   enabled: false
   default_action: block
   unknown_action: continue
-  countries: {US: captcha, AU: continue}
-CAPTCHA:
+  countries: {US: challenge, AU: continue}
+# One challenge per site: ALTCHA here, the external provider on the "external" site, which
+# setup_cluster makes by changing the mode.
+Challenge:
   enabled: false
-  provider: altcha
-  secret_key: "e2e-only-captcha-secret-never-use-in-production"
-  captcha_validate_time: 5
-  captcha_challenge_session_timeout: 120
+  mode: altcha
+  secret_key: "e2e-only-challenge-secret-never-use-in-production"
+  clearance_ttl: 5
+  session_ttl: 120
   altcha_hmac_secret: "e2e-only-altcha-secret-never-use-in-production"
   altcha_cost: 1
-  CaptchaFailureLimit: ["20/30s"]
+  redirect_url: "https://mitigation.invalid/verify"
+  failure_limit: ["20/30s"]
   failure_block_duration: 300
 HTTPFlood:
   enabled: false
@@ -34,11 +37,6 @@ VerifyBot:
   verify_yandex_bot: true
   verify_sogou_bot: true
   verify_apple_bot: true
-ExternalMigration:
-  enabled: false
-  redirect_url: "https://mitigation.invalid/verify"
-  secret_key: "e2e-only-external-secret-never-use-in-production"
-  session_timeout: 5
 AdaptiveTrafficAnalyzer:
   enabled: false
   analysis_interval: 2
@@ -65,16 +63,16 @@ CustomRules:
     - id: country-expression
       expression: 'http.request.uri.path eq "/e2e/country" and ip.src.country eq "US"'
       action: block
-    - id: external-expression
-      expression: 'http.request.uri.path eq "/e2e/external"'
-      action: external
+    - id: challenge-expression
+      expression: 'http.request.uri.path eq "/e2e/challenge"'
+      action: challenge
     - id: continue-expression
       expression: 'http.request.uri.path eq "/e2e/continue"'
       action: continue
     - id: skip-remaining
       expression: 'http.request.uri.path eq "/e2e/skip"'
       action: skip
-      skip: [CustomRules, Captcha, ExternalMigration]
+      skip: [CustomRules, Challenge]
     - id: unreachable-block
       expression: 'http.request.uri.path in {"/e2e/continue" "/e2e/skip"}'
       action: block
@@ -87,9 +85,9 @@ CustomRules:
     - id: block-delete
       expression: 'http.request.method eq "DELETE" and not ip.src in {198.18.1.0/24}'
       action: block
-    - id: captcha-badbot
+    - id: challenge-badbot
       expression: 'http.user_agent wildcard "*badbot*"'
-      action: captcha
+      action: challenge
     - id: allow-monitor
       expression: 'ip.src in {198.18.2.0/24} and http.request.uri.path eq "/health"'
       action: allow

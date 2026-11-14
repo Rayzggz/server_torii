@@ -1,6 +1,7 @@
 package config
 
 import (
+	"server_torii/internal/action"
 	"server_torii/internal/feature"
 	"server_torii/internal/iptrie"
 	"server_torii/internal/rules"
@@ -19,17 +20,16 @@ type RuleSet struct {
 	URLBlockRule                *URLListRule
 	IPCAPTCHARule               *IPListRule
 	URLCAPTCHARule              *URLListRule
-	CAPTCHARule                 *CaptchaRule
+	Challenge                   *ChallengeRule
 	VerifyBotRule               *VerifyBotRule
 	HTTPFloodRule               *HTTPFloodRule
-	ExternalMigrationRule       *ExternalMigrationRule
 	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule
 	CountryRule                 *CountryRule
 	CustomRules                 *rules.CustomRules
 }
 
-// NewRuleSet returns a rule set with every rule present, disabled and empty, so code that reads
-// a loaded site never meets a nil rule.
+// NewRuleSet returns a rule set with every rule present, disabled and empty, for the loader to
+// fill from the site's files. Code that reads a loaded site never meets a nil rule.
 func NewRuleSet() *RuleSet {
 	return &RuleSet{
 		IPAllowRule:                 &IPListRule{Trie: &iptrie.TrieNode{}},
@@ -38,12 +38,11 @@ func NewRuleSet() *RuleSet {
 		URLAllowRule:                &URLListRule{List: &urllist.URLRuleList{}},
 		URLBlockRule:                &URLListRule{List: &urllist.URLRuleList{}},
 		URLCAPTCHARule:              &URLListRule{List: &urllist.URLRuleList{}},
-		CAPTCHARule:                 &CaptchaRule{},
+		Challenge:                   &ChallengeRule{},
 		VerifyBotRule:               &VerifyBotRule{},
 		HTTPFloodRule:               &HTTPFloodRule{},
-		ExternalMigrationRule:       &ExternalMigrationRule{},
 		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
-		CountryRule:                 &CountryRule{DefaultAction: CountryContinue, UnknownAction: CountryContinue, Countries: make(map[string]CountryAction)},
+		CountryRule:                 &CountryRule{DefaultAction: action.ActionContinue, UnknownAction: action.ActionContinue, Countries: make(map[string]action.Action)},
 		CustomRules:                 &rules.CustomRules{},
 	}
 }
@@ -72,10 +71,8 @@ func (rs *RuleSet) FeatureEnabled(c feature.Check) bool {
 		return rs.VerifyBotRule != nil && rs.VerifyBotRule.Enabled
 	case feature.HTTPFlood:
 		return rs.HTTPFloodRule != nil && rs.HTTPFloodRule.Enabled
-	case feature.ExternalMigration:
-		return rs.ExternalMigrationRule != nil && rs.ExternalMigrationRule.Enabled
-	case feature.Captcha:
-		return rs.CAPTCHARule != nil && rs.CAPTCHARule.Enabled
+	case feature.Challenge:
+		return rs.Challenge != nil && rs.Challenge.Enabled
 	default:
 		// ActionRule has no switch: it is driven by the rules other components install at runtime.
 		return false

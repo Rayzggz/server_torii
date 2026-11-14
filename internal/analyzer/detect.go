@@ -565,15 +565,10 @@ func (e *enforcer) hasIPRule(ip string) bool {
 }
 
 // apply records the rule. limited broadcasts count toward maxBroadcast; the rest stay local.
-func (e *enforcer) apply(ruleType, value string, act config.AnalyzerAction, dur time.Duration, limited bool) {
-	var at action.ActionType
+// An action that installs no rule, such as observe, does nothing.
+func (e *enforcer) apply(kind action.RuleKind, value string, act action.Action, dur time.Duration, limited bool) {
 	switch act {
-	case config.AnalyzerCaptchaUnverified:
-		at = action.ActionCaptchaUnverified
-	case config.AnalyzerCaptcha:
-		at = action.ActionCaptcha
-	case config.AnalyzerBlock:
-		at = action.ActionBlock
+	case action.ActionChallengeUnverified, action.ActionChallenge, action.ActionBlock:
 	default:
 		return
 	}
@@ -589,16 +584,16 @@ func (e *enforcer) apply(ruleType, value string, act config.AnalyzerAction, dur 
 			e.broadcasts++
 		}
 	}
-	e.rt.ApplyRule(e.site, ruleType, value, at, dur, broadcast)
+	e.rt.ApplyRule(e.site, kind, value, act, dur, broadcast)
 }
 
-func actionVerb(act config.AnalyzerAction) string {
+func actionVerb(act action.Action) string {
 	switch act {
-	case config.AnalyzerCaptchaUnverified:
-		return "CAPTCHA (clients without browser evidence)"
-	case config.AnalyzerCaptcha:
-		return "CAPTCHA (every visitor)"
-	case config.AnalyzerBlock:
+	case action.ActionChallengeUnverified:
+		return "CHALLENGE (clients without browser evidence)"
+	case action.ActionChallenge:
+		return "CHALLENGE (every visitor)"
+	case action.ActionBlock:
 		return "BLOCK"
 	default:
 		return "[observe] would act on"

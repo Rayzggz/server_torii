@@ -2,6 +2,7 @@ package config
 
 import (
 	"path/filepath"
+	"server_torii/internal/action"
 	"strings"
 	"testing"
 )
@@ -12,8 +13,8 @@ func TestCountryRuleSchema(t *testing.T) {
 		invalid     bool
 	}{
 		{"defaults", "{}", false},
-		{"normalized", "countries: { ' us ': captcha, GB: continue }", false},
-		{"actions", "default_action: block\nunknown_action: captcha", false},
+		{"normalized", "countries: { ' us ': challenge, GB: continue }", false},
+		{"actions", "default_action: block\nunknown_action: challenge", false},
 		{"duplicate normalized", "countries: { us: block, US: continue }", true},
 		{"duplicate exact", "countries: { US: block, US: continue }", true},
 		{"invalid code", "countries: { USA: block }", true},
@@ -36,10 +37,10 @@ func TestCountryRuleSchema(t *testing.T) {
 			if (err != nil) != tt.invalid {
 				t.Fatalf("error = %v, invalid = %t", err, tt.invalid)
 			}
-			if tt.name == "defaults" && (rule.DefaultAction != CountryContinue || rule.UnknownAction != CountryContinue || len(rule.Countries) != 0) {
+			if tt.name == "defaults" && (rule.DefaultAction != action.ActionContinue || rule.UnknownAction != action.ActionContinue || len(rule.Countries) != 0) {
 				t.Fatalf("wrong defaults: %#v", rule)
 			}
-			if tt.name == "normalized" && rule.Countries["US"] != CountryCaptcha {
+			if tt.name == "normalized" && rule.Countries["US"] != action.ActionChallenge {
 				t.Fatalf("wrong normalization: %#v", rule)
 			}
 		})
@@ -47,19 +48,19 @@ func TestCountryRuleSchema(t *testing.T) {
 }
 
 func TestCountryCaptchaConfiguration(t *testing.T) {
-	for _, policy := range []string{"default_action: captcha", "unknown_action: captcha", "countries: { US: captcha }"} {
+	for _, policy := range []string{"default_action: challenge", "unknown_action: challenge", "countries: { US: challenge }"} {
 		for _, config := range []struct {
 			name, yaml string
 			invalid    bool
 		}{
-			{"missing", "", true},
-			{"invalid", "CAPTCHA: { enabled: false }", true},
-			{"valid disabled", `CAPTCHA:
+			{"invalid", "Challenge: { enabled: false }", true},
+			{"valid disabled", `Challenge:
+  mode: hcaptcha
   enabled: false
   secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
-  CaptchaFailureLimit: ["3/1m"]
+  clearance_ttl: 60
+  session_ttl: 120
+  failure_limit: ["3/1m"]
   failure_block_duration: 60
 `, false},
 		} {
@@ -81,7 +82,7 @@ func TestExampleCountryRulesLoad(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != CountryCaptcha || rules.CountryRule.DefaultAction != CountryBlock {
+	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != action.ActionChallenge || rules.CountryRule.DefaultAction != action.ActionBlock {
 		t.Fatalf("unexpected example: %#v", rules.CountryRule)
 	}
 }

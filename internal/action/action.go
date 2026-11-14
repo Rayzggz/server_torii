@@ -13,17 +13,15 @@ type Verdict uint8
 const (
 	VerdictAllow     Verdict = iota // request passes
 	VerdictBlock                    // request is forbidden
-	VerdictCaptcha                  // request must solve a CAPTCHA
+	VerdictChallenge                // client must prove itself: a CAPTCHA, or a visit to the external provider
 	VerdictRateLimit                // request exceeded a rate limit
-	VerdictExternal                 // request is handed to external migration
 )
 
 var verdictNames = [...]string{
 	VerdictAllow:     "pass",
 	VerdictBlock:     "block",
-	VerdictCaptcha:   "captcha",
+	VerdictChallenge: "challenge",
 	VerdictRateLimit: "rate_limit",
-	VerdictExternal:  "external",
 }
 
 // String returns the wire label of the verdict, as sent in the Torii-Decision header.
@@ -39,6 +37,10 @@ type Decision struct {
 	Verdict  Verdict
 	State    checkState
 	SkipMask uint32 // checks to skip for the rest of the request, set by custom skip rules
+	// RequireChallenge is set by a check whose rule asks for the client to be challenged. The
+	// checks that follow still run and may end the pipeline with something stricter; if none
+	// does, the Challenge check runs whatever its switch and the skip mask say.
+	RequireChallenge bool
 }
 
 func NewDecision() *Decision {

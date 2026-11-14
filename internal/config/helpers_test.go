@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -29,7 +30,47 @@ func writeRuleFiles(t *testing.T, dir string, files map[string]string) {
 	}
 }
 
+// disabledSections is a complete Server.yml with every check switched off, by section.
+var disabledSections = []struct{ name, text string }{
+	{"IPAllow", "IPAllow: {enabled: false}\n"},
+	{"IPBlock", "IPBlock: {enabled: false}\n"},
+	{"IPCAPTCHA", "IPCAPTCHA: {enabled: false}\n"},
+	{"URLAllow", "URLAllow: {enabled: false}\n"},
+	{"URLBlock", "URLBlock: {enabled: false}\n"},
+	{"URLCAPTCHA", "URLCAPTCHA: {enabled: false}\n"},
+	{"CountryRule", "CountryRule: {enabled: false}\n"},
+	{"Challenge", "Challenge: {enabled: false, mode: hcaptcha, secret_key: 1234567890abcdef, clearance_ttl: 60, session_ttl: 120, failure_limit: [\"3/1m\"], failure_block_duration: 60}\n"},
+	{"HTTPFlood", "HTTPFlood: {enabled: false, HTTPFloodSpeedLimit: [\"5/10s\"], HTTPFloodSameURILimit: [\"3/10s\"], HTTPFloodFailureLimit: [\"3/30s\"], failure_block_duration: 300}\n"},
+	{"VerifyBot", "VerifyBot: {enabled: false}\n"},
+	{"AdaptiveTrafficAnalyzer", "AdaptiveTrafficAnalyzer: {enabled: false}\n"},
+	{"CustomRules", "CustomRules: {enabled: false}\n"},
+}
+
+// completeServerRules adds, switched off, every section the text of a Server.yml leaves out, so
+// a test only writes the sections it is about.
+func completeServerRules(content string) string {
+	if content != "" && !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+	for _, section := range disabledSections {
+		if !strings.HasPrefix(content, section.name+":") && !strings.Contains(content, "\n"+section.name+":") {
+			content += section.text
+		}
+	}
+	return content
+}
+
+// writeFile writes a file of a site. A Server.yml is completed with the sections it leaves out;
+// writeRawFile writes it as it is.
 func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if filepath.Base(path) == "Server.yml" {
+		content = completeServerRules(content)
+	}
+	writeRawFile(t, path, content)
+}
+
+func writeRawFile(t *testing.T, path, content string) {
 	t.Helper()
 
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

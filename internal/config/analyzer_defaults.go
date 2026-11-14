@@ -1,6 +1,7 @@
 package config
 
 import (
+	"server_torii/internal/action"
 	"strings"
 )
 
@@ -35,14 +36,14 @@ var DefaultATAAssetExtensions = []string{
 }
 
 // NormalizeAnalyzerAction lowercases a configured action. Unknown values fall back to observe.
-func NormalizeAnalyzerAction(a AnalyzerAction) (AnalyzerAction, bool) {
-	switch v := AnalyzerAction(strings.ToLower(strings.TrimSpace(string(a)))); v {
-	case AnalyzerObserve, AnalyzerCaptchaUnverified, AnalyzerCaptcha, AnalyzerBlock:
+func NormalizeAnalyzerAction(a action.Action) (action.Action, bool) {
+	switch v := action.Action(strings.ToLower(strings.TrimSpace(string(a)))); v {
+	case action.ActionObserve, action.ActionChallengeUnverified, action.ActionChallenge, action.ActionBlock:
 		return v, true
 	case "":
-		return AnalyzerObserve, true
+		return action.ActionObserve, true
 	default:
-		return AnalyzerObserve, false
+		return action.ActionObserve, false
 	}
 }
 

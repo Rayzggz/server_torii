@@ -23,8 +23,8 @@ func TestDecisionTransitions(t *testing.T) {
 
 func TestVerdictString(t *testing.T) {
 	for v, want := range map[Verdict]string{
-		VerdictAllow: "pass", VerdictBlock: "block", VerdictCaptcha: "captcha",
-		VerdictRateLimit: "rate_limit", VerdictExternal: "external", Verdict(255): "UNKNOWN",
+		VerdictAllow: "pass", VerdictBlock: "block", VerdictChallenge: "challenge",
+		VerdictRateLimit: "rate_limit", Verdict(255): "UNKNOWN",
 	} {
 		if got := v.String(); got != want {
 			t.Errorf("Verdict(%d).String() = %q, want %q", v, got, want)

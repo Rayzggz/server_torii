@@ -12,16 +12,12 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
-	"strings"
 	"time"
 
 	altcha "github.com/altcha-org/altcha-lib-go/v2"
 )
 
 const (
-	CaptchaProviderHCaptcha = "hcaptcha"
-	CaptchaProviderAltcha   = "altcha"
-
 	altchaAlgorithm = "PBKDF2/SHA-512"
 	altchaKeyLength = 32
 )
@@ -42,14 +38,14 @@ const (
 )
 
 func hasCaptchaResponse(r *http.Request, ruleSet *config.RuleSet) bool {
-	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
+	if IsAltcha(ruleSet.Challenge) {
 		return r.FormValue("altcha") != ""
 	}
 	return r.FormValue("h-captcha-response") != ""
 }
 
 func verifyCaptchaResponse(r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet) (captchaVerificationResult, error) {
-	if captchaProvider(ruleSet.CAPTCHARule) == CaptchaProviderAltcha {
+	if IsAltcha(ruleSet.Challenge) {
 		return verifyAltchaResponse(r, reqData, ruleSet)
 	}
 
@@ -70,7 +66,7 @@ func verifyHCaptchaResponse(r *http.Request, reqData request.UserRequest, ruleSe
 	}
 
 	data := url.Values{}
-	data.Set("secret", ruleSet.CAPTCHARule.HCaptchaSecret)
+	data.Set("secret", ruleSet.Challenge.HCaptchaSecret)
 	data.Set("response", hCaptchaResponse)
 	data.Set("remoteip", reqData.RemoteIP)
 
@@ -129,7 +125,7 @@ func verifyAltchaResponse(r *http.Request, reqData request.UserRequest, ruleSet 
 		Challenge:           payload.Challenge,
 		Solution:            payload.Solution,
 		DeriveKey:           altcha.DeriveKeyPBKDF2(),
-		HMACSignatureSecret: altchaHMACSecret(ruleSet.CAPTCHARule),
+		HMACSignatureSecret: altchaHMACSecret(ruleSet.Challenge),
 	})
 	if err != nil {
 		return captchaVerificationInvalid, fmt.Errorf("error verifying ALTCHA response: %v", err)
@@ -160,7 +156,7 @@ func altchaChallengeSessionBinding(challenge altcha.Challenge) (string, bool) {
 }
 
 func altchaSessionBinding(reqData request.UserRequest, ruleSet config.RuleSet) string {
-	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.SecretKey))
 	mac.Write([]byte(reqData.ToriiSessionID))
 	mac.Write([]byte(reqData.Host))
 	mac.Write([]byte(GetClearanceUserAgent(reqData.UserAgent)))
@@ -169,12 +165,12 @@ func altchaSessionBinding(reqData request.UserRequest, ruleSet config.RuleSet) s
 }
 
 func GenAltchaChallenge(ruleSet config.RuleSet, reqData request.UserRequest) (altcha.Challenge, error) {
-	expiresAt := time.Now().Add(time.Duration(ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout) * time.Second)
+	expiresAt := time.Now().Add(time.Duration(ruleSet.Challenge.SessionTTL) * time.Second)
 	return altcha.CreateChallenge(altcha.CreateChallengeOptions{
 		Algorithm:           altchaAlgorithm,
 		DeriveKey:           altcha.DeriveKeyPBKDF2(),
-		HMACSignatureSecret: altchaHMACSecret(ruleSet.CAPTCHARule),
-		Cost:                ruleSet.CAPTCHARule.AltchaCost,
+		HMACSignatureSecret: altchaHMACSecret(ruleSet.Challenge),
+		Cost:                ruleSet.Challenge.AltchaCost,
 		KeyLength:           altchaKeyLength,
 		ExpiresAt:           &expiresAt,
 		Data: map[string]interface{}{
@@ -183,20 +179,11 @@ func GenAltchaChallenge(ruleSet config.RuleSet, reqData request.UserRequest) (al
 	})
 }
 
-func IsAltchaProvider(rule *config.CaptchaRule) bool {
-	return captchaProvider(rule) == CaptchaProviderAltcha
+// IsAltcha reports whether the site's challenge is an ALTCHA proof of work.
+func IsAltcha(rule *config.ChallengeRule) bool {
+	return rule != nil && rule.Mode == config.ChallengeAltcha
 }
 
-func captchaProvider(rule *config.CaptchaRule) string {
-	if rule == nil || rule.Provider == "" {
-		return CaptchaProviderHCaptcha
-	}
-	return strings.ToLower(rule.Provider)
-}
-
-func altchaHMACSecret(rule *config.CaptchaRule) string {
-	if rule.AltchaHMACSecret != "" {
-		return rule.AltchaHMACSecret
-	}
-	return rule.SecretKey
+func altchaHMACSecret(rule *config.ChallengeRule) string {
+	return rule.AltchaHMACSecret
 }

@@ -22,14 +22,17 @@ import (
 // site, selected by the URI the visitor requested. It reports false, writing nothing, for any other URI.
 func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) bool {
 	webPath := s.cfg.WebPath
+	// The endpoints of a challenge exist only on a site that uses that kind of challenge.
+	captcha := ruleSet.Challenge.ShowsCaptcha()
+	external := !captcha
 	switch {
-	case reqData.Uri == webPath+"/captcha/challenge":
-		handleCaptchaChallenge(w, r, reqData, ruleSet)
-	case reqData.Uri == webPath+"/captcha":
-		s.handleCaptchaSubmission(w, r, reqData, ruleSet, pages)
 	case reqData.Uri == webPath+"/health_check":
 		s.handleHealthCheck(w, reqData)
-	case strings.HasPrefix(reqData.Uri, webPath+"/external_migration"):
+	case captcha && reqData.Uri == webPath+"/captcha/challenge":
+		handleCaptchaChallenge(w, r, reqData, ruleSet)
+	case captcha && reqData.Uri == webPath+"/captcha":
+		s.handleCaptchaSubmission(w, r, reqData, ruleSet, pages)
+	case external && strings.HasPrefix(reqData.Uri, webPath+"/external_migration"):
 		s.handleExternalMigration(w, r, reqData, ruleSet, pages)
 	default:
 		return false
@@ -49,9 +52,7 @@ func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request,
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		status = http.StatusServiceUnavailable
 	case check.SubmissionGood:
-		if ruleSet.CAPTCHARule != nil {
-			s.rt.MarkVerified(reqData.Site, reqData.RemoteIP, time.Duration(ruleSet.CAPTCHARule.CaptchaValidateTime)*time.Second)
-		}
+		s.rt.MarkVerified(reqData.Site, reqData.RemoteIP, time.Duration(ruleSet.Challenge.ClearanceTTL)*time.Second)
 		setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 	}
 	w.WriteHeader(status)
@@ -65,7 +66,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData requ
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if !check.IsAltchaProvider(ruleSet.CAPTCHARule) {
+	if !check.IsAltcha(ruleSet.Challenge) {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -151,20 +152,20 @@ func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if !check.VerifyExternalMigrationSessionIDCookie(reqData, *ruleSet) {
+	if !check.VerifySessionIDCookie(reqData, *ruleSet) {
 		logx.Info(reqData, "Session verification failed for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid session")
 		return
 	}
 
-	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.ExternalMigrationRule.SecretKey)
+	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.Challenge.SecretKey)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
 		logx.Info(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid migration signature")
 		return
 	}
 
-	setToriiCookie(w, "__torii_clearance", string(check.GenExternalMigrationClearance(reqData, *ruleSet)), 0)
+	setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 	http.Redirect(w, r, originalURI, http.StatusFound)
 }
 
@@ -277,12 +278,16 @@ func externalRedirectLocation(redirectURL, domain, sessionID, originalURI, hmacV
 }
 
 // serveVerdict answers a request the checks did not let through with the response the visitor
-// should get: an error page, the CAPTCHA page, or the redirect to the external provider.
+// should get: an error page, or the challenge of the site: its CAPTCHA page or the redirect to the external provider.
 func (s *Server) serveVerdict(w http.ResponseWriter, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages, verdict action.Verdict) {
 	switch verdict {
-	case action.VerdictCaptcha:
+	case action.VerdictChallenge:
+		if !ruleSet.Challenge.ShowsCaptcha() {
+			s.redirectToExternalMigration(w, reqData, ruleSet)
+			return
+		}
 		page := config.PageCaptcha
-		if check.IsAltchaProvider(ruleSet.CAPTCHARule) {
+		if check.IsAltcha(ruleSet.Challenge) {
 			page = config.PageCaptchaAltcha
 		}
 		body, ok := s.renderPage(w, reqData, pages, page, nil)
@@ -295,9 +300,6 @@ func (s *Server) serveVerdict(w http.ResponseWriter, reqData request.UserRequest
 	case action.VerdictRateLimit:
 		s.serveErrorPage(w, reqData, pages, config.PageTooManyRequests, http.StatusTooManyRequests)
 
-	case action.VerdictExternal:
-		s.redirectToExternalMigration(w, reqData, ruleSet)
-
 	default:
 		s.serveErrorPage(w, reqData, pages, config.PageForbidden, http.StatusForbidden)
 	}
@@ -305,7 +307,7 @@ func (s *Server) serveVerdict(w http.ResponseWriter, reqData request.UserRequest
 
 // redirectToExternalMigration sends the visitor to the external provider with a signed session.
 func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData request.UserRequest, ruleSet *config.RuleSet) {
-	sessionID := string(check.GenExternalMigrationSessionID(reqData, *ruleSet))
+	sessionID := string(check.GenSessionID(reqData, *ruleSet))
 	setToriiCookie(w, "__torii_session_id", sessionID, http.SameSiteLaxMode)
 
 	sessionParts := strings.Split(sessionID, ":")
@@ -315,9 +317,9 @@ func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData requ
 		return
 	}
 	timestamp := sessionParts[0]
-	hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.ExternalMigrationRule.SecretKey)
+	hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.Challenge.SecretKey)
 
-	w.Header().Set("Location", externalRedirectLocation(ruleSet.ExternalMigrationRule.RedirectUrl, reqData.Host, sessionID, reqData.Uri, hmacValue))
+	w.Header().Set("Location", externalRedirectLocation(ruleSet.Challenge.RedirectURL, reqData.Host, sessionID, reqData.Uri, hmacValue))
 	w.WriteHeader(http.StatusFound)
 	_, _ = w.Write([]byte("OK"))
 }

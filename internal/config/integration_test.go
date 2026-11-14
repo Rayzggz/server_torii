@@ -3,6 +3,7 @@ package config
 import (
 	"net"
 	"path/filepath"
+	"server_torii/internal/action"
 	"testing"
 )
 
@@ -28,14 +29,15 @@ CountryRule:
   enabled: true
   default_action: block
   countries:
-    us: captcha
-CAPTCHA:
+    us: challenge
+Challenge:
+  mode: hcaptcha
   enabled: true
   secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
+  clearance_ttl: 60
+  session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"
-  CaptchaFailureLimit:
+  failure_limit:
     - "3/1m"
     - "5/2m"
   failure_block_duration: 300
@@ -53,11 +55,6 @@ HTTPFlood:
   HTTPFloodFailureLimit:
     - "4/5m"
   failure_block_duration: 600
-ExternalMigration:
-  enabled: true
-  redirect_url: "https://example.com/migrate"
-  secret_key: "1234567890abcdef"
-  session_timeout: 180
 `,
 	})
 
@@ -127,14 +124,14 @@ sites:
 	if !rules.CountryRule.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
 	}
-	if rules.CountryRule.Countries["US"] != CountryCaptcha || rules.CountryRule.DefaultAction != CountryBlock {
+	if rules.CountryRule.Countries["US"] != action.ActionChallenge || rules.CountryRule.DefaultAction != action.ActionBlock {
 		t.Fatalf("unexpected country policy: %#v", rules.CountryRule)
 	}
-	if !rules.CAPTCHARule.Enabled {
-		t.Fatal("CAPTCHARule.Enabled = false, want true")
+	if !rules.Challenge.Enabled {
+		t.Fatal("Challenge.Enabled = false, want true")
 	}
-	if rules.CAPTCHARule.CaptchaFailureLimit[120] != 5 {
-		t.Fatalf("CaptchaFailureLimit[120] = %d, want 5", rules.CAPTCHARule.CaptchaFailureLimit[120])
+	if rules.Challenge.FailureLimit[120] != 5 {
+		t.Fatalf("FailureLimit[120] = %d, want 5", rules.Challenge.FailureLimit[120])
 	}
 	if !rules.VerifyBotRule.Enabled {
 		t.Fatal("VerifyBotRule.Enabled = false, want true")
@@ -145,11 +142,8 @@ sites:
 	if rules.HTTPFloodRule.HTTPFloodSpeedLimit[120] != 20 {
 		t.Fatalf("HTTPFloodSpeedLimit[120] = %d, want 20", rules.HTTPFloodRule.HTTPFloodSpeedLimit[120])
 	}
-	if !rules.ExternalMigrationRule.Enabled {
-		t.Fatal("ExternalMigrationRule.Enabled = false, want true")
-	}
 
-	if got, want := snapshot.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, CaptchaFailure: 120}); got != want {
+	if got, want := snapshot.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, ChallengeFailure: 120}); got != want {
 		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
@@ -161,13 +155,14 @@ URLAllow:
   enabled: true
 URLBlock:
   enabled: true
-CAPTCHA:
+Challenge:
+  mode: hcaptcha
   enabled: true
   secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
+  clearance_ttl: 60
+  session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"
-  CaptchaFailureLimit:
+  failure_limit:
     - "7/4m"
   failure_block_duration: 300
 HTTPFlood:
@@ -200,7 +195,7 @@ HTTPFlood:
 	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
 		t.Fatal("CountryRule should remain present and disabled when omitted")
 	}
-	if got, want := reloaded.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, CaptchaFailure: 240}); got != want {
+	if got, want := reloaded.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, ChallengeFailure: 240}); got != want {
 		t.Fatalf("CounterWindows after reload = %+v, want %+v", got, want)
 	}
 }

@@ -9,7 +9,7 @@ import (
 func TestBroadcastActionRulePayload(t *testing.T) {
 	ch := make(chan Message, 1)
 	before := time.Now().Add(time.Minute).Unix()
-	BroadcastActionRule("node-a", "site_a", "URI", `/quoted/"path`, "BLOCK", time.Minute, ch)
+	BroadcastActionRule("node-a", "site_a", "URI", `/quoted/"path`, "block", time.Minute, ch)
 	after := time.Now().Add(time.Minute).Unix()
 	select {
 	case message := <-ch:
@@ -20,7 +20,7 @@ func TestBroadcastActionRulePayload(t *testing.T) {
 		if err := json.Unmarshal([]byte(message.Content), &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.RuleType != "URI" || payload.Value != `/quoted/"path` || payload.Action != "BLOCK" {
+		if payload.RuleType != "URI" || payload.Value != `/quoted/"path` || payload.Action != "block" {
 			t.Fatalf("unexpected payload: %+v", payload)
 		}
 		if payload.ExpiresAt < before || payload.ExpiresAt > after {
@@ -38,7 +38,7 @@ func TestBroadcastActionRuleDoesNotBlock(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
-				BroadcastActionRule("node", "site_a", "IP", "192.0.2.1", "BLOCK", time.Minute, ch)
+				BroadcastActionRule("node", "site_a", "IP", "192.0.2.1", "block", time.Minute, ch)
 				close(done)
 			}()
 			select {

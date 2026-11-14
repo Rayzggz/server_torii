@@ -70,6 +70,7 @@ func (gm *Manager) Start(gossipChan <-chan Message) {
 			if msg.ID == "" {
 				msg.ID = uuid.New().String()
 			}
+			msg.Version = ProtocolVersion
 			msg.Timestamp = time.Now().Unix()
 			msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
 
@@ -230,7 +231,7 @@ func (gm *Manager) startAntiEntropy() {
 		for _, rule := range snapshot {
 			batch = append(batch, ActionRulePayload{
 				Site:      rule.Site,
-				RuleType:  rule.RuleType,
+				RuleType:  string(rule.RuleType),
 				Value:     rule.Value,
 				Action:    string(rule.Action),
 				ExpiresAt: rule.ExpiresAt.Unix(),
@@ -260,6 +261,7 @@ func (gm *Manager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) 
 	}
 
 	msg := Message{
+		Version:    ProtocolVersion,
 		Type:       TypeSync,
 		ID:         uuid.New().String(),
 		OriginNode: gm.cfg.NodeName,
@@ -455,6 +457,11 @@ func (gm *Manager) processRemoteMessage(msg Message) {
 	if gm.checkAndMarkSeen(msg.ID) {
 		return
 	}
+	if msg.Version != ProtocolVersion {
+		log.Printf("[GOSSIP] Ignored a message from %s: it speaks protocol version %d, this node speaks %d. Upgrade every node of the cluster to the same release.",
+			msg.OriginNode, msg.Version, ProtocolVersion)
+		return
+	}
 	now := time.Now()
 
 	switch msg.Type {
@@ -480,14 +487,7 @@ func (gm *Manager) processActionRule(msg Message, now time.Time) {
 	// Apply action rule
 	ttl := time.Unix(payload.ExpiresAt, 0).Sub(now)
 	if ttl > 0 {
-		switch payload.RuleType {
-		case "IP":
-			gm.actionEngine.AddIPRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-		case "UA":
-			gm.actionEngine.AddUARule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-		case "URI":
-			gm.actionEngine.AddURIRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-		}
+		gm.actionEngine.AddRule(payload.Site, action.RuleKind(payload.RuleType), payload.Value, action.Action(payload.Action), ttl)
 	}
 	log.Printf("[GOSSIP] Received ActionRule for %s:%s on site %s from %s (Exp: %d)", payload.RuleType, payload.Value, payload.Site, msg.OriginNode, payload.ExpiresAt)
 
@@ -520,14 +520,7 @@ func (gm *Manager) processSync(msg Message, now time.Time) {
 
 		ttl := time.Unix(payload.ExpiresAt, 0).Sub(now)
 		if ttl > 0 {
-			switch payload.RuleType {
-			case "IP":
-				gm.actionEngine.AddIPRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-			case "UA":
-				gm.actionEngine.AddUARule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-			case "URI":
-				gm.actionEngine.AddURIRule(payload.Site, payload.Value, action.ActionType(payload.Action), ttl)
-			}
+			gm.actionEngine.AddRule(payload.Site, action.RuleKind(payload.RuleType), payload.Value, action.Action(payload.Action), ttl)
 		}
 	}
 
@@ -553,7 +546,11 @@ func validateActionRule(payload ActionRulePayload, now time.Time) error {
 		return fmt.Errorf("empty rule value")
 	}
 
-	if payload.RuleType == "IP" {
+	kind, err := action.ParseRuleKind(payload.RuleType)
+	if err != nil {
+		return err
+	}
+	if kind == action.RuleIP {
 		ip := net.ParseIP(trimmed)
 		if ip == nil {
 			return fmt.Errorf("invalid ip format")
@@ -563,14 +560,11 @@ func validateActionRule(payload ActionRulePayload, now time.Time) error {
 			ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || !ip.IsGlobalUnicast() {
 			return fmt.Errorf("non-global ip")
 		}
-	} else if payload.RuleType != "UA" && payload.RuleType != "URI" {
-		return fmt.Errorf("invalid rule type: %s", payload.RuleType)
 	}
 
-	switch action.ActionType(payload.Action) {
-	case action.ActionBlock, action.ActionCaptcha, action.ActionCaptchaUnverified:
-	default:
-		return fmt.Errorf("invalid action: %s", payload.Action)
+	// Only the actions a temporary rule can carry; anything else would install a rule no check understands.
+	if _, err := action.Parse(payload.Action, action.ActionBlock, action.ActionChallenge, action.ActionChallengeUnverified); err != nil {
+		return err
 	}
 
 	nowUnix := now.Unix()

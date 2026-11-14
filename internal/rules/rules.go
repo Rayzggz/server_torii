@@ -1,37 +1,29 @@
 package rules
 
 import (
-	"fmt"
+	"server_torii/internal/action"
 	"strings"
 )
 
-type Action string
-
-const (
-	ActionAllow    Action = "allow"    // pass immediately, skipping every later check
-	ActionSkip     Action = "skip"     // skip the listed checks, keep evaluating rules
-	ActionContinue Action = "continue" // stop evaluating rules, run the normal pipeline
-	ActionLog      Action = "log"      // log only, keep evaluating rules
-	ActionBlock    Action = "block"
-	ActionCaptcha  Action = "captcha"
-	ActionExternal Action = "external"
-)
-
 // ParseAction validates an action name from configuration.
-func ParseAction(name string) (Action, error) {
-	switch a := Action(name); a {
-	case ActionAllow, ActionSkip, ActionContinue, ActionLog, ActionBlock, ActionCaptcha, ActionExternal:
-		return a, nil
-	default:
-		return "", fmt.Errorf("invalid action %q: expected allow, skip, continue, log, block, captcha or external", name)
-	}
+//
+//	allow     pass immediately, skipping every later check
+//	skip      skip the listed checks, keep evaluating rules
+//	continue  stop evaluating rules, run the checks that follow
+//	log       log only, keep evaluating rules
+//	block     forbid the request
+//	challenge stop evaluating rules and make the client prove itself, unless a later check
+//	          ends the request with something stricter
+func ParseAction(name string) (action.Action, error) {
+	return action.Parse(name, action.ActionAllow, action.ActionSkip, action.ActionContinue, action.ActionLog,
+		action.ActionBlock, action.ActionChallenge)
 }
 
 // Rule is one compiled custom rule.
 type Rule struct {
 	ID          string
 	Description string
-	Action      Action
+	Action      action.Action
 	SkipMask    uint32
 	Program     *Program
 }
@@ -40,19 +32,6 @@ type Rule struct {
 type CustomRules struct {
 	Enabled bool
 	Rules   []*Rule
-}
-
-// Uses reports whether any rule has the given action.
-func (c *CustomRules) Uses(a Action) bool {
-	if c == nil {
-		return false
-	}
-	for _, rule := range c.Rules {
-		if rule.Action == a {
-			return true
-		}
-	}
-	return false
 }
 
 // String gives a short label for logs.

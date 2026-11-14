@@ -55,7 +55,7 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 
 	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
-	rt.CaptchaFailureLimitCounter.Store(counter)
+	rt.ChallengeFailureLimitCounter.Store(counter)
 
 	submission := CheckCaptcha(req, replayReqData, ruleSet, rt)
 
@@ -135,7 +135,7 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 
 	counter := ratelimit.NewCounter(1, 60)
 	rt := &state.Runtime{}
-	rt.CaptchaFailureLimitCounter.Store(counter)
+	rt.ChallengeFailureLimitCounter.Store(counter)
 
 	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
@@ -170,15 +170,15 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 
 func testAltchaRuleSet() *config.RuleSet {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			Provider:                       CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaValidateTime:            60,
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
-			CaptchaFailureLimit:            map[int64]int64{60: 3},
-			FailureBlockDuration:           300,
+		Challenge: &config.ChallengeRule{
+			Mode:                 config.ChallengeAltcha,
+			SecretKey:            "1234567890abcdef",
+			ClearanceTTL:         60,
+			SessionTTL:           120,
+			AltchaHMACSecret:     "altcha-secret",
+			AltchaCost:           1,
+			FailureLimit:         map[int64]int64{60: 3},
+			FailureBlockDuration: 300,
 		},
 	}
 	return ruleSet
@@ -196,7 +196,7 @@ func testCaptchaRequestData(ruleSet *config.RuleSet) request.UserRequest {
 
 func testCaptchaRuntime() *state.Runtime {
 	rt := &state.Runtime{}
-	rt.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
+	rt.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	return rt
 }
 

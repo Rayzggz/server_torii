@@ -1,5 +1,6 @@
 # Torii refuses to start when this file is missing or has a YAML error, an unknown key or an
-# invalid value, and reports every problem it finds. The same holds for each site's rules;
+# invalid value, and reports every problem it finds. The same holds for each site's rules, where
+# every section is required as well;
 # on reload (SIGHUP) a rejected rule set leaves the rules already in use untouched.
 port: "25555"
 # Addresses the HTTP server listens on: "host:port" for TCP, "unix:/path" for a Unix domain socket.

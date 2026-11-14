@@ -55,13 +55,13 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 | `routing` | Node identities and health, site selection by ID and the default site, feature overrides |
 | `connector` | Connector protocol v1: pass/deny decisions with the page as the response, sites named by ID, feature overrides, error answers without a decision, public endpoints, and the same checks over the Unix socket |
 | `access` | IPv4/CIDR and IPv4-mapped IPv6 allow/block/CAPTCHA lists, ignored native IPv6 rules, exact/regex URL rules, overlap precedence and nonmatches |
-| `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/captcha/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
+| `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/challenge/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
 | `country` | Pinned US/AU/GB database records, default and unknown policies, missing database, rule precedence |
 | `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry |
 | `captcha` | ALTCHA challenge and shell solution, clearance, list integration, tampering, malformed proof, session binding/expiry, challenge/clearance expiry, failure block |
-| `external` | Redirect signature, callback/clearance, invalid signatures/sessions, old timestamps, unsafe redirect, custom pages |
+| `external` | A site in the external challenge mode: redirect signature, callback/clearance, invalid signatures/sessions, old timestamps, unsafe redirect, custom pages |
 | `syslog` | Request reports over UDP, unknown sites, malformed and legacy-format messages, report counters, below-threshold/healthy controls, non-200 IP blocks, canonicalized URI challenges and propagation/expiry |
-| `gossip` | Real-origin propagation, injected-message origin distinction, TTL, deduplication, signature/origin/ID/time validation, private IP, malformed/oversized input, IP/UA/URI snapshots and periodic anti-entropy |
+| `gossip` | Real-origin propagation, injected-message origin distinction, TTL, deduplication, signature/origin/ID/time validation, private IP, malformed/oversized input, IP/URI snapshots, a dropped UA rule and periodic anti-entropy |
 | `crawler` | Official Google range discovery plus forward/reverse DNS, real Googlebot acceptance, spoof rejection, disabled verification, ordinary traffic |
 | `reload` | SIGHUP rule reload, node isolation, malformed configuration rejection, recovery, retention of an existing GeoIP reader on failed reload |
 

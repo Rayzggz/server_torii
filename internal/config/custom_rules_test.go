@@ -59,7 +59,7 @@ func TestCustomRulesDisabledRuleDropped(t *testing.T) {
   enabled: true
   rules:
     - {id: off, enabled: false, expression: 'true', action: block}
-    - {id: on, expression: 'true', action: skip, skip: [Captcha, HTTPFlood]}
+    - {id: on, expression: 'true', action: skip, skip: [Challenge, HTTPFlood]}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -71,35 +71,39 @@ func TestCustomRulesDisabledRuleDropped(t *testing.T) {
 	if !dest.Enabled || len(dest.Rules) != 1 || dest.Rules[0].ID != "on" {
 		t.Fatalf("rules = %#v", dest.Rules)
 	}
-	if dest.Rules[0].SkipMask != feature.Captcha.SkipMask()|feature.HTTPFlood.SkipMask() {
+	if dest.Rules[0].SkipMask != feature.Challenge.SkipMask()|feature.HTTPFlood.SkipMask() {
 		t.Fatalf("skip mask = %b", dest.Rules[0].SkipMask)
 	}
 }
 
 func TestCustomRulesDependencies(t *testing.T) {
-	const validCaptcha = `CAPTCHA:
+	const validCaptcha = `Challenge:
+  mode: hcaptcha
   enabled: false
   secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
-  CaptchaFailureLimit: ["3/1m"]
+  clearance_ttl: 60
+  session_ttl: 120
+  failure_limit: ["3/1m"]
   failure_block_duration: 60
 `
-	const validExternal = `ExternalMigration:
+	const validExternal = `Challenge:
+  mode: external
   enabled: false
   redirect_url: "https://example.com/migration"
   secret_key: "1234567890abcdef"
-  session_timeout: 60
+  clearance_ttl: 60
+  failure_limit: ["3/1m"]
+  failure_block_duration: 60
 `
 	for _, tc := range []struct {
 		name, action, extra string
 		invalid             bool
 	}{
-		{"captcha missing", "captcha", "", true},
-		{"captcha invalid", "captcha", "CAPTCHA: { enabled: false }\n", true},
-		{"captcha valid", "captcha", validCaptcha, false},
-		{"external missing", "external", "", true},
-		{"external valid", "external", validExternal, false},
+		{"challenge invalid", "challenge", "Challenge: { enabled: false }\n", true},
+		{"challenge with a CAPTCHA", "challenge", validCaptcha, false},
+		{"challenge with the external provider", "challenge", validExternal, false},
+		{"captcha is no longer an action", "captcha", validCaptcha, true},
+		{"external is no longer an action", "external", validExternal, true},
 		{"block needs nothing", "block", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

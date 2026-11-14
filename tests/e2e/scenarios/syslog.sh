@@ -46,17 +46,17 @@ test_syslog() {
     while true; do
         for ((i=0; i<10; i++)); do send_log uri "203.0.113.$((160+i))" '/hot//endpoint?x=1' 500; done
         check 1 203.0.113.180 "$ZERO" /hot/endpoint uri.test
-        [[ "$HTTP_DECISION" != captcha ]] || break
+        [[ "$HTTP_DECISION" != challenge ]] || break
         (( SECONDS < deadline )) || fail 'URI analyzer did not challenge'
         sleep 0.3
     done
-    decision captcha
+    decision challenge
     deadline=$((SECONDS+180))
     for ((i=2; i<=NUM_NODES; i++)); do
         remaining=$((deadline-SECONDS))
         (( remaining > 0 )) || fail 'URI rule did not converge within 180 seconds'
         # Stop at the first challenge so polling does not accumulate failures.
-        wait_decision captcha "$remaining" "$i" "203.0.113.$((220+i))" "$ZERO" /hot/endpoint uri.test
+        wait_decision challenge "$remaining" "$i" "203.0.113.$((220+i))" "$ZERO" /hot/endpoint uri.test
     done
     expect pass 1 203.0.113.180 "$ZERO" /unrelated uri.test
     expect pass 1 203.0.113.180 "$ZERO" /hot/endpoint
@@ -78,11 +78,11 @@ test_syslog() {
         # A hot URI needs several distinct non-browser clients.
         for ((i=0; i<10; i++)); do send_log uriexpiry "203.0.113.$((240+i))" /expiry-uri 500; done
         check 1 203.0.113.184 "$ZERO" /expiry-uri uriexpiry.test
-        [[ "$HTTP_DECISION" != captcha ]] || break
+        [[ "$HTTP_DECISION" != challenge ]] || break
         (( SECONDS < deadline )) || fail 'Expiring URI analyzer rule not created'
         sleep 0.3
     done
-    decision captcha
+    decision challenge
     sleep 7
     expect pass 1 203.0.113.184 "$ZERO" /expiry-uri uriexpiry.test
 }

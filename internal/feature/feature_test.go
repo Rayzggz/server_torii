@@ -7,7 +7,7 @@ import (
 
 func TestPipelineOrder(t *testing.T) {
 	// The order decides which rule wins when several match; changing it changes behavior.
-	want := "IPAllow IPBlock URLAllow URLBlock CustomRules IPCAPTCHA URLCAPTCHA CountryRule VerifyBot ActionRule HTTPFlood ExternalMigration Captcha"
+	want := "IPAllow IPBlock URLAllow URLBlock CustomRules IPCAPTCHA URLCAPTCHA CountryRule VerifyBot ActionRule HTTPFlood Challenge"
 	var names []string
 	for _, c := range Pipeline() {
 		names = append(names, c.String())
@@ -46,8 +46,8 @@ func TestMasksAreDistinct(t *testing.T) {
 }
 
 func TestParseSkipTargets(t *testing.T) {
-	mask, err := ParseSkipTargets([]string{"HTTPFlood", "Captcha"})
-	if err != nil || mask != HTTPFlood.SkipMask()|Captcha.SkipMask() {
+	mask, err := ParseSkipTargets([]string{"HTTPFlood", "Challenge"})
+	if err != nil || mask != HTTPFlood.SkipMask()|Challenge.SkipMask() {
 		t.Fatalf("ParseSkipTargets = %b, %v", mask, err)
 	}
 	if mask, err := ParseSkipTargets(nil); err != nil || mask != 0 {
@@ -57,7 +57,7 @@ func TestParseSkipTargets(t *testing.T) {
 	if err == nil {
 		t.Fatal("IPAllow runs before CustomRules and must not be a skip target")
 	}
-	const want = `invalid skip target "IPAllow": expected one of CustomRules, IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule, HTTPFlood, ExternalMigration, Captcha`
+	const want = `invalid skip target "IPAllow": expected one of CustomRules, IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule, HTTPFlood, Challenge`
 	if err.Error() != want {
 		t.Fatalf("error = %s", err)
 	}

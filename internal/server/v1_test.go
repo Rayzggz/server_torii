@@ -34,7 +34,7 @@ func newV1Server(t *testing.T) *Server {
 	fallback.ID = "default_site"
 	shop.URLBlockRule.Enabled = true
 	shop.URLBlockRule.List.Append(&urllist.URLRule{Pattern: "/blocked"})
-	shop.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120}
+	shop.Challenge = &config.ChallengeRule{SecretKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120}
 
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{
@@ -43,7 +43,7 @@ func newV1Server(t *testing.T) *Server {
 		Pages:       pagesFor(cfg),
 	})
 	rt := &state.Runtime{}
-	rt.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+	rt.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	return NewServer(cfg, configs, rt, nil)
 }
 
@@ -84,9 +84,9 @@ func TestV1CheckAnswersWithThePage(t *testing.T) {
 
 func TestV1CheckCaptchaPageSetsSession(t *testing.T) {
 	rec := v1Get(newV1Server(t), v1CheckPath, map[string]string{
-		headerSite: "shop", headerClientIP: "203.0.113.5", headerURI: "/ok", headerFeatures: "+captcha",
+		headerSite: "shop", headerClientIP: "203.0.113.5", headerURI: "/ok", headerFeatures: "+challenge",
 	})
-	if rec.Code != http.StatusServiceUnavailable || rec.Body.String() != "captcha page" || rec.Header().Get(headerDecision) != "captcha" {
+	if rec.Code != http.StatusServiceUnavailable || rec.Body.String() != "captcha page" || rec.Header().Get(headerDecision) != "challenge" {
 		t.Fatalf("got %d decision %q body %q", rec.Code, rec.Header().Get(headerDecision), rec.Body.String())
 	}
 	if cookie := rec.Header().Get("Set-Cookie"); !strings.HasPrefix(cookie, "__torii_session_id=") {
@@ -210,17 +210,17 @@ func TestV1PublicEndpoints(t *testing.T) {
 }
 
 func TestApplyFeatureOverrides(t *testing.T) {
-	base := uint16(feature.HTTPFlood.ControlMask() | feature.Captcha.ControlMask())
+	base := uint16(feature.HTTPFlood.ControlMask() | feature.Challenge.ControlMask())
 	for _, tt := range []struct {
 		header  string
 		want    uint16
 		unknown int
 	}{
 		{"", base, 0},
-		{"-captcha", feature.HTTPFlood.ControlMask(), 0},
-		{"-Captcha, +ip_block", feature.HTTPFlood.ControlMask() | feature.IPBlock.ControlMask(), 0},
+		{"-challenge", feature.HTTPFlood.ControlMask(), 0},
+		{"-Challenge, +ip_block", feature.HTTPFlood.ControlMask() | feature.IPBlock.ControlMask(), 0},
 		{"+HTTPFlood +http-flood", base, 0},
-		{"-http_flood,-captcha", 0, 0},
+		{"-http_flood,-challenge", 0, 0},
 		// Entries without a sign, unknown names and checks without a switch are reported.
 		{"captcha +nope -ActionRule +", base, 4},
 	} {

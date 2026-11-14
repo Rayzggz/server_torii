@@ -25,38 +25,44 @@ func signToken(reqData request.UserRequest, signer token.Signer) []byte {
 	return []byte(signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Now()))
 }
 
-// siteLabel makes a token of one site useless on another, also when two sites share a secret
-// key and a host name.
-func siteLabel(ruleSet config.RuleSet, kind string) string {
-	return kind + "@" + ruleSet.ID
+// challengeSigner signs one kind of token, "CLEARANCE" or "SESSION", of the site's challenge.
+// The label carries the mode and the site: a token of one site is useless on another, also when
+// two sites share a secret key and a host name, and a token earned with a CAPTCHA is useless
+// once the site hands its clients to the external provider.
+func challengeSigner(ruleSet config.RuleSet, kind string) token.Signer {
+	family := "CAPTCHA"
+	if ruleSet.Challenge.Mode == config.ChallengeExternal {
+		family = "EXTERNAL"
+	}
+	return token.Signer{Key: ruleSet.Challenge.SecretKey, Label: family + "-" + kind + "@" + ruleSet.ID}
 }
 
-func captchaClearanceSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: siteLabel(ruleSet, "CAPTCHA-CLEARANCE")}
-}
-
-func captchaSessionSigner(ruleSet config.RuleSet) token.Signer {
-	return token.Signer{Key: ruleSet.CAPTCHARule.SecretKey, Label: siteLabel(ruleSet, "CAPTCHA-SESSION")}
-}
-
-// GenClearance issues the cookie that lets a client who solved a CAPTCHA through.
+// GenClearance issues the cookie that lets a client who passed the challenge through.
 func GenClearance(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
-	return signToken(reqData, captchaClearanceSigner(ruleSet))
+	return signToken(reqData, challengeSigner(ruleSet, "CLEARANCE"))
 }
 
 func verifyClearanceCookie(reqData request.UserRequest, ruleSet config.RuleSet) bool {
-	return verifyToken(reqData, captchaClearanceSigner(ruleSet), reqData.ToriiClearance, ruleSet.CAPTCHARule.CaptchaValidateTime)
+	return verifyToken(reqData, challengeSigner(ruleSet, "CLEARANCE"), reqData.ToriiClearance, ruleSet.Challenge.ClearanceTTL)
 }
 
-// GenSessionID issues the challenge session cookie, keeping the client's current one while it is valid.
+// GenSessionID issues the challenge session cookie. A CAPTCHA session the client already holds
+// is kept while it is valid. A client sent to the external provider always gets a new one: its
+// timestamp is part of the link that brings the client back.
 func GenSessionID(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
-	if VerifySessionIDCookie(reqData, ruleSet) {
+	if ruleSet.Challenge.ShowsCaptcha() && VerifySessionIDCookie(reqData, ruleSet) {
 		return []byte(reqData.ToriiSessionID)
 	}
-	return signToken(reqData, captchaSessionSigner(ruleSet))
+	return signToken(reqData, challengeSigner(ruleSet, "SESSION"))
 }
 
-// VerifySessionIDCookie reports whether the client holds an unexpired challenge session.
+// VerifySessionIDCookie reports whether the client holds a challenge session of the site. A
+// CAPTCHA session expires after SessionTTL. For the external provider only the signature is
+// checked: the age is bounded by the 30-second lifetime of the link that must accompany it.
 func VerifySessionIDCookie(reqData request.UserRequest, ruleSet config.RuleSet) bool {
-	return verifyToken(reqData, captchaSessionSigner(ruleSet), reqData.ToriiSessionID, ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout)
+	var maxAge int64
+	if ruleSet.Challenge.ShowsCaptcha() {
+		maxAge = ruleSet.Challenge.SessionTTL
+	}
+	return verifyToken(reqData, challengeSigner(ruleSet, "SESSION"), reqData.ToriiSessionID, maxAge)
 }

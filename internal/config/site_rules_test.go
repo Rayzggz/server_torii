@@ -64,7 +64,7 @@ func TestLoadSiteRulesIdentity(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if err := os.WriteFile(filepath.Join(siteDir, "Server.yml"), []byte(analyzer), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(siteDir, "Server.yml"), []byte(completeServerRules(analyzer)), 0o644); err != nil {
 			t.Fatal(err)
 		}
 		return siteDir

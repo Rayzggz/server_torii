@@ -4,7 +4,7 @@ captcha_session() {
     # A check that ends in a CAPTCHA answers with the page and opens the challenge session.
     # It also counts against the client's CAPTCHA failure limit, hence the choice of address.
     check 1 "$ip" 0000001000000000 /neutral "$host" -c "$jar"
-    decision captcha
+    decision challenge
     assert_contains "$(header Set-Cookie)" '__torii_session_id='
     assert_contains "$(header Set-Cookie)" 'HttpOnly'
 }
@@ -39,7 +39,7 @@ submit_altcha() {
 }
 test_captcha() {
     local jar="$RUN/captcha.cookies" other="$RUN/other.cookies" challenge solved malformed session i
-    expect captcha 1 203.0.113.130 0000001000000000
+    expect challenge 1 203.0.113.130 0000001000000000
     public 1 /torii/captcha/challenge 203.0.113.130 default_site
     assert_eq "$HTTP_CODE" 403
     public 1 /torii/captcha/challenge 203.0.113.130 default_site -X POST
@@ -73,9 +73,9 @@ test_captcha() {
     expect pass 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
     expect pass 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
     expect pass 1 203.0.113.130 0000000000100000 /challenge default_site -b "$jar"
-    expect captcha 1 203.0.113.130 0000001000000000 /neutral exact.e2e.test -b "$jar"
+    expect challenge 1 203.0.113.130 0000001000000000 /neutral exact.e2e.test -b "$jar"
     sleep 6
-    expect captcha 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
+    expect challenge 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
     captcha_session "$other" failures.test 203.0.113.133
     public 1 /torii/captcha/challenge 203.0.113.130 failures.test -b "$other"
     assert_eq "$HTTP_CODE" 200

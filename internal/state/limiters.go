@@ -14,7 +14,7 @@ type Limiters struct {
 	HTTPFloodSpeedLimitCounter   atomic.Pointer[ratelimit.Counter]
 	HTTPFloodSameURILimitCounter atomic.Pointer[ratelimit.Counter]
 	HTTPFloodFailureLimitCounter atomic.Pointer[ratelimit.Counter]
-	CaptchaFailureLimitCounter   atomic.Pointer[ratelimit.Counter]
+	ChallengeFailureLimitCounter atomic.Pointer[ratelimit.Counter]
 }
 
 func (l *Limiters) all() []*atomic.Pointer[ratelimit.Counter] {
@@ -22,7 +22,7 @@ func (l *Limiters) all() []*atomic.Pointer[ratelimit.Counter] {
 		&l.HTTPFloodSpeedLimitCounter,
 		&l.HTTPFloodSameURILimitCounter,
 		&l.HTTPFloodFailureLimitCounter,
-		&l.CaptchaFailureLimitCounter,
+		&l.ChallengeFailureLimitCounter,
 	}
 }
 
@@ -40,7 +40,7 @@ func (l *Limiters) Resize(w config.CounterWindows) {
 	resize(&l.HTTPFloodSpeedLimitCounter, w.HTTPFloodSpeed)
 	resize(&l.HTTPFloodSameURILimitCounter, w.HTTPFloodSameURI)
 	resize(&l.HTTPFloodFailureLimitCounter, w.HTTPFloodFailure)
-	resize(&l.CaptchaFailureLimitCounter, w.CaptchaFailure)
+	resize(&l.ChallengeFailureLimitCounter, w.ChallengeFailure)
 }
 
 // GC drops expired records from every counter.

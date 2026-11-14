@@ -22,8 +22,7 @@ const (
 	VerifyBot
 	ActionRule
 	HTTPFlood
-	ExternalMigration
-	Captcha
+	Challenge
 
 	// Count is the number of checks.
 	Count
@@ -49,10 +48,9 @@ var definitions = [Count]definition{
 	CountryRule: {"CountryRule", true, true},
 	VerifyBot:   {"VerifyBot", true, true},
 	// ActionRule has no switch: it is driven by the rules other components install at runtime.
-	ActionRule:        {"ActionRule", false, true},
-	HTTPFlood:         {"HTTPFlood", true, true},
-	ExternalMigration: {"ExternalMigration", true, true},
-	Captcha:           {"Captcha", true, true},
+	ActionRule: {"ActionRule", false, true},
+	HTTPFlood:  {"HTTPFlood", true, true},
+	Challenge:  {"Challenge", true, true},
 }
 
 // Pipeline returns every check in execution order.

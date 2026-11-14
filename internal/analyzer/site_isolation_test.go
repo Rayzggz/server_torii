@@ -26,17 +26,17 @@ func TestDetectorIgnoresToriiResponsesAsFailures(t *testing.T) {
 		logs = append(logs, decided("4.4.4.4", "/login", 401, "pass"))
 		logs = append(logs, decided("5.5.5.5", "/login", 401, ""))
 		// Torii's answers do not dilute what the site answered either.
-		logs = append(logs, decided("6.6.6.6", "/login", 401, "pass"), decided("6.6.6.6", "/x", 503, "captcha"), decided("6.6.6.6", "/x", 503, "captcha"))
+		logs = append(logs, decided("6.6.6.6", "/login", 401, "pass"), decided("6.6.6.6", "/x", 503, "challenge"), decided("6.6.6.6", "/x", 503, "challenge"))
 	}
 	h.run(logs)
 
-	for ip, want := range map[string]action.ActionType{
+	for ip, want := range map[string]action.Action{
 		"1.1.1.1": action.ActionNone,
 		"2.2.2.2": action.ActionNone,
 		"3.3.3.3": action.ActionNone,
-		"4.4.4.4": action.ActionCaptcha,
-		"5.5.5.5": action.ActionCaptcha,
-		"6.6.6.6": action.ActionCaptcha,
+		"4.4.4.4": action.ActionChallenge,
+		"5.5.5.5": action.ActionChallenge,
+		"6.6.6.6": action.ActionChallenge,
 	} {
 		if got := h.ipAction(ip); got != want {
 			t.Errorf("%s: got %v, want %v", ip, got, want)
@@ -48,7 +48,7 @@ func TestDetectorIgnoresToriiResponsesAsFailures(t *testing.T) {
 func TestToriiResponsesAreNoBrowserEvidence(t *testing.T) {
 	h := newDetectorHarness(t, nil)
 	h.run([]LogEntry{
-		decided("1.1.1.1", "/static/app.js", 302, "external"),
+		decided("1.1.1.1", "/static/app.js", 302, "challenge"),
 		decided("2.2.2.2", "/static/app.js", 200, "pass"),
 		decided("3.3.3.3", "/static/app.js", 200, ""),
 	})
@@ -63,7 +63,7 @@ func TestToriiResponsesAreNoBrowserEvidence(t *testing.T) {
 		"site": {ID: "site", AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{Enabled: true}},
 	}})
 	a := NewAdaptiveTrafficAnalyzer(nil, configs)
-	a.AddLog(LogEntry{Site: "site", IP: "1.1.1.1", URI: "/static/app.js", Status: 302, Decision: "external"})
+	a.AddLog(LogEntry{Site: "site", IP: "1.1.1.1", URI: "/static/app.js", Status: 302, Decision: "challenge"})
 	if a.HasBrowserEvidence("site", "1.1.1.1") {
 		t.Error("a redirect by Torii was recorded as browser evidence on arrival")
 	}
@@ -75,7 +75,7 @@ func TestChallengedRequestsStillCountTowardsHotURIs(t *testing.T) {
 	h := newDetectorHarness(t, nil)
 	var logs []LogEntry
 	for i := 0; i < 5; i++ {
-		logs = append(logs, decided("1.1.1.1", "/search", 503, "captcha"))
+		logs = append(logs, decided("1.1.1.1", "/search", 503, "challenge"))
 	}
 	h.run(logs)
 	ib := h.state.buckets[0].ips["1.1.1.1"]

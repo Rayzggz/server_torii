@@ -7,12 +7,13 @@ import (
 	"testing"
 )
 
-const ipCaptchaSettings = `CAPTCHA:
+const ipCaptchaSettings = `Challenge:
+  mode: hcaptcha
   enabled: false
   secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
-  CaptchaFailureLimit: ["3/1m"]
+  clearance_ttl: 60
+  session_ttl: 120
+  failure_limit: ["3/1m"]
   failure_block_duration: 60
 `
 
@@ -31,9 +32,7 @@ func TestIPCaptchaConfiguration(t *testing.T) {
 		{"old config", "", "", true, false},
 		{"enabled missing", "IPCAPTCHA: { enabled: true }\n" + ipCaptchaSettings, "", true, true},
 		{"enabled empty", "IPCAPTCHA: { enabled: true }\n" + ipCaptchaSettings, "", false, false},
-		{"enabled no captcha", "IPCAPTCHA: { enabled: true }", "", false, true},
-		{"invalid captcha", "IPCAPTCHA: { enabled: true }\nCAPTCHA: { enabled: false }", "192.0.2.10", false, true},
-		{"disabled populated no captcha", "", "192.0.2.10", false, true},
+		{"invalid captcha", "IPCAPTCHA: { enabled: true }\nChallenge: { enabled: false }", "192.0.2.10", false, true},
 		{"disabled populated valid captcha", ipCaptchaSettings, "192.0.2.10", false, false},
 		{"comments only", "", "\n# comment\n", false, false},
 		{"invalid entry", "", "bad\n", false, true},

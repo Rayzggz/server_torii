@@ -3,6 +3,7 @@ package server
 import (
 	"net"
 	"regexp"
+	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
@@ -47,20 +48,20 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 			list.Append(&urllist.URLRule{Pattern: "/login"})
 			list.Append(&urllist.URLRule{IsRegex: true, Regex: regexp.MustCompile("^/admin(/|$)")})
 			rules.URLCAPTCHARule = &config.URLListRule{Enabled: true, List: list}
-			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
+			rules.Challenge = &config.ChallengeRule{SecretKey: "1234567890abcdef", ClearanceTTL: 60}
 			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/login", FeatureControl: feature.URLCAPTCHA.ControlMask()}
 			shared := &state.Runtime{}
-			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+			shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			trie := &iptrie.TrieNode{}
 			_, network, _ := net.ParseCIDR("192.0.2.0/24")
 			trie.Insert(network)
 			want := "pass"
 			switch scenario {
 			case "challenge":
-				want = "captcha"
+				want = "challenge"
 			case "regex":
 				req.Uri = "/admin/users?a=1"
-				want = "captcha"
+				want = "challenge"
 			case "clearance":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 			case "nonmatch":
@@ -88,18 +89,18 @@ func TestURLCaptchaRequestFlow(t *testing.T) {
 				req.FeatureControl |= feature.URLBlock.ControlMask()
 				want = "block"
 			case "country precedence":
-				rules.CountryRule.UnknownAction = config.CountryBlock
+				rules.CountryRule.UnknownAction = action.ActionBlock
 				req.FeatureControl |= feature.CountryRule.ControlMask()
-				want = "captcha"
+				want = "block" // the block of a later check wins over the challenge
 			case "clearance later block":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
-				rules.CountryRule.UnknownAction = config.CountryBlock
+				rules.CountryRule.UnknownAction = action.ActionBlock
 				req.FeatureControl |= feature.CountryRule.ControlMask()
 				want = "block"
 			case "failure limit":
-				rules.CAPTCHARule.CaptchaFailureLimit = map[int64]int64{1: 1}
-				rules.CAPTCHARule.FailureBlockDuration = 60
-				shared.CaptchaFailureLimitCounter.Load().Add(req.RemoteIP, 2)
+				rules.Challenge.FailureLimit = map[int64]int64{1: 1}
+				rules.Challenge.FailureBlockDuration = 60
+				shared.ChallengeFailureLimitCounter.Load().Add(req.RemoteIP, 2)
 				want = "block"
 			}
 			if got := decide(shared, req, rules); got != want {

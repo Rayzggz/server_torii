@@ -26,8 +26,9 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 	}
 
 	createReq := func(ts int64, id string) *http.Request {
-		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 		msg := Message{
+			Version:    ProtocolVersion,
 			ID:         id,
 			OriginNode: "KnownPeer",
 			Type:       TypeActionRule,

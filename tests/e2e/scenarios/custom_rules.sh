@@ -6,9 +6,9 @@ test_custom_rules() {
     expect pass 1 198.18.3.1 "$custom" '/e2e/cookie?mode=strict' default_site -H 'Cookie: role=allowed'
     expect block 1 8.8.8.8 "$custom" /e2e/country
     expect pass "$NUM_NODES" 8.8.8.8 "$custom" /e2e/country
-    expect external 1 198.18.3.2 "$custom" /e2e/external
+    expect challenge 1 198.18.3.2 "$custom" /e2e/challenge
     expect pass 1 198.18.3.3 "$custom" /e2e/continue
-    expect captcha 1 198.18.3.3 0000001000010000 /e2e/continue
+    expect challenge 1 198.18.3.3 0000001000010000 /e2e/continue
     expect pass 1 198.18.3.4 0000001100010000 /e2e/skip
     # Rules are configured but disabled; the feature bit turns them on per request.
     expect pass 1 198.18.0.1 "$ZERO" /neutral default_site -H 'Referer: https://spam.e2e/'
@@ -17,7 +17,7 @@ test_custom_rules() {
     # Nginx subrequests are GET; the original method comes from Torii-Method.
     expect block 1 198.18.0.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
     expect pass 1 198.18.1.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
-    expect captcha 1 198.18.0.3 "$custom" /neutral default_site -A 'Mozilla/5.0 BadBot/1.0'
+    expect challenge 1 198.18.0.3 "$custom" /neutral default_site -A 'Mozilla/5.0 BadBot/1.0'
     # IP allow list runs before custom rules.
     expect pass 1 198.51.100.10 "$custom_ip_allow" /neutral default_site -H 'Referer: https://spam.e2e/'
     # allow ends the pipeline, so the later flood check never counts these requests.

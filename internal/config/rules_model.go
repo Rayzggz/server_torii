@@ -1,21 +1,49 @@
 package config
 
 import (
+	"server_torii/internal/action"
 	"server_torii/internal/iptrie"
 	"server_torii/internal/urllist"
 )
 
-type CaptchaRule struct {
-	Enabled                        bool            `yaml:"enabled"`
-	Provider                       string          `yaml:"provider" validate:"required"`
-	SecretKey                      string          `yaml:"secret_key" validate:"required,min=16"`
-	CaptchaValidateTime            int64           `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
-	CaptchaChallengeSessionTimeout int64           `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string          `yaml:"hcaptcha_secret"`
-	AltchaHMACSecret               string          `yaml:"altcha_hmac_secret"`
-	AltchaCost                     int             `yaml:"altcha_cost"`
-	CaptchaFailureLimit            map[int64]int64 `yaml:"-"`
-	FailureBlockDuration           int64           `yaml:"failure_block_duration"`
+// ChallengeMode is how a site makes a client prove itself.
+type ChallengeMode string
+
+const (
+	// ChallengeHCaptcha and ChallengeAltcha show a CAPTCHA page.
+	ChallengeHCaptcha ChallengeMode = "hcaptcha"
+	ChallengeAltcha   ChallengeMode = "altcha"
+	// ChallengeExternal sends the client to an external provider, which sends it back cleared.
+	ChallengeExternal ChallengeMode = "external"
+)
+
+// ChallengeRule is the one challenge of a site. Every rule that asks for a client to be
+// challenged, and the Challenge check itself when it is enabled for all traffic, uses it.
+type ChallengeRule struct {
+	// Enabled challenges every client; without it only the clients a rule singles out.
+	Enabled bool
+	Mode    ChallengeMode
+	// SecretKey signs the session and clearance cookies.
+	SecretKey string
+	// ClearanceTTL is how long, in seconds, a cleared client stays cleared.
+	ClearanceTTL int64
+	// SessionTTL is how long, in seconds, a client has to answer a CAPTCHA. The external mode
+	// does not use it: its sessions are bounded by the lifetime of the link that brings the client back.
+	SessionTTL       int64
+	HCaptchaSecret   string
+	AltchaHMACSecret string
+	AltchaCost       int
+	// RedirectURL is where the external mode sends the client.
+	RedirectURL string
+	// FailureLimit bounds how often a client may be challenged without clearing; beyond it the
+	// client is blocked for FailureBlockDuration seconds.
+	FailureLimit         map[int64]int64
+	FailureBlockDuration int64
+}
+
+// ShowsCaptcha reports whether the challenge is a CAPTCHA page, as opposed to a redirect.
+func (r *ChallengeRule) ShowsCaptcha() bool {
+	return r != nil && r.Mode != ChallengeExternal
 }
 
 type VerifyBotRule struct {
@@ -36,16 +64,6 @@ type HTTPFloodRule struct {
 	FailureBlockDuration  int64
 }
 
-type AnalyzerAction string
-
-const (
-	AnalyzerObserve AnalyzerAction = "observe"
-	// AnalyzerCaptchaUnverified challenges only clients without browser evidence.
-	AnalyzerCaptchaUnverified AnalyzerAction = "captcha_unverified"
-	AnalyzerCaptcha           AnalyzerAction = "captcha"
-	AnalyzerBlock             AnalyzerAction = "block"
-)
-
 type AdaptiveTrafficAnalyzerRule struct {
 	Enabled          bool                `yaml:"enabled"`
 	AnalysisInterval int64               `yaml:"analysis_interval" validate:"min=0"`
@@ -56,7 +74,7 @@ type AdaptiveTrafficAnalyzerRule struct {
 }
 
 // BrowserEvidenceRule decides which clients look like browsers; URI detection, IP detection
-// and the captcha_unverified action all use it.
+// and the challenge_unverified action all use it.
 type BrowserEvidenceRule struct {
 	TTL             int64    `yaml:"ttl" validate:"min=0"`
 	DistinctPages   int      `yaml:"distinct_pages" validate:"min=0"`
@@ -71,61 +89,46 @@ type BaselineRule struct {
 }
 
 type IPDetectionRule struct {
-	Enabled             bool           `yaml:"enabled"`
-	Action              AnalyzerAction `yaml:"action" validate:"omitempty,oneof=observe captcha_unverified captcha block"`
-	BlockDuration       int64          `yaml:"block_duration" validate:"min=0"`
-	MaxBlockDuration    int64          `yaml:"max_block_duration" validate:"min=0"`
-	ScoreThreshold      int            `yaml:"score_threshold" validate:"min=0"`
-	HotURIMinHits       int64          `yaml:"hot_uri_min_hits" validate:"min=0"`
-	MinFailures         int64          `yaml:"min_failures" validate:"min=0"`
-	FailRateThreshold   float64        `yaml:"fail_rate_threshold" validate:"min=0,max=1"`
-	ScanPathsThreshold  int            `yaml:"scan_paths_threshold" validate:"min=0"`
-	MaxBroadcastPerTick int            `yaml:"max_broadcast_per_tick" validate:"min=0"`
+	Enabled             bool          `yaml:"enabled"`
+	Action              action.Action `yaml:"action" validate:"omitempty,oneof=observe challenge_unverified challenge block"`
+	BlockDuration       int64         `yaml:"block_duration" validate:"min=0"`
+	MaxBlockDuration    int64         `yaml:"max_block_duration" validate:"min=0"`
+	ScoreThreshold      int           `yaml:"score_threshold" validate:"min=0"`
+	HotURIMinHits       int64         `yaml:"hot_uri_min_hits" validate:"min=0"`
+	MinFailures         int64         `yaml:"min_failures" validate:"min=0"`
+	FailRateThreshold   float64       `yaml:"fail_rate_threshold" validate:"min=0,max=1"`
+	ScanPathsThreshold  int           `yaml:"scan_paths_threshold" validate:"min=0"`
+	MaxBroadcastPerTick int           `yaml:"max_broadcast_per_tick" validate:"min=0"`
 }
 
 // URIDetectionRule finds hot URIs and sets the action applied to them.
 type URIDetectionRule struct {
-	Action         AnalyzerAction `yaml:"action" validate:"omitempty,oneof=observe captcha_unverified captcha block"`
-	BlockDuration  int64          `yaml:"block_duration" validate:"min=0"`
-	MinRequests    int64          `yaml:"min_requests" validate:"min=0"`
-	MinDistinctIPs int            `yaml:"min_distinct_ips" validate:"min=0"`
-	Sustain        int64          `yaml:"sustain" validate:"min=0"`
-	RatioThreshold float64        `yaml:"ratio_threshold" validate:"min=0"`
-	FallbackShare  float64        `yaml:"fallback_share" validate:"min=0,max=1"`
-	Baseline       BaselineRule   `yaml:"baseline"`
+	Action         action.Action `yaml:"action" validate:"omitempty,oneof=observe challenge_unverified challenge block"`
+	BlockDuration  int64         `yaml:"block_duration" validate:"min=0"`
+	MinRequests    int64         `yaml:"min_requests" validate:"min=0"`
+	MinDistinctIPs int           `yaml:"min_distinct_ips" validate:"min=0"`
+	Sustain        int64         `yaml:"sustain" validate:"min=0"`
+	RatioThreshold float64       `yaml:"ratio_threshold" validate:"min=0"`
+	FallbackShare  float64       `yaml:"fallback_share" validate:"min=0,max=1"`
+	Baseline       BaselineRule  `yaml:"baseline"`
 }
 
-type ExternalMigrationRule struct {
-	Enabled        bool   `yaml:"enabled"`
-	RedirectUrl    string `yaml:"redirect_url" validate:"required,url"`
-	SecretKey      string `yaml:"secret_key" validate:"required,min=16"`
-	SessionTimeout int64  `yaml:"session_timeout" validate:"required,min=1,max=9223372036854775807"`
-}
-
-// IPListRule switches one of a site's IP lists (allow, block, CAPTCHA). The list itself comes from the
+// IPListRule switches one of a site's IP lists (allow, block, challenge). The list itself comes from the
 // matching .conf file, not from Server.yml.
 type IPListRule struct {
 	Enabled bool             `yaml:"enabled"`
 	Trie    *iptrie.TrieNode `yaml:"-"`
 }
 
-// URLListRule switches one of a site's URL lists (allow, block, CAPTCHA).
+// URLListRule switches one of a site's URL lists (allow, block, challenge).
 type URLListRule struct {
 	Enabled bool                 `yaml:"enabled"`
 	List    *urllist.URLRuleList `yaml:"-"`
 }
 
-type CountryAction string
-
-const (
-	CountryContinue CountryAction = "continue"
-	CountryBlock    CountryAction = "block"
-	CountryCaptcha  CountryAction = "captcha"
-)
-
 type CountryRule struct {
 	Enabled       bool
-	DefaultAction CountryAction
-	UnknownAction CountryAction
-	Countries     map[string]CountryAction
+	DefaultAction action.Action
+	UnknownAction action.Action
+	Countries     map[string]action.Action
 }

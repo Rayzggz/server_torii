@@ -2,13 +2,13 @@ package config
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
 	"server_torii/internal/iptrie"
-	"server_torii/internal/rules"
 	"server_torii/internal/urllist"
 	"strings"
 )
@@ -71,9 +71,9 @@ func LoadRules(rulePath string) (*RuleSet, error) {
 
 // loadServerRules fills rs, which must come from NewRuleSet, from the site's Server.yml.
 //
-// A section the file leaves out keeps its rule disabled. A section that is present must be
-// complete and valid even when it is disabled, because the connector can enable a check per
-// request. Nothing is repaired or skipped: any problem rejects the file.
+// Every section must be present, complete and valid, also the ones that are disabled: the
+// connector can enable a check per request, and a rule another node shares may need a check
+// this site keeps switched off. Nothing is repaired or skipped: any problem rejects the file.
 func loadServerRules(YAMLFile string, rs *RuleSet) error {
 	yamlData, err := os.ReadFile(YAMLFile)
 	if err != nil {
@@ -95,94 +95,27 @@ func loadServerRules(YAMLFile string, rs *RuleSet) error {
 }
 
 func mapServerRules(wrapper *ruleSetWrapper, rs *RuleSet) error {
-	if wrapper.IPAllowRule != nil {
-		rs.IPAllowRule.Enabled = wrapper.IPAllowRule.Enabled
-	}
-	if wrapper.IPBlockRule != nil {
-		rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
-	}
-	if wrapper.IPCAPTCHARule != nil {
-		rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
-	}
-	if wrapper.URLAllowRule != nil {
-		rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
-	}
-	if wrapper.URLCAPTCHARule != nil {
-		rs.URLCAPTCHARule.Enabled = wrapper.URLCAPTCHARule.Enabled
-	}
-	if wrapper.URLBlockRule != nil {
-		rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
-	}
-	if wrapper.CAPTCHARule != nil {
-		if err := mapCaptchaRule(wrapper.CAPTCHARule, rs.CAPTCHARule); err != nil {
-			return err
-		}
-	}
-	if err := validateListCaptchaDependencies(wrapper.CAPTCHARule, rs); err != nil {
-		return err
-	}
-	if wrapper.VerifyBotRule != nil {
-		*rs.VerifyBotRule = *wrapper.VerifyBotRule
-	}
-	if wrapper.ExternalMigrationRule != nil {
-		if err := validateStruct(wrapper.ExternalMigrationRule, "ExternalMigration"); err != nil {
-			return err
-		}
-		*rs.ExternalMigrationRule = *wrapper.ExternalMigrationRule
-	}
-	if wrapper.AdaptiveTrafficAnalyzerRule != nil {
-		if err := mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule); err != nil {
-			return err
-		}
-	}
-	if wrapper.CountryRule != nil {
-		if err := mapCountryRule(wrapper.CountryRule, rs.CountryRule); err != nil {
-			return err
-		}
+	if missing := wrapper.missingSections(); len(missing) > 0 {
+		return fmt.Errorf("missing sections: %s. Every section is required; switch a check off with `enabled: false`",
+			strings.Join(missing, ", "))
 	}
 
-	if countryRequiresCaptcha(rs.CountryRule) && wrapper.CAPTCHARule == nil {
-		return fmt.Errorf("CountryRule captcha action requires CAPTCHA configuration")
-	}
+	rs.IPAllowRule.Enabled = wrapper.IPAllowRule.Enabled
+	rs.IPBlockRule.Enabled = wrapper.IPBlockRule.Enabled
+	rs.IPCAPTCHARule.Enabled = wrapper.IPCAPTCHARule.Enabled
+	rs.URLAllowRule.Enabled = wrapper.URLAllowRule.Enabled
+	rs.URLBlockRule.Enabled = wrapper.URLBlockRule.Enabled
+	rs.URLCAPTCHARule.Enabled = wrapper.URLCAPTCHARule.Enabled
+	*rs.VerifyBotRule = *wrapper.VerifyBotRule
 
-	if wrapper.CustomRules != nil {
-		if err := mapCustomRules(wrapper.CustomRules, rs.CustomRules); err != nil {
-			return err
-		}
-		if rs.CustomRules.Uses(rules.ActionCaptcha) && wrapper.CAPTCHARule == nil {
-			return fmt.Errorf("CustomRules captcha action requires CAPTCHA configuration")
-		}
-		if rs.CustomRules.Uses(rules.ActionExternal) && wrapper.ExternalMigrationRule == nil {
-			return fmt.Errorf("CustomRules external action requires ExternalMigration configuration")
-		}
-	}
-
-	if wrapper.HTTPFloodRule != nil {
-		if err := mapHTTPFloodRule(wrapper.HTTPFloodRule, rs.HTTPFloodRule); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// validateListCaptchaDependencies rejects CAPTCHA lists without a CAPTCHA section; a section
-// that is present has already been validated.
-func validateListCaptchaDependencies(captcha *captchaRuleWrapper, rs *RuleSet) error {
-	for _, dependency := range []struct {
-		name     string
-		required bool
-	}{
-		{"IPCAPTCHA", rs.IPCAPTCHARule.Enabled || !rs.IPCAPTCHARule.Trie.IsEmpty()},
-		{"URLCAPTCHA", rs.URLCAPTCHARule.Enabled || (rs.URLCAPTCHARule.List != nil && rs.URLCAPTCHARule.List.Head != nil)},
-	} {
-		if !dependency.required {
-			continue
-		}
-		if captcha == nil {
-			return fmt.Errorf("%s requires CAPTCHA configuration", dependency.name)
-		}
-	}
-	return nil
+	// Every section is checked, so one load reports the problems of all of them.
+	return errors.Join(
+		mapChallengeRule(wrapper.Challenge, rs.Challenge),
+		mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule),
+		mapCountryRule(wrapper.CountryRule, rs.CountryRule),
+		mapCustomRules(wrapper.CustomRules, rs.CustomRules),
+		mapHTTPFloodRule(wrapper.HTTPFloodRule, rs.HTTPFloodRule),
+	)
 }
 
 // isSkippableListLine reports whether a trimmed list-file line carries no rule:

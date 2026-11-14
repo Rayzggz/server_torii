@@ -17,5 +17,5 @@ test_routing() {
     expect block 1 198.51.100.41 '' /neutral default_site
     expect block 1 198.51.100.41 ________________
     expect pass 1 198.51.100.41 "$ZERO"
-    expect captcha 1 203.0.113.101 0000001000000000
+    expect challenge 1 203.0.113.101 0000001000000000
 }

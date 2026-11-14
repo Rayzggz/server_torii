@@ -33,7 +33,7 @@ type CounterWindows struct {
 	HTTPFloodSpeed   int64
 	HTTPFloodSameURI int64
 	HTTPFloodFailure int64
-	CaptchaFailure   int64
+	ChallengeFailure int64
 }
 
 // CounterWindows returns the longest rate-limit windows the site configures.
@@ -42,7 +42,7 @@ func (rs *RuleSet) CounterWindows() CounterWindows {
 		HTTPFloodSpeed:   ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSpeedLimit),
 		HTTPFloodSameURI: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSameURILimit),
 		HTTPFloodFailure: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodFailureLimit),
-		CaptchaFailure:   ratelimit.FindMaxRateTime(rs.CAPTCHARule.CaptchaFailureLimit),
+		ChallengeFailure: ratelimit.FindMaxRateTime(rs.Challenge.FailureLimit),
 	}
 }
 

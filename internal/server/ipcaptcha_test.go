@@ -43,14 +43,14 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 			_, network, _ := net.ParseCIDR("192.0.2.0/24")
 			trie.Insert(network)
 			rules.IPCAPTCHARule = &config.IPListRule{Enabled: true, Trie: trie}
-			rules.CAPTCHARule = &config.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
+			rules.Challenge = &config.ChallengeRule{SecretKey: "1234567890abcdef", ClearanceTTL: 60}
 			req := request.UserRequest{RemoteIP: "192.0.2.10", Host: "example.com", Uri: "/test", FeatureControl: feature.IPCAPTCHA.ControlMask()}
 			shared := &state.Runtime{}
-			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+			shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			want := "pass"
 			switch scenario {
 			case "challenge":
-				want = "captcha"
+				want = "challenge"
 			case "clearance":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))
 			case "nonmatch":
@@ -75,24 +75,22 @@ func TestIPCaptchaRequestFlow(t *testing.T) {
 				rules.URLBlockRule.List.Append(&urllist.URLRule{Pattern: "/test"})
 				req.FeatureControl |= feature.URLBlock.ControlMask()
 				want = "block"
-			// IPCAPTCHA precedes country and dynamic action checks; valid clearance lets them run.
+			// IPCAPTCHA only marks the request: a later check that blocks wins over the challenge.
 			case "dynamic block", "clearance dynamic block":
 				engine := action.NewActionRuleEngine(time.Minute)
 				t.Cleanup(engine.Stop)
 				engine.AddIPRule("", req.RemoteIP, action.ActionBlock, time.Minute)
 				shared.ActionRuleEngine = engine
-				want = "captcha"
+				want = "block"
 				if scenario == "clearance dynamic block" {
 					req.ToriiClearance = string(check.GenClearance(req, *rules))
-					want = "block"
 				}
 			case "country block", "clearance country block":
-				rules.CountryRule.UnknownAction = config.CountryBlock
+				rules.CountryRule.UnknownAction = action.ActionBlock
 				req.FeatureControl |= feature.CountryRule.ControlMask()
-				want = "captcha"
+				want = "block"
 				if scenario == "clearance country block" {
 					req.ToriiClearance = string(check.GenClearance(req, *rules))
-					want = "block"
 				}
 			case "later flood":
 				req.ToriiClearance = string(check.GenClearance(req, *rules))

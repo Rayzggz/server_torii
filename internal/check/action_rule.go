@@ -13,16 +13,5 @@ func ActionRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision *
 		return
 	}
 
-	act := engine.CheckRequest(reqData)
-
-	switch act {
-	case action.ActionBlock:
-		decision.SetVerdict(action.Done, action.VerdictBlock)
-	case action.ActionCaptcha:
-		requireCaptcha(reqData, ruleSet, decision, rt)
-	case action.ActionCaptchaUnverified:
-		if !reqData.HasBrowserEvidence(rt.BrowserEvidence) {
-			requireCaptcha(reqData, ruleSet, decision, rt)
-		}
-	}
+	applyAction(reqData, decision, rt, engine.CheckRequest(reqData))
 }

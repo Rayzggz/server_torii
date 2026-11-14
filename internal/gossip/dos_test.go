@@ -96,8 +96,9 @@ func TestGossipManager_HandleGossip_DoS(t *testing.T) {
 }
 
 func createSignedGossipRequest(t *testing.T, cfg *config.MainConfig, bodyStr string) *http.Request {
-	payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "BLOCK", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+	payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
 	msg := Message{
+		Version:    ProtocolVersion,
 		ID:         "test-id",
 		OriginNode: "KnownPeer",
 		Type:       TypeActionRule,

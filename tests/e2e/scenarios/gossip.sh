@@ -2,9 +2,9 @@
 gossip_payload() {
     local ip=$1 expires=$2 id=$3 origin=$4 stamp=$5 site=${6-default_site} content
     content=$(jq -cn --arg ip "$ip" --argjson expires "$expires" --arg site "$site" \
-        '{site:$site,rule_type:"IP",value:$ip,action:"BLOCK",expires_at:$expires}')
+        '{site:$site,rule_type:"IP",value:$ip,action:"block",expires_at:$expires}')
     PAYLOAD=$(jq -cn --arg id "$id" --arg origin "$origin" --arg content "$content" --argjson stamp "$stamp" \
-        '{id:$id,type:"ACTION_RULE",content:$content,origin_node:$origin,timestamp:$stamp,seq:1}')
+        '{v:2,id:$id,type:"ACTION_RULE",content:$content,origin_node:$origin,timestamp:$stamp,seq:1}')
     SIG=$(hmac "$PAYLOAD" "$SECRET")
 }
 post_gossip() {
@@ -74,20 +74,21 @@ test_gossip() {
     assert_eq "$HTTP_CODE" 413
     request 1 /torii/gossip
     assert_eq "$HTTP_CODE" 405
-    # SYNC exercises the snapshot receiver and all three dynamic rule types.
+    # SYNC exercises the snapshot receiver and both kinds of dynamic rule. A UA rule, which
+    # protocol version 1 had, is dropped without affecting the rest of the snapshot.
     stamp=$(date +%s)
     content=$(jq -cn --argjson expiry "$((stamp+120))" '{rules:[
-        {site:"default_site",rule_type:"IP",value:"203.0.113.220",action:"BLOCK",expires_at:$expiry},
-        {site:"default_site",rule_type:"UA",value:"ToriiE2EUA/1.0",action:"BLOCK",expires_at:$expiry},
-        {site:"default_site",rule_type:"URI",value:"/sync/limited",action:"CAPTCHA",expires_at:$expiry},
-        {site:"default_site",rule_type:"IP",value:"192.168.10.20",action:"BLOCK",expires_at:$expiry}]}')
+        {site:"default_site",rule_type:"IP",value:"203.0.113.220",action:"block",expires_at:$expiry},
+        {site:"default_site",rule_type:"UA",value:"ToriiE2EUA/1.0",action:"block",expires_at:$expiry},
+        {site:"default_site",rule_type:"URI",value:"/sync/limited",action:"challenge",expires_at:$expiry},
+        {site:"default_site",rule_type:"IP",value:"192.168.10.20",action:"block",expires_at:$expiry}]}')
     PAYLOAD=$(jq -cn --arg id "$(uuid)" --arg content "$content" --argjson stamp "$stamp" \
-        '{id:$id,type:"SYNC",content:$content,origin_node:"Node_2",timestamp:$stamp,seq:1}')
+        '{v:2,id:$id,type:"SYNC",content:$content,origin_node:"Node_2",timestamp:$stamp,seq:1}')
     SIG=$(hmac "$PAYLOAD" "$SECRET")
     post_gossip; ack
     expect block 1 203.0.113.220
-    expect block 1 203.0.113.221 "$ZERO" /neutral default_site -A ToriiE2EUA/1.0
-    expect captcha 1 203.0.113.221 "$ZERO" /sync/limited
+    expect pass 1 203.0.113.221 "$ZERO" /neutral default_site -A ToriiE2EUA/1.0
+    expect challenge 1 203.0.113.221 "$ZERO" /sync/limited
     expect pass 1 192.168.10.20
     # The synchronized rules stay on their site.
     expect pass 1 203.0.113.220 "$ZERO" /neutral exact.e2e.test

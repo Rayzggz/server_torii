@@ -29,11 +29,10 @@ func contractCookie(ts int64, host, ua, label string) string {
 	return fmt.Sprintf("%d:%s", ts, contractMAC(fmt.Sprintf("%d%s%s%s", ts, host, ua, label)))
 }
 
-func contractFixture() (request.UserRequest, config.RuleSet) {
+func contractFixture(mode config.ChallengeMode) (request.UserRequest, config.RuleSet) {
 	return request.UserRequest{Host: "example.com", UserAgent: "UA-X"},
 		config.RuleSet{
-			CAPTCHARule:           &config.CaptchaRule{SecretKey: contractKey, CaptchaValidateTime: 600, CaptchaChallengeSessionTimeout: 120},
-			ExternalMigrationRule: &config.ExternalMigrationRule{SecretKey: contractKey, SessionTimeout: 300},
+			Challenge: &config.ChallengeRule{Mode: mode, SecretKey: contractKey, ClearanceTTL: 600, SessionTTL: 120},
 			// The site ID is part of every token, so a token of one site is useless on another.
 			ID: "shop",
 		}
@@ -51,36 +50,30 @@ func TestCookieFormatContract(t *testing.T) {
 	}
 
 	now := time.Now().Unix()
+	verifyClearance := func(r request.UserRequest, rs config.RuleSet, v string) bool {
+		r.ToriiClearance = v
+		return verifyClearanceCookie(r, rs)
+	}
+	verifySession := func(r request.UserRequest, rs config.RuleSet, v string) bool {
+		r.ToriiSessionID = v
+		return VerifySessionIDCookie(r, rs)
+	}
 	for _, tc := range []struct {
 		name   string
+		mode   config.ChallengeMode
 		label  string
 		maxAge int64 // 0: the cookie never expires on its own
 		gen    func(request.UserRequest, config.RuleSet) []byte
 		verify func(request.UserRequest, config.RuleSet, string) bool
 	}{
-		{"captcha clearance", "CAPTCHA-CLEARANCE@shop", 600, GenClearance,
-			func(r request.UserRequest, rs config.RuleSet, v string) bool {
-				r.ToriiClearance = v
-				return verifyClearanceCookie(r, rs)
-			}},
-		{"captcha session", "CAPTCHA-SESSION@shop", 120, GenSessionID,
-			func(r request.UserRequest, rs config.RuleSet, v string) bool {
-				r.ToriiSessionID = v
-				return VerifySessionIDCookie(r, rs)
-			}},
-		{"external clearance", "EXTERNAL-CLEARANCE@shop", 300, GenExternalMigrationClearance,
-			func(r request.UserRequest, rs config.RuleSet, v string) bool {
-				r.ToriiClearance = v
-				return verifyExternalMigrationClearanceCookie(r, rs)
-			}},
-		{"external session", "EXTERNAL-SESSION@shop", 0, GenExternalMigrationSessionID,
-			func(r request.UserRequest, rs config.RuleSet, v string) bool {
-				r.ToriiSessionID = v
-				return VerifyExternalMigrationSessionIDCookie(r, rs)
-			}},
+		{"captcha clearance", config.ChallengeHCaptcha, "CAPTCHA-CLEARANCE@shop", 600, GenClearance, verifyClearance},
+		{"altcha clearance", config.ChallengeAltcha, "CAPTCHA-CLEARANCE@shop", 600, GenClearance, verifyClearance},
+		{"captcha session", config.ChallengeHCaptcha, "CAPTCHA-SESSION@shop", 120, GenSessionID, verifySession},
+		{"external clearance", config.ChallengeExternal, "EXTERNAL-CLEARANCE@shop", 600, GenClearance, verifyClearance},
+		{"external session", config.ChallengeExternal, "EXTERNAL-SESSION@shop", 0, GenSessionID, verifySession},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req, rs := contractFixture()
+			req, rs := contractFixture(tc.mode)
 
 			issued := string(tc.gen(req, rs))
 			tsText, _, ok := strings.Cut(issued, ":")

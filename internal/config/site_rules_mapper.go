@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"server_torii/internal/action"
 	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
@@ -10,10 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const (
-	DefaultCaptchaProvider = "hcaptcha"
-	DefaultAltchaCost      = 5000
-)
+const DefaultAltchaCost = 5000
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
@@ -23,13 +21,40 @@ type ruleSetWrapper struct {
 	URLBlockRule                *URLListRule                 `yaml:"URLBlock"`
 	IPCAPTCHARule               *IPListRule                  `yaml:"IPCAPTCHA"`
 	URLCAPTCHARule              *URLListRule                 `yaml:"URLCAPTCHA"`
-	CAPTCHARule                 *captchaRuleWrapper          `yaml:"CAPTCHA"`
+	Challenge                   *challengeRuleWrapper        `yaml:"Challenge"`
 	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
 	HTTPFloodRule               *httpFloodRuleWrapper        `yaml:"HTTPFlood"`
-	ExternalMigrationRule       *ExternalMigrationRule       `yaml:"ExternalMigration"`
 	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
 	CountryRule                 *countryRuleWrapper          `yaml:"CountryRule"`
 	CustomRules                 *customRulesWrapper          `yaml:"CustomRules"`
+}
+
+// missingSections returns the names of the sections the file leaves out, in the order of the
+// example configuration.
+func (w *ruleSetWrapper) missingSections() []string {
+	var missing []string
+	for _, section := range []struct {
+		name    string
+		present bool
+	}{
+		{"IPAllow", w.IPAllowRule != nil},
+		{"IPBlock", w.IPBlockRule != nil},
+		{"IPCAPTCHA", w.IPCAPTCHARule != nil},
+		{"URLAllow", w.URLAllowRule != nil},
+		{"URLBlock", w.URLBlockRule != nil},
+		{"URLCAPTCHA", w.URLCAPTCHARule != nil},
+		{"CountryRule", w.CountryRule != nil},
+		{"Challenge", w.Challenge != nil},
+		{"HTTPFlood", w.HTTPFloodRule != nil},
+		{"VerifyBot", w.VerifyBotRule != nil},
+		{"AdaptiveTrafficAnalyzer", w.AdaptiveTrafficAnalyzerRule != nil},
+		{"CustomRules", w.CustomRules != nil},
+	} {
+		if !section.present {
+			missing = append(missing, section.name)
+		}
+	}
+	return missing
 }
 
 type customRulesWrapper struct {
@@ -54,17 +79,18 @@ type httpFloodRuleWrapper struct {
 	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
-type captchaRuleWrapper struct {
-	Enabled                        bool     `yaml:"enabled"`
-	Provider                       string   `yaml:"provider"`
-	SecretKey                      string   `yaml:"secret_key" validate:"required,min=16"`
-	CaptchaValidateTime            int64    `yaml:"captcha_validate_time" validate:"required,min=1,max=9223372036854775807"`
-	CaptchaChallengeSessionTimeout int64    `yaml:"captcha_challenge_session_timeout" validate:"required,min=1,max=9223372036854775807"`
-	HCaptchaSecret                 string   `yaml:"hcaptcha_secret"`
-	AltchaHMACSecret               string   `yaml:"altcha_hmac_secret"`
-	AltchaCost                     int      `yaml:"altcha_cost"`
-	CaptchaFailureLimit            []string `yaml:"CaptchaFailureLimit" validate:"min=1,dive"`
-	FailureBlockDuration           int64    `yaml:"failure_block_duration" validate:"required,min=1"`
+type challengeRuleWrapper struct {
+	Enabled              bool          `yaml:"enabled"`
+	Mode                 ChallengeMode `yaml:"mode" validate:"required,oneof=hcaptcha altcha external"`
+	SecretKey            string        `yaml:"secret_key" validate:"required,min=16"`
+	ClearanceTTL         int64         `yaml:"clearance_ttl" validate:"required,min=1,max=9223372036854775807"`
+	SessionTTL           int64         `yaml:"session_ttl" validate:"required_unless=Mode external,omitempty,min=1,max=9223372036854775807"`
+	HCaptchaSecret       string        `yaml:"hcaptcha_secret"`
+	AltchaHMACSecret     string        `yaml:"altcha_hmac_secret"`
+	AltchaCost           int           `yaml:"altcha_cost"`
+	RedirectURL          string        `yaml:"redirect_url" validate:"required_if=Mode external,omitempty,url"`
+	FailureLimit         []string      `yaml:"failure_limit" validate:"min=1,dive"`
+	FailureBlockDuration int64         `yaml:"failure_block_duration" validate:"required,min=1"`
 }
 
 type countryRuleWrapper struct {
@@ -75,9 +101,9 @@ type countryRuleWrapper struct {
 }
 
 // A zero node means omitted; an explicit empty or null action is invalid.
-func countryActionOrDefault(node yaml.Node) (CountryAction, error) {
+func countryActionOrDefault(node yaml.Node) (action.Action, error) {
 	if node.Kind == 0 {
-		return CountryContinue, nil
+		return action.ActionContinue, nil
 	}
 	if node.Kind != yaml.ScalarNode || node.Tag != "!!str" {
 		return "", fmt.Errorf("country action must be a string")
@@ -85,14 +111,8 @@ func countryActionOrDefault(node yaml.Node) (CountryAction, error) {
 	return parseCountryAction(node.Value)
 }
 
-func parseCountryAction(value string) (CountryAction, error) {
-	action := CountryAction(value)
-	switch action {
-	case CountryContinue, CountryBlock, CountryCaptcha:
-		return action, nil
-	default:
-		return "", fmt.Errorf("invalid country action %q: expected continue, block, or captcha", value)
-	}
+func parseCountryAction(value string) (action.Action, error) {
+	return action.Parse(value, action.ActionContinue, action.ActionBlock, action.ActionChallenge)
 }
 
 func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
@@ -104,7 +124,7 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
 	if dest.UnknownAction, err = countryActionOrDefault(wrapper.UnknownAction); err != nil {
 		return fmt.Errorf("CountryRule unknown_action: %w", err)
 	}
-	dest.Countries = make(map[string]CountryAction, len(wrapper.Countries))
+	dest.Countries = make(map[string]action.Action, len(wrapper.Countries))
 	for code, value := range wrapper.Countries {
 		normalized, err := normalizeCountryCode(code)
 		if err != nil {
@@ -113,28 +133,13 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
 		if _, exists := dest.Countries[normalized]; exists {
 			return fmt.Errorf("CountryRule duplicate normalized country %q", normalized)
 		}
-		action, err := parseCountryAction(value)
+		act, err := parseCountryAction(value)
 		if err != nil {
 			return fmt.Errorf("CountryRule country %s: %w", normalized, err)
 		}
-		dest.Countries[normalized] = action
+		dest.Countries[normalized] = act
 	}
 	return nil
-}
-
-func countryRequiresCaptcha(rule *CountryRule) bool {
-	if rule == nil {
-		return false
-	}
-	if rule.DefaultAction == CountryCaptcha || rule.UnknownAction == CountryCaptcha {
-		return true
-	}
-	for _, action := range rule.Countries {
-		if action == CountryCaptcha {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeCountryCode(code string) (string, error) {
@@ -147,18 +152,15 @@ func normalizeCountryCode(code string) (string, error) {
 	return normalized, nil
 }
 
-func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *CaptchaRule) error {
-	if err := validateStruct(wrapper, "CAPTCHA"); err != nil {
+func mapChallengeRule(wrapper *challengeRuleWrapper, dest *ChallengeRule) error {
+	if err := validateStruct(wrapper, "Challenge"); err != nil {
 		return err
 	}
 	dest.Enabled = wrapper.Enabled
-	dest.Provider = wrapper.Provider
-	if dest.Provider == "" {
-		dest.Provider = DefaultCaptchaProvider
-	}
+	dest.Mode = wrapper.Mode
 	dest.SecretKey = wrapper.SecretKey
-	dest.CaptchaValidateTime = wrapper.CaptchaValidateTime
-	dest.CaptchaChallengeSessionTimeout = wrapper.CaptchaChallengeSessionTimeout
+	dest.ClearanceTTL = wrapper.ClearanceTTL
+	dest.SessionTTL = wrapper.SessionTTL
 	dest.HCaptchaSecret = wrapper.HCaptchaSecret
 	dest.AltchaHMACSecret = wrapper.AltchaHMACSecret
 	if dest.AltchaHMACSecret == "" {
@@ -168,10 +170,11 @@ func mapCaptchaRule(wrapper *captchaRuleWrapper, dest *CaptchaRule) error {
 	if dest.AltchaCost == 0 {
 		dest.AltchaCost = DefaultAltchaCost
 	}
+	dest.RedirectURL = wrapper.RedirectURL
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
 	var err error
-	dest.CaptchaFailureLimit, err = ratelimit.ParseRateList(wrapper.CaptchaFailureLimit)
+	dest.FailureLimit, err = ratelimit.ParseRateList(wrapper.FailureLimit)
 	return err
 }
 
@@ -231,11 +234,11 @@ func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error 
 		}
 		var skipMask uint32
 		switch {
-		case act == rules.ActionSkip && len(w.Skip) == 0:
+		case act == action.ActionSkip && len(w.Skip) == 0:
 			return fmt.Errorf("%s: skip action requires a non-empty skip list", label)
-		case act != rules.ActionSkip && len(w.Skip) > 0:
+		case act != action.ActionSkip && len(w.Skip) > 0:
 			return fmt.Errorf("%s: skip list is only valid with the skip action", label)
-		case act == rules.ActionSkip:
+		case act == action.ActionSkip:
 			if skipMask, err = feature.ParseSkipTargets(w.Skip); err != nil {
 				return fmt.Errorf("%s: %w", label, err)
 			}

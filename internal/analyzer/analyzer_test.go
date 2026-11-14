@@ -37,7 +37,7 @@ func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnaly
 		},
 		IPDetection: config.IPDetectionRule{
 			Enabled: true,
-			Action:  config.AnalyzerCaptcha,
+			Action:  action.ActionChallenge,
 		},
 	}
 	if mutate != nil {
@@ -71,8 +71,8 @@ func (h *detectorHarness) run(logs []LogEntry) {
 	})
 }
 
-func (h *detectorHarness) ipAction(ip string) action.ActionType {
-	return h.engine.Check("", ip, "", "/__unused__")
+func (h *detectorHarness) ipAction(ip string) action.Action {
+	return h.engine.Check("", ip, "/__unused__")
 }
 
 // browse is a real browser loading a page and its assets.
@@ -164,7 +164,7 @@ func TestDetectorSustainedAttack(t *testing.T) {
 	}
 	for i := 0; i < 200; i++ {
 		ip := fmt.Sprintf("172.16.%d.%d", i/250, i%250)
-		if got := h.ipAction(ip); got != action.ActionCaptcha {
+		if got := h.ipAction(ip); got != action.ActionChallenge {
 			t.Fatalf("bot %s: got %v, want CAPTCHA", ip, got)
 		}
 	}
@@ -175,7 +175,7 @@ func TestDetectorSustainedAttack(t *testing.T) {
 			t.Fatalf("legitimate client %s: got %v", ip, got)
 		}
 	}
-	if got := h.engine.Check("", "", "", "/search"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "/search"); got != action.ActionNone {
 		t.Fatalf("observe URI action wrote a rule: %v", got)
 	}
 	if _, ok := h.state.uriRules["/search"]; !ok {
@@ -188,7 +188,7 @@ func TestDetectorSustainedAttack(t *testing.T) {
 
 func TestDetectorURIActionAndExemptions(t *testing.T) {
 	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
-		r.URIDetection.Action = config.AnalyzerCaptcha
+		r.URIDetection.Action = action.ActionChallenge
 	})
 	h.rules.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/api/feed"})
 	_, allowNet, _ := net.ParseCIDR("192.168.5.0/24")
@@ -210,10 +210,10 @@ func TestDetectorURIActionAndExemptions(t *testing.T) {
 		}
 		h.run(logs)
 	}
-	if got := h.engine.Check("", "", "", "/search"); got != action.ActionCaptcha {
+	if got := h.engine.Check("", "", "/search"); got != action.ActionChallenge {
 		t.Fatalf("hot URI: got %v, want CAPTCHA", got)
 	}
-	if got := h.engine.Check("", "", "", "/api/feed"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "/api/feed"); got != action.ActionNone {
 		t.Fatalf("allowlisted URI got %v", got)
 	}
 	for _, ip := range []string{"192.168.5.7", "10.2.0.1", "10.4.0.1"} {
@@ -348,19 +348,19 @@ func TestDetectorIPSignals(t *testing.T) {
 	}
 	h.run(logs)
 
-	want := map[string]action.ActionType{
-		"1.1.1.1": action.ActionCaptcha,
+	want := map[string]action.Action{
+		"1.1.1.1": action.ActionChallenge,
 		"2.2.2.2": action.ActionNone,
 		"3.3.3.3": action.ActionNone,
 		"4.4.4.4": action.ActionNone,
-		"5.5.5.5": action.ActionCaptcha,
+		"5.5.5.5": action.ActionChallenge,
 	}
 	for ip, w := range want {
 		if got := h.ipAction(ip); got != w {
 			t.Errorf("%s: got %v, want %v", ip, got, w)
 		}
 	}
-	if got := h.engine.Check("", "", "", "/search"); got != action.ActionNone {
+	if got := h.engine.Check("", "", "/search"); got != action.ActionNone {
 		t.Errorf("5xx outage produced URI rule %v", got)
 	}
 }
@@ -374,12 +374,12 @@ func TestDetectorActions(t *testing.T) {
 		return logs
 	}
 	for _, tc := range []struct {
-		act  config.AnalyzerAction
-		want action.ActionType
+		act  action.Action
+		want action.Action
 	}{
-		{config.AnalyzerObserve, action.ActionNone},
-		{config.AnalyzerCaptcha, action.ActionCaptcha},
-		{config.AnalyzerBlock, action.ActionBlock},
+		{action.ActionObserve, action.ActionNone},
+		{action.ActionChallenge, action.ActionChallenge},
+		{action.ActionBlock, action.ActionBlock},
 	} {
 		t.Run(string(tc.act), func(t *testing.T) {
 			h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.IPDetection.Action = tc.act })
@@ -402,7 +402,7 @@ func TestDetectorActions(t *testing.T) {
 
 func TestDetectorEscalation(t *testing.T) {
 	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
-		r.IPDetection.Action = config.AnalyzerObserve
+		r.IPDetection.Action = action.ActionObserve
 		r.IPDetection.BlockDuration = 60
 		r.IPDetection.MaxBlockDuration = 200
 	})
@@ -431,10 +431,10 @@ func TestEnforcerBroadcastLimit(t *testing.T) {
 	gossipCh := make(chan gossip.Message, 10)
 	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, "", 2)
 	for i := 0; i < 5; i++ {
-		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), config.AnalyzerBlock, time.Minute, true)
+		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), action.ActionBlock, time.Minute, true)
 	}
-	e.apply("URI", "/search", config.AnalyzerCaptchaUnverified, time.Minute, false)
-	if got := engine.Check("", "", "", "/search"); got != action.ActionCaptchaUnverified {
+	e.apply("URI", "/search", action.ActionChallengeUnverified, time.Minute, false)
+	if got := engine.Check("", "", "/search"); got != action.ActionChallengeUnverified {
 		t.Fatalf("URI rule %v, want CAPTCHA_UNVERIFIED", got)
 	}
 	if len(gossipCh) != 3 || e.suppressed != 3 {
@@ -499,10 +499,10 @@ func TestNormalizeAnalyzerRule(t *testing.T) {
 	r := &config.AdaptiveTrafficAnalyzerRule{
 		BrowserEvidence: config.BrowserEvidenceRule{AssetExtensions: []string{"JS", ".css"}},
 		IPDetection:     config.IPDetectionRule{Action: "Bogus"},
-		URIDetection:    config.URIDetectionRule{Action: "Captcha_Unverified"},
+		URIDetection:    config.URIDetectionRule{Action: "Challenge_Unverified"},
 	}
 	config.NormalizeAdaptiveTrafficAnalyzerRule(r)
-	if r.IPDetection.Action != config.AnalyzerObserve || r.URIDetection.Action != config.AnalyzerCaptchaUnverified {
+	if r.IPDetection.Action != action.ActionObserve || r.URIDetection.Action != action.ActionChallengeUnverified {
 		t.Errorf("actions: %q %q", r.IPDetection.Action, r.URIDetection.Action)
 	}
 	if len(r.BrowserEvidence.AssetExtensions) != 2 || r.BrowserEvidence.AssetExtensions[0] != ".js" {

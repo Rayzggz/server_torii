@@ -14,9 +14,7 @@ func TestURLCaptchaConfiguration(t *testing.T) {
 		{"omitted", "", "", true, false},
 		{"enabled missing", "URLCAPTCHA: { enabled: true }\n" + ipCaptchaSettings, "", true, true},
 		{"enabled empty", "URLCAPTCHA: { enabled: true }\n" + ipCaptchaSettings, "", false, false},
-		{"enabled no captcha", "URLCAPTCHA: { enabled: true }", "", false, true},
-		{"invalid captcha", "URLCAPTCHA: { enabled: true }\nCAPTCHA: { enabled: false }", "/login", false, true},
-		{"disabled populated no captcha", "URLCAPTCHA: { enabled: false }", "/login", false, true},
+		{"invalid captcha", "URLCAPTCHA: { enabled: true }\nChallenge: { enabled: false }", "/login", false, true},
 		{"disabled populated valid captcha", ipCaptchaSettings, "/login", false, false},
 		{"invalid regex", "", "^(\n\n", false, true},
 	} {

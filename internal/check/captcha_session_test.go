@@ -11,15 +11,10 @@ import (
 )
 
 func TestGenSessionIDReusesValidSessionForEveryProvider(t *testing.T) {
-	providers := []string{
-		CaptchaProviderAltcha,
-		CaptchaProviderHCaptcha,
-		"",
-		"future-provider",
-	}
+	providers := []config.ChallengeMode{config.ChallengeAltcha, config.ChallengeHCaptcha}
 
 	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
+		t.Run(string(provider), func(t *testing.T) {
 			ruleSet := testCaptchaSessionRuleSet(provider)
 			reqData := testCaptchaSessionRequestData()
 			reqData.ToriiSessionID = genSessionIDAt(reqData, *ruleSet, time.Now().Add(-time.Second).Unix())
@@ -33,9 +28,9 @@ func TestGenSessionIDReusesValidSessionForEveryProvider(t *testing.T) {
 }
 
 func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
-	ruleSet := testCaptchaSessionRuleSet(CaptchaProviderAltcha)
+	ruleSet := testCaptchaSessionRuleSet(config.ChallengeAltcha)
 	reqData := testCaptchaSessionRequestData()
-	expiredAt := time.Now().Add(-time.Duration(ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout+1) * time.Second)
+	expiredAt := time.Now().Add(-time.Duration(ruleSet.Challenge.SessionTTL+1) * time.Second)
 
 	tests := []struct {
 		name      string
@@ -64,12 +59,12 @@ func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
 	}
 }
 
-func testCaptchaSessionRuleSet(provider string) *config.RuleSet {
+func testCaptchaSessionRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			Provider:                       provider,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
+		Challenge: &config.ChallengeRule{
+			Mode:       mode,
+			SecretKey:  "1234567890abcdef",
+			SessionTTL: 120,
 		},
 	}
 }
@@ -83,7 +78,7 @@ func testCaptchaSessionRequestData() request.UserRequest {
 }
 
 func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
-	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
+	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.SecretKey))
 	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION@", timestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
 	return fmt.Sprintf("%d:%x", timestamp, mac.Sum(nil))
 }

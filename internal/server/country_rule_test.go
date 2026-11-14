@@ -6,6 +6,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
@@ -35,7 +36,7 @@ func TestIPAllowBypassesCountryRule(t *testing.T) {
 		IPAllowRule: &config.IPListRule{Enabled: true, Trie: trie},
 		CountryRule: &config.CountryRule{
 			Enabled:   true,
-			Countries: map[string]config.CountryAction{"US": config.CountryBlock},
+			Countries: map[string]action.Action{"US": action.ActionBlock},
 		},
 	}
 	reqData := request.UserRequest{
@@ -78,16 +79,16 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 	ruleSet := featureControlRuleSet()
 	ruleSet.CountryRule = &config.CountryRule{
 		Enabled:   true,
-		Countries: map[string]config.CountryAction{"US": config.CountryCaptcha, "CN": config.CountryBlock},
+		Countries: map[string]action.Action{"US": action.ActionChallenge, "CN": action.ActionBlock},
 	}
-	ruleSet.CAPTCHARule = &config.CaptchaRule{
-		SecretKey:                      "1234567890abcdef",
-		CaptchaValidateTime:            60,
-		CaptchaChallengeSessionTimeout: 120,
-		CaptchaFailureLimit:            map[int64]int64{},
+	ruleSet.Challenge = &config.ChallengeRule{
+		SecretKey:    "1234567890abcdef",
+		ClearanceTTL: 60,
+		SessionTTL:   120,
+		FailureLimit: map[int64]int64{},
 	}
 	sharedMem := &state.Runtime{CountryResolver: database}
-	sharedMem.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 
 	tests := []struct {
 		name        string
@@ -95,7 +96,7 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 		wantCountry string
 		want        string
 	}{
-		{name: "US requires CAPTCHA", remoteIP: "8.8.8.8", wantCountry: "US", want: "captcha"},
+		{name: "US requires CAPTCHA", remoteIP: "8.8.8.8", wantCountry: "US", want: "challenge"},
 		{name: "CN is blocked", remoteIP: "114.114.114.114", wantCountry: "CN", want: "block"},
 		{name: "DE passes normally", remoteIP: "84.200.69.80", wantCountry: "DE", want: "pass"},
 	}
@@ -123,14 +124,13 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		IPAllowRule:           &config.IPListRule{},
-		IPBlockRule:           &config.IPListRule{},
-		URLAllowRule:          &config.URLListRule{},
-		URLBlockRule:          &config.URLListRule{},
-		VerifyBotRule:         &config.VerifyBotRule{},
-		HTTPFloodRule:         &config.HTTPFloodRule{},
-		CAPTCHARule:           &config.CaptchaRule{},
-		ExternalMigrationRule: &config.ExternalMigrationRule{},
-		CountryRule:           &config.CountryRule{Enabled: true},
+		IPAllowRule:   &config.IPListRule{},
+		IPBlockRule:   &config.IPListRule{},
+		URLAllowRule:  &config.URLListRule{},
+		URLBlockRule:  &config.URLListRule{},
+		VerifyBotRule: &config.VerifyBotRule{},
+		HTTPFloodRule: &config.HTTPFloodRule{},
+		Challenge:     &config.ChallengeRule{},
+		CountryRule:   &config.CountryRule{Enabled: true},
 	}
 }

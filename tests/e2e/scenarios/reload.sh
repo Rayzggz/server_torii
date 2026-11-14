@@ -25,7 +25,7 @@ test_reload() {
     mv "$RUN/node1/data/GeoLite2-Country.mmdb" "$RUN/country.saved.mmdb"
     kill -HUP "${NODE_PIDS[0]}"
     wait_log "$logfile" 'retaining the previous reader'
-    expect captcha 1 8.8.8.8 0000000010000000
+    expect challenge 1 8.8.8.8 0000000010000000
     mv "$RUN/country.saved.mmdb" "$RUN/node1/data/GeoLite2-Country.mmdb"
     kill -HUP "${NODE_PIDS[0]}"
 }

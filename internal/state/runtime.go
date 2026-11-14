@@ -55,30 +55,20 @@ func (rt *Runtime) HasBrowserEvidence(site, ip string) bool {
 	return rt != nil && rt.BrowserEvidence != nil && rt.BrowserEvidence.HasBrowserEvidence(site, ip)
 }
 
-// Rule targets understood by ApplyRule.
-const (
-	RuleTargetIP  = "IP"
-	RuleTargetURI = "URI"
-)
-
 // ApplyRule installs a temporary action rule for one site on this node and, when broadcast is set,
 // shares it with peers. It reports false, doing nothing, when no rule engine is running.
-func (rt *Runtime) ApplyRule(site, target, value string, act action.ActionType, ttl time.Duration, broadcast bool) bool {
+func (rt *Runtime) ApplyRule(site string, kind action.RuleKind, value string, act action.Action, ttl time.Duration, broadcast bool) bool {
 	if rt == nil || rt.ActionRuleEngine == nil {
 		return false
 	}
-	if target == RuleTargetIP {
-		rt.ActionRuleEngine.AddIPRule(site, value, act, ttl)
-	} else {
-		rt.ActionRuleEngine.AddURIRule(site, value, act, ttl)
-	}
+	rt.ActionRuleEngine.AddRule(site, kind, value, act, ttl)
 	if broadcast {
-		gossip.BroadcastActionRule(rt.NodeName, site, target, value, string(act), ttl, rt.GossipChan)
+		gossip.BroadcastActionRule(rt.NodeName, site, string(kind), value, string(act), ttl, rt.GossipChan)
 	}
 	return true
 }
 
 // BlockIP blocks ip on one site of this node and shares the block with peers.
 func (rt *Runtime) BlockIP(site, ip string, ttl time.Duration) bool {
-	return rt.ApplyRule(site, RuleTargetIP, ip, action.ActionBlock, ttl, true)
+	return rt.ApplyRule(site, action.RuleIP, ip, action.ActionBlock, ttl, true)
 }

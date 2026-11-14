@@ -8,12 +8,12 @@ import (
 	"server_torii/internal/state"
 )
 
-// IPCAPTCHA applies the existing CAPTCHA flow to addresses in the site's IP list.
+// IPCAPTCHA marks the addresses in the site's IP list for a challenge.
 func IPCAPTCHA(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	rule := ruleSet.IPCAPTCHARule
 	if rule == nil || !rule.Trie.SearchAddr(reqData.ClientAddr()) {
 		return
 	}
 	logx.Info(reqData, "", "IPCAPTCHA")
-	requireCaptcha(reqData, ruleSet, decision, rt)
+	decision.RequireChallenge = true
 }

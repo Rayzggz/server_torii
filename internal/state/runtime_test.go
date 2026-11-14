@@ -19,7 +19,7 @@ func TestLimitersResize(t *testing.T) {
 			l.HTTPFloodSpeedLimitCounter.Load().GetSegSize(),
 			l.HTTPFloodSameURILimitCounter.Load().GetSegSize(),
 			l.HTTPFloodFailureLimitCounter.Load().GetSegSize(),
-			l.CaptchaFailureLimitCounter.Load().GetSegSize(),
+			l.ChallengeFailureLimitCounter.Load().GetSegSize(),
 		}
 	}
 	// An unconfigured window still gets a one-second counter.
@@ -46,7 +46,7 @@ func TestSiteLimitersAreIsolated(t *testing.T) {
 		t.Fatal("a site without counters of its own does not use the shared ones")
 	}
 
-	windows := config.CounterWindows{HTTPFloodSpeed: 10, HTTPFloodSameURI: 10, HTTPFloodFailure: 10, CaptchaFailure: 10}
+	windows := config.CounterWindows{HTTPFloodSpeed: 10, HTTPFloodSameURI: 10, HTTPFloodFailure: 10, ChallengeFailure: 10}
 	s.ResizeSites(map[string]config.CounterWindows{"shop": windows, "blog": windows})
 	shop, blog := s.LimitersFor("shop"), s.LimitersFor("blog")
 	if shop == blog || shop == &s.Limiters {
@@ -80,10 +80,10 @@ func TestApplyRuleIsScopedToTheSite(t *testing.T) {
 	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossipCh}
 
 	rt.BlockIP("shop", "1.2.3.4", time.Minute)
-	if got := engine.Check("shop", "1.2.3.4", "", "/"); got != action.ActionBlock {
+	if got := engine.Check("shop", "1.2.3.4", "/"); got != action.ActionBlock {
 		t.Fatalf("rule on its own site = %s, want BLOCK", got)
 	}
-	if got := engine.Check("blog", "1.2.3.4", "", "/"); got != action.ActionNone {
+	if got := engine.Check("blog", "1.2.3.4", "/"); got != action.ActionNone {
 		t.Fatalf("rule leaked to another site: %s", got)
 	}
 	msg := <-gossipCh
@@ -106,7 +106,7 @@ func TestApplyRule(t *testing.T) {
 	if !rt.BlockIP("", "1.2.3.4", time.Minute) {
 		t.Fatal("BlockIP reported no engine")
 	}
-	if got := engine.Check("", "1.2.3.4", "", "/"); got != action.ActionBlock {
+	if got := engine.Check("", "1.2.3.4", "/"); got != action.ActionBlock {
 		t.Fatalf("IP rule = %s, want BLOCK", got)
 	}
 	select {
@@ -118,8 +118,8 @@ func TestApplyRule(t *testing.T) {
 		t.Fatal("block was not broadcast")
 	}
 
-	rt.ApplyRule("", RuleTargetURI, "/search", action.ActionCaptcha, time.Minute, false)
-	if got := engine.Check("", "9.9.9.9", "", "/search"); got != action.ActionCaptcha {
+	rt.ApplyRule("", action.RuleURI, "/search", action.ActionChallenge, time.Minute, false)
+	if got := engine.Check("", "9.9.9.9", "/search"); got != action.ActionChallenge {
 		t.Fatalf("URI rule = %s, want CAPTCHA", got)
 	}
 	if len(gossipCh) != 0 {

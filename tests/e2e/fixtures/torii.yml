@@ -28,5 +28,7 @@ sites:
     rule_path: "@NODE@/rules/non200expiry"
   - id: uriexpiry
     rule_path: "@NODE@/rules/uriexpiry"
+  - id: external
+    rule_path: "@NODE@/rules/external"
 default_site: default_site
 peers:

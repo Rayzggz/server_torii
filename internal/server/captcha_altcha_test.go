@@ -18,12 +18,12 @@ import (
 
 func TestAltchaChallengeEndpoint(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			Provider:                       check.CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
+		Challenge: &config.ChallengeRule{
+			Mode:             config.ChallengeAltcha,
+			SecretKey:        "1234567890abcdef",
+			SessionTTL:       120,
+			AltchaHMACSecret: "altcha-secret",
+			AltchaCost:       1,
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
@@ -63,12 +63,12 @@ func TestAltchaChallengeEndpoint(t *testing.T) {
 
 func TestAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			Provider:                       check.CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
+		Challenge: &config.ChallengeRule{
+			Mode:             config.ChallengeAltcha,
+			SecretKey:        "1234567890abcdef",
+			SessionTTL:       120,
+			AltchaHMACSecret: "altcha-secret",
+			AltchaCost:       1,
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
@@ -96,33 +96,28 @@ func TestCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		provider    string
+		mode        config.ChallengeMode
 		withSession bool
 	}{
 		{
 			name:        "ALTCHA reuses a valid session",
-			provider:    check.CaptchaProviderAltcha,
+			mode:        config.ChallengeAltcha,
 			withSession: true,
 		},
 		{
-			name:     "ALTCHA creates a missing session",
-			provider: check.CaptchaProviderAltcha,
+			name: "ALTCHA creates a missing session",
+			mode: config.ChallengeAltcha,
 		},
 		{
 			name:        "hCAPTCHA reuses a valid session",
-			provider:    check.CaptchaProviderHCaptcha,
-			withSession: true,
-		},
-		{
-			name:        "future provider reuses a valid session",
-			provider:    "future-provider",
+			mode:        config.ChallengeHCaptcha,
 			withSession: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleSet := captchaPageRuleSet(tt.provider)
+			ruleSet := captchaPageRuleSet(tt.mode)
 			cfg := &config.MainConfig{WebPath: "/torii", ErrorPage: errorPageDir}
 			reqData := request.UserRequest{
 				RemoteIP:  "127.0.0.1",
@@ -134,7 +129,7 @@ func TestCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 				reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 			}
 
-			rec := serveVerdictPage(action.VerdictCaptcha, reqData, ruleSet, cfg, pagesFor(cfg))
+			rec := serveVerdictPage(action.VerdictChallenge, reqData, ruleSet, cfg, pagesFor(cfg))
 
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -164,12 +159,12 @@ func TestCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 	}
 }
 
-func captchaPageRuleSet(provider string) *config.RuleSet {
+func captchaPageRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &config.CaptchaRule{
-			Provider:                       provider,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
+		Challenge: &config.ChallengeRule{
+			Mode:       mode,
+			SecretKey:  "1234567890abcdef",
+			SessionTTL: 120,
 		},
 	}
 }

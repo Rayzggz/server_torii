@@ -6,7 +6,8 @@ BASE_PORT=${BASE_PORT:-25000}
 KEEP_ARTIFACTS=${KEEP_ARTIFACTS:-0}
 ZERO=0000000000000000
 SECRET=e2e-only-global-secret-never-use-in-production
-EXTERNAL_SECRET=e2e-only-external-secret-never-use-in-production
+# The key of the site's Challenge section; it also signs the links exchanged with the external provider.
+EXTERNAL_SECRET=e2e-only-challenge-secret-never-use-in-production
 UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36'
 NODE_PIDS=()
 ASSERTIONS=0
@@ -95,13 +96,15 @@ setup_cluster() {
         cp -R "$E2E/fixtures/pages" "$node/pages"
         # Last node intentionally has no database, testing the unknown-country policy.
         if (( i < NUM_NODES )); then cp "$ROOT/config_example/data/GeoLite2-Country.mmdb" "$node/data/"; fi
-        for site in default exact wildcard failures unknown non200 uri expiry non200expiry uriexpiry; do
+        for site in default exact wildcard failures unknown non200 uri expiry non200expiry uriexpiry external; do
             cp -R "$E2E/fixtures/rules" "$node/rules/$site"
         done
         printf '/exact-site\n' >> "$node/rules/exact/URL_BlockList.conf"
         printf '/wildcard-site\n' >> "$node/rules/wildcard/URL_BlockList.conf"
-        sed -i 's/20\/30s/2\/30s/; s/captcha_challenge_session_timeout: 120/captcha_challenge_session_timeout: 2/' "$node/rules/failures/Server.yml"
+        sed -i 's/20\/30s/2\/30s/; s/session_ttl: 120/session_ttl: 2/' "$node/rules/failures/Server.yml"
         sed -i 's/unknown_action: continue/unknown_action: block/' "$node/rules/unknown/Server.yml"
+        # The same site, handing its clients to the external provider instead of showing a CAPTCHA.
+        sed -i 's/^  mode: altcha$/  mode: external/' "$node/rules/external/Server.yml"
         sed -i 's/failure_block_duration: 300/failure_block_duration: 3/g' "$node/rules/expiry/Server.yml"
         for site in non200 uri non200expiry uriexpiry; do
             cfg="$node/rules/$site/Server.yml"
@@ -110,7 +113,7 @@ setup_cluster() {
             if [[ "$site" == non200* ]]; then
                 sed -i '/^  ip_detection:/,/^[^ ]/s/enabled: false/enabled: true/' "$cfg"
             else
-                sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: captcha/' "$cfg"
+                sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: challenge/' "$cfg"
             fi
             if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300/block_duration: 3/g' "$cfg"; fi
         done
@@ -155,12 +158,14 @@ request() {
 header() { awk -v key="$1:" 'tolower($1)==tolower(key) {$1=""; sub(/^ /, ""); sub(/\r$/, ""); print}' "$RESPONSE.headers"; }
 # The scenarios select checks with a 16-character mask, one character per check in this order:
 # 1 forces the check on, 0 forces it off, _ keeps the setting of the site. An empty mask
-# changes nothing.
-FEATURE_NAMES=(ip_allow ip_block url_allow url_block verify_bot http_flood captcha external_migration
+# changes nothing. Position 8 belonged to a check that no longer exists; it is kept, and
+# ignored, so the masks of the scenarios keep their positions.
+FEATURE_NAMES=(ip_allow ip_block url_allow url_block verify_bot http_flood challenge ''
     country_rule ip_captcha url_captcha custom_rules)
 features_header() {
     local mask=$1 i out=''
     for ((i=0; i<${#FEATURE_NAMES[@]} && i<${#mask}; i++)); do
+        [[ -n "${FEATURE_NAMES[i]}" ]] || continue
         case "${mask:i:1}" in
             1) out+=" +${FEATURE_NAMES[i]}" ;;
             0) out+=" -${FEATURE_NAMES[i]}" ;;
@@ -175,7 +180,7 @@ site_for() {
         default_site) printf default_site ;;
         exact.e2e.test) printf exact ;;
         *.e2e.test) printf wildcard ;;
-        failures.test|unknown.test|non200.test|uri.test|expiry.test|non200expiry.test|uriexpiry.test)
+        failures.test|unknown.test|non200.test|uri.test|expiry.test|non200expiry.test|uriexpiry.test|external.test)
             printf '%s' "${1%.test}" ;;
     esac
 }
@@ -194,9 +199,12 @@ public() {
         -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
 }
 # decision EXPECTED: the last check decided EXPECTED and answered with the matching response.
+# A challenge is answered with the CAPTCHA page, or, on a site in the external mode, with a
+# redirect to the provider: expect "redirect" there. Both are the decision "challenge".
 decision() {
-    local expected=$1
-    assert_eq "$HTTP_DECISION" "$expected" 'decision'
+    local expected=$1 wire=$1
+    [[ "$expected" != redirect ]] || wire=challenge
+    assert_eq "$HTTP_DECISION" "$wire" 'decision'
     case "$expected" in
         pass)
             assert_eq "$HTTP_CODE" 204 'pass status'
@@ -207,11 +215,11 @@ decision() {
         rate_limit)
             assert_eq "$HTTP_CODE" 429 'rate limit status'
             assert_contains "$HTTP_BODY" E2E-429 'rate limit page' ;;
-        captcha)
-            assert_eq "$HTTP_CODE" 503 'captcha status'
-            assert_contains "$HTTP_BODY" E2E-ALTCHA 'captcha page' ;;
-        external)
-            assert_eq "$HTTP_CODE" 302 'external status' ;;
+        challenge)
+            assert_eq "$HTTP_CODE" 503 'challenge status'
+            assert_contains "$HTTP_BODY" E2E-ALTCHA 'challenge page' ;;
+        redirect)
+            assert_eq "$HTTP_CODE" 302 'redirect status' ;;
         *) fail "Unknown decision in test: $expected" ;;
     esac
 }
@@ -222,7 +230,7 @@ wait_decision() {
     while true; do
         check "$@"
         case "$HTTP_DECISION" in
-            pass|block|rate_limit|captcha|external) decision "$HTTP_DECISION" ;;
+            pass|block|rate_limit|challenge) decision "$HTTP_DECISION" ;;
             *) fail "Unexpected checker response while polling: $HTTP_CODE/$HTTP_DECISION" ;;
         esac
         if [[ "$HTTP_DECISION" == "$expected" ]]; then return; fi

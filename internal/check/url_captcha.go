@@ -8,12 +8,12 @@ import (
 	"server_torii/internal/state"
 )
 
-// URLCAPTCHA uses the URLAllow matcher and the existing CAPTCHA flow.
+// URLCAPTCHA marks the URLs in the site's list for a challenge.
 func URLCAPTCHA(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
 	rule := ruleSet.URLCAPTCHARule
 	if rule == nil || rule.List == nil || !rule.List.Match(reqData.Uri) {
 		return
 	}
 	logx.Info(reqData, "", "URLCAPTCHA")
-	requireCaptcha(reqData, ruleSet, decision, rt)
+	decision.RequireChallenge = true
 }

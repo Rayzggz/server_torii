@@ -20,14 +20,14 @@ test_connector() {
     assert_contains "$HTTP_BODY" 'E2E-403 Node_1 203.0.113.120' 'block page'
     v1 1 /v1/check 203.0.113.120 /challenge -H 'Torii-Site: default_site'
     assert_eq "$HTTP_CODE" 503 'captcha status'
-    assert_eq "$(header Torii-Decision)" captcha 'captcha decision'
+    assert_eq "$(header Torii-Decision)" challenge 'challenge decision'
     assert_contains "$HTTP_BODY" E2E-ALTCHA 'captcha page'
     assert_contains "$(header Set-Cookie)" __torii_session_id= 'challenge session cookie'
     # Feature overrides are named.
     v1 1 /v1/check 203.0.113.120 /blocked -H 'Torii-Site: default_site' -H 'Torii-Features: -url_block'
     assert_eq "$(header Torii-Decision)" pass 'feature forced off'
-    v1 1 /v1/check 203.0.113.120 /neutral -H 'Torii-Site: default_site' -H 'Torii-Features: +captcha'
-    assert_eq "$(header Torii-Decision)" captcha 'feature forced on'
+    v1 1 /v1/check 203.0.113.120 /neutral -H 'Torii-Site: default_site' -H 'Torii-Features: +challenge'
+    assert_eq "$(header Torii-Decision)" challenge 'feature forced on'
     # A named site is used as is.
     v1 1 /v1/check 203.0.113.120 /exact-site -H 'Torii-Site: exact'
     assert_eq "$(header Torii-Decision)" block 'named site'

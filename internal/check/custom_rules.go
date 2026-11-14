@@ -23,21 +23,13 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 		}
 		logx.Info(reqData, "", "CustomRule "+rule.String())
 		switch rule.Action {
-		case rules.ActionAllow:
-			decision.SetVerdict(action.Done, action.VerdictAllow)
+		case action.ActionAllow, action.ActionBlock, action.ActionChallenge:
+			// A challenge ends the rule list like continue does; the Challenge check answers it.
+			applyAction(reqData, decision, rt, rule.Action)
 			return
-		case rules.ActionBlock:
-			decision.SetVerdict(action.Done, action.VerdictBlock)
+		case action.ActionContinue:
 			return
-		case rules.ActionCaptcha:
-			requireCaptcha(reqData, ruleSet, decision, rt)
-			return
-		case rules.ActionExternal:
-			requireExternalMigration(reqData, ruleSet, decision, rt)
-			return
-		case rules.ActionContinue:
-			return
-		case rules.ActionSkip:
+		case action.ActionSkip:
 			decision.SkipMask |= rule.SkipMask
 			if decision.SkipMask&feature.CustomRules.SkipMask() != 0 {
 				return

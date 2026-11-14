@@ -23,12 +23,8 @@ func CountryRule(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 			selected = override
 		}
 	}
-	switch selected {
-	case config.CountryBlock:
-		logx.Info(reqData, "", "CountryRule BLOCK "+reason)
-		decision.SetVerdict(action.Done, action.VerdictBlock)
-	case config.CountryCaptcha:
-		logx.Info(reqData, "", "CountryRule CAPTCHA "+reason)
-		requireCaptcha(reqData, ruleSet, decision, rt)
+	if selected == action.ActionBlock || selected == action.ActionChallenge {
+		logx.Info(reqData, "", "CountryRule "+string(selected)+" "+reason)
 	}
+	applyAction(reqData, decision, rt, selected)
 }

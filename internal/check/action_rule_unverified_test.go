@@ -17,15 +17,15 @@ func (f fakeBrowserEvidence) HasBrowserEvidence(_, ip string) bool { return f[ip
 func TestActionRuleCaptchaUnverified(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	engine.AddURIRule("", "/members/:id", action.ActionCaptchaUnverified, time.Minute)
-	rules := &config.RuleSet{CAPTCHARule: &config.CaptchaRule{
-		SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{},
+	engine.AddURIRule("", "/members/:id", action.ActionChallengeUnverified, time.Minute)
+	rules := &config.RuleSet{Challenge: &config.ChallengeRule{
+		SecretKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120, FailureLimit: map[int64]int64{},
 	}}
 	for _, tc := range []struct {
-		name     string
-		analyzer state.BrowserEvidence
-		ip       string
-		wantDone bool
+		name          string
+		analyzer      state.BrowserEvidence
+		ip            string
+		wantChallenge bool
 	}{
 		{"browser evidence passes", fakeBrowserEvidence{"8.8.8.8": true}, "8.8.8.8", false},
 		{"no evidence is challenged", fakeBrowserEvidence{}, "8.8.8.8", true},
@@ -33,14 +33,12 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			shared := &state.Runtime{ActionRuleEngine: engine, BrowserEvidence: tc.analyzer}
-			shared.CaptchaFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+			shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			decision := action.NewDecision()
 			ActionRule(request.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
-			if done := decision.State == action.Done; done != tc.wantDone {
-				t.Fatalf("done = %v (code %s), want %v", done, decision.Verdict, tc.wantDone)
-			}
-			if tc.wantDone && decision.Verdict != action.VerdictCaptcha {
-				t.Fatalf("code = %s, want CAPTCHA", decision.Verdict)
+			// The rule only marks the request; the Challenge check at the end of the pipeline answers it.
+			if decision.State != action.Continue || decision.RequireChallenge != tc.wantChallenge {
+				t.Fatalf("decision = %+v, want a challenge required: %v", decision, tc.wantChallenge)
 			}
 		})
 	}
