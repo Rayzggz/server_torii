@@ -22,19 +22,23 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 			continue
 		}
 		logx.Info(reqData, "", "CustomRule "+rule.String())
+		decision.Detail = rule.ID
 		switch rule.Action {
 		case action.ActionAllow, action.ActionBlock, action.ActionChallenge:
 			// A challenge ends the rule list like continue does; the Challenge check answers it.
 			applyAction(reqData, decision, rt, rule.Action)
 			return
 		case action.ActionContinue:
+			decision.Detail = ""
 			return
 		case action.ActionSkip:
 			decision.SkipMask |= rule.SkipMask
 			if decision.SkipMask&feature.CustomRules.SkipMask() != 0 {
+				decision.Detail = ""
 				return
 			}
 		}
 		// ActionLog and non-terminal skips fall through to the next rule.
+		decision.Detail = ""
 	}
 }

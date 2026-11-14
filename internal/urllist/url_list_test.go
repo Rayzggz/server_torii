@@ -1,38 +1,51 @@
 package urllist
 
-import (
-	"regexp"
-	"testing"
-)
+import "testing"
 
-func TestURLRuleList(t *testing.T) {
-	list := &URLRuleList{}
-	if list.Match("/admin") {
-		t.Fatal("empty list matched")
+func TestListMatch(t *testing.T) {
+	list := &List{}
+	for _, entry := range []string{"/admin", "/a.html", "/search?q=1", `regex:^/private/.*$`, `regex:\.php$`} {
+		if err := list.Add(entry); err != nil {
+			t.Fatalf("Add(%q): %v", entry, err)
+		}
 	}
-	rules := []*URLRule{
-		{Pattern: "/admin"},
-		{IsRegex: true, Regex: regexp.MustCompile(`^/users/[0-9]+$`)},
-		{Pattern: "/literal.*"},
+	if list.Len() != 5 {
+		t.Fatalf("Len = %d, want 5", list.Len())
 	}
-	for _, rule := range rules {
-		list.Append(rule)
-	}
-	if list.Head != rules[0] || rules[0].Next != rules[1] || rules[1].Next != rules[2] || rules[2].Next != nil {
-		t.Fatal("append did not preserve insertion order")
-	}
-	for _, tc := range []struct {
-		url  string
-		want bool
-	}{
-		{"/admin", true}, {"/admin/child", false}, {"/Admin", false},
-		{"/users/123", true}, {"/users/abc", false}, {"/users/123/edit", false},
-		{"/literal.*", true}, {"/literalXYZ", false}, {"", false},
+	for url, want := range map[string]bool{
+		"/admin":          true,
+		"/admin/":         false,
+		"/admin/settings": false,
+		"/a.html":         true,
+		// Without the regex prefix a dot is a dot.
+		"/aXhtml":         false,
+		"/search?q=1":     true,
+		"/private/file":   true,
+		"/x/private/file": false,
+		"/index.php":      true,
+		"/index.php5":     false,
+		"":                false,
 	} {
-		t.Run(tc.url, func(t *testing.T) {
-			if got := list.Match(tc.url); got != tc.want {
-				t.Errorf("Match(%q) = %v, want %v", tc.url, got, tc.want)
-			}
-		})
+		if got := list.Match(url); got != want {
+			t.Errorf("Match(%q) = %v, want %v", url, got, want)
+		}
+	}
+}
+
+func TestListAddRejects(t *testing.T) {
+	for _, entry := range []string{"regex:(", "^/api/.*$", "^/api", "/api/.*$"} {
+		if err := (&List{}).Add(entry); err == nil {
+			t.Errorf("Add(%q) accepted", entry)
+		}
+	}
+}
+
+func TestListNilAndEmpty(t *testing.T) {
+	var none *List
+	if none.Len() != 0 || none.Match("/") {
+		t.Error("a nil list is not empty")
+	}
+	if (&List{}).Match("/") {
+		t.Error("an empty list matched")
 	}
 }

@@ -3,9 +3,7 @@ package config
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/feature"
-	"server_torii/internal/iptrie"
 	"server_torii/internal/rules"
-	"server_torii/internal/urllist"
 )
 
 // RuleSet stores all rules for a single site.
@@ -14,12 +12,7 @@ type RuleSet struct {
 	// temporary action rules, log files, traffic analysis) is kept under it.
 	ID string
 
-	IPAllowRule                 *IPListRule
-	IPBlockRule                 *IPListRule
-	URLAllowRule                *URLListRule
-	URLBlockRule                *URLListRule
-	IPCAPTCHARule               *IPListRule
-	URLCAPTCHARule              *URLListRule
+	Lists                       *ListSet
 	Challenge                   *ChallengeRule
 	VerifyBotRule               *VerifyBotRule
 	HTTPFloodRule               *HTTPFloodRule
@@ -32,12 +25,7 @@ type RuleSet struct {
 // fill from the site's files. Code that reads a loaded site never meets a nil rule.
 func NewRuleSet() *RuleSet {
 	return &RuleSet{
-		IPAllowRule:                 &IPListRule{Trie: &iptrie.TrieNode{}},
-		IPBlockRule:                 &IPListRule{Trie: &iptrie.TrieNode{}},
-		IPCAPTCHARule:               &IPListRule{Trie: &iptrie.TrieNode{}},
-		URLAllowRule:                &URLListRule{List: &urllist.URLRuleList{}},
-		URLBlockRule:                &URLListRule{List: &urllist.URLRuleList{}},
-		URLCAPTCHARule:              &URLListRule{List: &urllist.URLRuleList{}},
+		Lists:                       NewListSet(),
 		Challenge:                   &ChallengeRule{},
 		VerifyBotRule:               &VerifyBotRule{},
 		HTTPFloodRule:               &HTTPFloodRule{},
@@ -51,20 +39,8 @@ func NewRuleSet() *RuleSet {
 // The feature control header can still override it per request.
 func (rs *RuleSet) FeatureEnabled(c feature.Check) bool {
 	switch c {
-	case feature.IPAllow:
-		return rs.IPAllowRule != nil && rs.IPAllowRule.Enabled
-	case feature.IPBlock:
-		return rs.IPBlockRule != nil && rs.IPBlockRule.Enabled
-	case feature.URLAllow:
-		return rs.URLAllowRule != nil && rs.URLAllowRule.Enabled
-	case feature.URLBlock:
-		return rs.URLBlockRule != nil && rs.URLBlockRule.Enabled
 	case feature.CustomRules:
 		return rs.CustomRules != nil && rs.CustomRules.Enabled
-	case feature.IPCAPTCHA:
-		return rs.IPCAPTCHARule != nil && rs.IPCAPTCHARule.Enabled
-	case feature.URLCAPTCHA:
-		return rs.URLCAPTCHARule != nil && rs.URLCAPTCHARule.Enabled
 	case feature.CountryRule:
 		return rs.CountryRule != nil && rs.CountryRule.Enabled
 	case feature.VerifyBot:
@@ -74,7 +50,8 @@ func (rs *RuleSet) FeatureEnabled(c feature.Check) bool {
 	case feature.Challenge:
 		return rs.Challenge != nil && rs.Challenge.Enabled
 	default:
-		// ActionRule has no switch: it is driven by the rules other components install at runtime.
+		// Lists and ActionRule have no switch: every list has its own, and ActionRule is driven
+		// by the rules other components install at runtime.
 		return false
 	}
 }

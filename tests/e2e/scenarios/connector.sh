@@ -16,7 +16,7 @@ test_connector() {
     v1 1 /v1/check 203.0.113.120 /blocked -H 'Torii-Site: default_site'
     assert_eq "$HTTP_CODE" 403 'block status'
     assert_eq "$(header Torii-Decision)" block 'block decision'
-    assert_eq "$(header Torii-Reason)" URLBlock 'block reason'
+    assert_eq "$(header Torii-Reason)" Lists:url_block 'block reason'
     assert_contains "$HTTP_BODY" 'E2E-403 Node_1 203.0.113.120' 'block page'
     v1 1 /v1/check 203.0.113.120 /challenge -H 'Torii-Site: default_site'
     assert_eq "$HTTP_CODE" 503 'captcha status'

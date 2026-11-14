@@ -3,13 +3,10 @@ package analyzer
 import (
 	"fmt"
 	"math"
-	"net"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/gossip"
-	"server_torii/internal/iptrie"
 	"server_torii/internal/state"
-	"server_torii/internal/urllist"
 	"testing"
 	"time"
 )
@@ -50,8 +47,7 @@ func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnaly
 		t: t,
 		rules: &config.RuleSet{
 			AdaptiveTrafficAnalyzerRule: rule,
-			IPAllowRule:                 &config.IPListRule{Trie: &iptrie.TrieNode{}},
-			URLAllowRule:                &config.URLListRule{List: &urllist.URLRuleList{}},
+			Lists:                       config.NewListSet(),
 		},
 		state:    newSiteState(start),
 		marks:    newIPExpiry(maxMarkedClients),
@@ -190,9 +186,10 @@ func TestDetectorURIActionAndExemptions(t *testing.T) {
 	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
 		r.URIDetection.Action = action.ActionChallenge
 	})
-	h.rules.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/api/feed"})
-	_, allowNet, _ := net.ParseCIDR("192.168.5.0/24")
-	h.rules.IPAllowRule.Trie.Insert(allowNet)
+	h.rules.Lists = config.NewListSet(
+		config.MustNewList("url_allow", config.ListURL, action.ActionAllow, "/api/feed"),
+		config.MustNewList("ip_allow", config.ListIP, action.ActionAllow, "192.168.5.0/24"),
+	)
 	h.marks.set("10.2.0.1", h.now.Add(time.Hour)) // verified crawler or CAPTCHA pass
 
 	for i := 0; i < 60; i++ {

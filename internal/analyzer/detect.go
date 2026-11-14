@@ -152,20 +152,14 @@ func (det *detection) buildBucket() *bucket {
 }
 
 func (det *detection) ignoredRequest(l LogEntry) bool {
-	allow := det.ctx.Rule.URLAllowRule
-	return allow != nil && allow.List != nil && allow.List.Match(l.URI)
+	return det.ctx.Rule.Lists.AllowsURL(l.URI)
 }
 
 func (det *detection) exemptIP(ip string) bool {
 	if det.ctx.Marks.active(ip, det.now) {
 		return true
 	}
-	if allow := det.ctx.Rule.IPAllowRule; allow != nil && allow.Trie != nil {
-		if allow.Trie.SearchAddr(request.ParseAddr(ip)) {
-			return true
-		}
-	}
-	return false
+	return det.ctx.Rule.Lists.AllowsAddr(request.ParseAddr(ip))
 }
 
 func (det *detection) browserLike(ip string) bool {

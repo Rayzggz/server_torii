@@ -164,7 +164,7 @@ func (e *ActionRuleEngine) Check(site, ip, uri string) Action {
 
 // CheckRequest evaluates the request against the rules using UserRequest data.
 func (e *ActionRuleEngine) CheckRequest(req request.UserRequest) Action {
-	return e.Check(req.Site, req.RemoteIP, req.Uri)
+	return e.Check(req.Site, req.ClientKey(), req.Uri)
 }
 
 // runCleanup periodically removes expired rules.

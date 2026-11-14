@@ -39,7 +39,7 @@ func TestLoadErrorPages(t *testing.T) {
 }
 
 func TestReloadErrorPages(t *testing.T) {
-	rules := ipCaptchaDirectory(t, "")
+	rules := siteDirectory(t, "")
 	pagesDir := t.TempDir()
 	page := filepath.Join(pagesDir, "403.html")
 	writeFile(t, page, "v1")

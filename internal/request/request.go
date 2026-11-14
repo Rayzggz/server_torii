@@ -10,8 +10,9 @@ import (
 type UserRequest struct {
 	// Site is the ID of the site the request belongs to.
 	Site string
-	// RemoteIP is the client address as the connector sent it. It keys rate counters, temporary
-	// rules and logs; checks that need the address itself use ClientAddr.
+	// RemoteIP is the client address as the connector sent it, for logs and error pages. Checks
+	// that need the address itself use ClientAddr; anything that counts or remembers clients
+	// uses ClientKey.
 	RemoteIP string
 	// Addr is RemoteIP parsed once when the request arrives. It is the zero Addr when RemoteIP
 	// is not an IP address.
@@ -21,9 +22,15 @@ type UserRequest struct {
 	// of the Country constants.
 	Country        string
 	CountryUnknown string
-	Uri            string
+	// Key identifies the client wherever clients are counted or remembered: rate counters,
+	// temporary rules, the traffic analyzer. See Key.
+	Key string
+	Uri string
 	// FeatureControl has the feature.Check control bit of every check that is switched on.
 	FeatureControl uint16
+	// ListOverrides switches lists of the site on or off for this request, by name, whatever
+	// the site configuration says. It is nil when the connector asked for none.
+	ListOverrides  map[string]bool
 	ToriiClearance string
 	ToriiSessionID string
 	UserAgent      string
@@ -98,11 +105,53 @@ func (r UserRequest) HasBrowserEvidence(evidence BrowserEvidence) bool {
 	if r.lookups != nil && r.lookups.evidenceDone {
 		return r.lookups.evidence
 	}
-	found := evidence != nil && evidence.HasBrowserEvidence(r.Site, r.RemoteIP)
+	found := evidence != nil && evidence.HasBrowserEvidence(r.Site, r.ClientKey())
 	if r.lookups != nil {
 		r.lookups.evidenceDone, r.lookups.evidence = true, found
 	}
 	return found
+}
+
+// DefaultIPv6PrefixBits is the size of the IPv6 network that counts as one client. A /64 is what
+// one subscriber is usually given, and a client can take any address within it at will.
+const DefaultIPv6PrefixBits = 64
+
+// Key returns what identifies the client at addr wherever clients are counted or remembered.
+//
+// An IPv4 address is its own key. An IPv6 address is keyed by the network of v6Bits bits it lies
+// in, written as the first address of that network, so every address a client can give itself
+// shares one rate counter and one temporary rule. raw, the address as it was received, is the
+// key of a client whose address does not parse.
+func Key(addr netip.Addr, raw string, v6Bits int) string {
+	switch {
+	case !addr.IsValid():
+		return raw
+	case addr.Is4():
+		return addr.String()
+	}
+	network, err := addr.Prefix(v6Bits)
+	if err != nil {
+		return addr.String()
+	}
+	return network.Addr().String()
+}
+
+// ClientKey returns the client's Key. The server fills it for every request it receives; for a
+// request built without it the key is worked out here, with the default IPv6 network size.
+func (r UserRequest) ClientKey() string {
+	if r.Key != "" {
+		return r.Key
+	}
+	return Key(r.ClientAddr(), r.RemoteIP, DefaultIPv6PrefixBits)
+}
+
+// ListEnabled reports whether the action of the list called name applies to the request:
+// configured, unless the connector switched the list for this request.
+func (r UserRequest) ListEnabled(name string, configured bool) bool {
+	if override, ok := r.ListOverrides[name]; ok {
+		return override
+	}
+	return configured
 }
 
 // ParseAddr parses a client address. An IPv4-mapped IPv6 address becomes the IPv4 address it

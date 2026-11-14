@@ -100,9 +100,9 @@ func TestEval(t *testing.T) {
 		{`http.request.uri.path wildcard "/wp-*" and not ip.src in {10.0.0.0/8}`, true},
 	}
 	for _, tc := range cases {
-		prog, err := Compile(tc.expr)
+		prog, err := Compile(tc.expr, nil)
 		if err != nil {
-			t.Errorf("Compile(%q) error: %v", tc.expr, err)
+			t.Errorf("Compile(%q, nil) error: %v", tc.expr, err)
 			continue
 		}
 		if got := prog.Eval(NewContext(testRequest(), stubEvidence{ip: "8.8.8.8"})); got != tc.want {
@@ -127,9 +127,9 @@ func TestEvalMissingData(t *testing.T) {
 		{`http.request.uri.path.extension eq ""`, true},
 	}
 	for _, tc := range cases {
-		prog, err := Compile(tc.expr)
+		prog, err := Compile(tc.expr, nil)
 		if err != nil {
-			t.Fatalf("Compile(%q) error: %v", tc.expr, err)
+			t.Fatalf("Compile(%q, nil) error: %v", tc.expr, err)
 		}
 		if got := prog.Eval(NewContext(req, nil)); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
@@ -138,7 +138,7 @@ func TestEvalMissingData(t *testing.T) {
 }
 
 func TestIPv4MappedAddress(t *testing.T) {
-	prog, err := Compile(`ip.src in {192.0.2.0/24}`)
+	prog, err := Compile(`ip.src in {192.0.2.0/24}`, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,13 +178,13 @@ func TestCompileErrors(t *testing.T) {
 		{`http.host eq "a" @`, "unexpected character"},
 	}
 	for _, tc := range cases {
-		_, err := Compile(tc.expr)
+		_, err := Compile(tc.expr, nil)
 		if err == nil {
-			t.Errorf("Compile(%q) succeeded, want error containing %q", tc.expr, tc.wantErr)
+			t.Errorf("Compile(%q, nil) succeeded, want error containing %q", tc.expr, tc.wantErr)
 			continue
 		}
 		if !strings.Contains(err.Error(), tc.wantErr) {
-			t.Errorf("Compile(%q) error = %q, want it to contain %q", tc.expr, err, tc.wantErr)
+			t.Errorf("Compile(%q, nil) error = %q, want it to contain %q", tc.expr, err, tc.wantErr)
 		}
 	}
 }

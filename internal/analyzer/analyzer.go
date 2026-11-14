@@ -4,6 +4,7 @@ import (
 	"log"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"sync"
 	"time"
@@ -108,7 +109,10 @@ type AdaptiveTrafficAnalyzer struct {
 	marks       *siteExpiry // exempt clients, per site
 	evidence    *siteExpiry // browser-like clients, per site
 	ingest      sync.Map    // *config.AdaptiveTrafficAnalyzerRule -> *ingestSettings
-	lastSweep   time.Time
+	// IPv6PrefixBits is the size of the IPv6 network that counts as one client; zero means the
+	// default. Set it before Start.
+	IPv6PrefixBits int
+	lastSweep      time.Time
 }
 
 // ingestSettings is the part of a rule needed to record browser evidence as logs arrive.
@@ -187,8 +191,17 @@ func (ata *AdaptiveTrafficAnalyzer) submit(entry LogEntry) bool {
 		return false
 	}
 	entry.Site = rules.ID
+	// The same key the checks count the client under, so a rule made here matches its requests.
+	entry.IP = request.Key(request.ParseAddr(entry.IP), entry.IP, ata.ipv6PrefixBits())
 	ata.AddLog(entry)
 	return true
+}
+
+func (ata *AdaptiveTrafficAnalyzer) ipv6PrefixBits() int {
+	if ata.IPv6PrefixBits > 0 {
+		return ata.IPv6PrefixBits
+	}
+	return request.DefaultIPv6PrefixBits
 }
 
 // analyzed reports whether the site exists and has traffic analysis switched on.

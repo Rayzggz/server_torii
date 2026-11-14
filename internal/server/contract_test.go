@@ -15,16 +15,10 @@ func TestFeatureNameContract(t *testing.T) {
 		mask   uint16
 		enable func(*config.RuleSet)
 	}{
-		{[]string{"IPAllow", "ip_allow"}, feature.IPAllow.ControlMask(), func(rs *config.RuleSet) { rs.IPAllowRule.Enabled = true }},
-		{[]string{"IPBlock", "ip_block"}, feature.IPBlock.ControlMask(), func(rs *config.RuleSet) { rs.IPBlockRule.Enabled = true }},
-		{[]string{"URLAllow", "url_allow"}, feature.URLAllow.ControlMask(), func(rs *config.RuleSet) { rs.URLAllowRule.Enabled = true }},
-		{[]string{"URLBlock", "url_block"}, feature.URLBlock.ControlMask(), func(rs *config.RuleSet) { rs.URLBlockRule.Enabled = true }},
 		{[]string{"VerifyBot", "verify_bot"}, feature.VerifyBot.ControlMask(), func(rs *config.RuleSet) { rs.VerifyBotRule.Enabled = true }},
 		{[]string{"HTTPFlood", "http_flood"}, feature.HTTPFlood.ControlMask(), func(rs *config.RuleSet) { rs.HTTPFloodRule.Enabled = true }},
 		{[]string{"Challenge", "CHALLENGE", "challenge"}, feature.Challenge.ControlMask(), func(rs *config.RuleSet) { rs.Challenge.Enabled = true }},
 		{[]string{"CountryRule", "country_rule"}, feature.CountryRule.ControlMask(), func(rs *config.RuleSet) { rs.CountryRule.Enabled = true }},
-		{[]string{"IPCAPTCHA", "ip_captcha"}, feature.IPCAPTCHA.ControlMask(), func(rs *config.RuleSet) { rs.IPCAPTCHARule = &config.IPListRule{Enabled: true} }},
-		{[]string{"URLCAPTCHA", "url_captcha"}, feature.URLCAPTCHA.ControlMask(), func(rs *config.RuleSet) { rs.URLCAPTCHARule = &config.URLListRule{Enabled: true} }},
 		{[]string{"CustomRules", "custom_rules"}, feature.CustomRules.ControlMask(), func(rs *config.RuleSet) { rs.CustomRules = &rules.CustomRules{Enabled: true} }},
 	}
 	allOff := func() *config.RuleSet {
@@ -62,7 +56,7 @@ func TestFeatureNameContract(t *testing.T) {
 
 // Skip target names are written in each site's Server.yml.
 func TestSkipTargetContract(t *testing.T) {
-	names := []string{"CustomRules", "IPCAPTCHA", "URLCAPTCHA", "CountryRule", "VerifyBot", "ActionRule", "HTTPFlood", "Challenge"}
+	names := []string{"CustomRules", "CountryRule", "VerifyBot", "ActionRule", "HTTPFlood", "Challenge"}
 	seen := uint32(0)
 	for _, name := range names {
 		mask, err := feature.ParseSkipTargets([]string{name})
@@ -76,7 +70,7 @@ func TestSkipTargetContract(t *testing.T) {
 		seen |= mask
 	}
 	// These run before CustomRules, so a custom rule cannot skip them.
-	for _, name := range []string{"IPAllow", "IPBlock", "URLAllow", "URLBlock", "challenge", "Captcha", "ExternalMigration", ""} {
+	for _, name := range []string{"Lists", "IPAllow", "IPCAPTCHA", "URLCAPTCHA", "challenge", "Captcha", "ExternalMigration", ""} {
 		if _, err := feature.ParseSkipTargets([]string{name}); err == nil {
 			t.Errorf("%q accepted as a skip target", name)
 		}

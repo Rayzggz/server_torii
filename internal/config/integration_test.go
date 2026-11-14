@@ -1,7 +1,7 @@
 package config
 
 import (
-	"net"
+	"net/netip"
 	"path/filepath"
 	"server_torii/internal/action"
 	"testing"
@@ -15,16 +15,13 @@ func TestConfigIntegration_LoadAndReloadManager(t *testing.T) {
 	writeRuleFiles(t, ruleDir, map[string]string{
 		"IP_AllowList.conf":  "192.168.1.0/24\n",
 		"IP_BlockList.conf":  "10.0.0.5\n",
-		"URL_AllowList.conf": "/healthz\n^/api/.*$\n",
+		"URL_AllowList.conf": "/healthz\nregex:^/api/.*$\n",
 		"URL_BlockList.conf": "/admin\n",
-		"Server.yml": `IPAllow:
-  enabled: true
-IPBlock:
-  enabled: true
-URLAllow:
-  enabled: true
-URLBlock:
-  enabled: true
+		"Server.yml": `Lists:
+  - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
 CountryRule:
   enabled: true
   default_action: block
@@ -103,23 +100,20 @@ sites:
 		t.Fatal("an unknown site ID fell back to another site")
 	}
 
-	if !rules.IPAllowRule.Enabled {
-		t.Fatal("IPAllowRule.Enabled = false, want true")
-	}
-	if !rules.IPAllowRule.Trie.Search(net.ParseIP("192.168.1.15")) {
-		t.Fatal("IP allow trie did not match configured CIDR")
-	}
-	if !rules.IPBlockRule.Trie.Search(net.ParseIP("10.0.0.5")) {
-		t.Fatal("IP block trie did not match configured IP")
-	}
-	if !rules.URLAllowRule.List.Match("/healthz") {
-		t.Fatal("URL allow list did not match static rule")
-	}
-	if !rules.URLAllowRule.List.Match("/api/test") {
-		t.Fatal("URL allow list did not match regex rule")
-	}
-	if !rules.URLBlockRule.List.Match("/admin") {
-		t.Fatal("URL block list did not match configured rule")
+	addr := netip.MustParseAddr
+	for name, on := range map[string]bool{
+		"ip_allow":  rules.Lists.ByName("ip_allow").ContainsAddr(addr("192.168.1.15")),
+		"ip_block":  rules.Lists.ByName("ip_block").ContainsAddr(addr("10.0.0.5")),
+		"url_exact": rules.Lists.ByName("url_allow").ContainsURL("/healthz"),
+		"url_regex": rules.Lists.ByName("url_allow").ContainsURL("/api/test"),
+		"url_block": rules.Lists.ByName("url_block").ContainsURL("/admin"),
+		"enabled":   rules.Lists.ByName("ip_allow").Enabled,
+		"allows":    rules.Lists.AllowsAddr(addr("192.168.1.15")) && rules.Lists.AllowsURL("/healthz"),
+		"order":     len(rules.Lists.All()) == 4 && rules.Lists.All()[0].Name == "ip_allow",
+	} {
+		if !on {
+			t.Errorf("lists: %s does not hold", name)
+		}
 	}
 	if !rules.CountryRule.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
@@ -147,14 +141,11 @@ sites:
 		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
-	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `IPAllow:
-  enabled: false
-IPBlock:
-  enabled: true
-URLAllow:
-  enabled: true
-URLBlock:
-  enabled: true
+	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `Lists:
+  - {name: ip_allow, enabled: false, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
 Challenge:
   mode: hcaptcha
   enabled: true
@@ -189,8 +180,8 @@ HTTPFlood:
 	if reloadedRules == nil {
 		t.Fatal("default_site missing after reload")
 	}
-	if reloadedRules.IPAllowRule.Enabled {
-		t.Fatal("IPAllowRule.Enabled = true after reload, want false")
+	if reloadedRules.Lists.ByName("ip_allow").Enabled || reloadedRules.Lists.AllowsAddr(netip.MustParseAddr("192.168.1.15")) {
+		t.Fatal("ip_allow is still enabled after the reload switched it off")
 	}
 	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
 		t.Fatal("CountryRule should remain present and disabled when omitted")

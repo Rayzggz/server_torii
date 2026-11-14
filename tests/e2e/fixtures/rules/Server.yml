@@ -1,10 +1,12 @@
 # TEST ONLY: deliberately low thresholds and public test secrets.
-IPAllow: {enabled: true}
-IPBlock: {enabled: true}
-IPCAPTCHA: {enabled: true}
-URLAllow: {enabled: true}
-URLBlock: {enabled: true}
-URLCAPTCHA: {enabled: true}
+# The names are the ones the scenarios switch per request; the order is the one the lists apply in.
+Lists:
+  - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
+  - {name: ip_captcha, enabled: true, type: ip, file: IP_CAPTCHAList.conf, action: challenge}
+  - {name: url_captcha, enabled: true, type: url, file: URL_CAPTCHAList.conf, action: challenge}
 CountryRule:
   enabled: false
   default_action: block
@@ -88,6 +90,12 @@ CustomRules:
     - id: challenge-badbot
       expression: 'http.user_agent wildcard "*badbot*"'
       action: challenge
+    - id: block-listed-network
+      expression: 'http.request.uri.path eq "/e2e/list" and ip.src in $ip_captcha'
+      action: block
+    - id: block-listed-url
+      expression: 'http.request.uri.path in $url_captcha and http.user_agent contains "ListRef"'
+      action: block
     - id: allow-monitor
       expression: 'ip.src in {198.18.2.0/24} and http.request.uri.path eq "/health"'
       action: allow

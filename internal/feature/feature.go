@@ -11,13 +11,8 @@ import (
 type Check uint8
 
 const (
-	IPAllow Check = iota
-	IPBlock
-	URLAllow
-	URLBlock
+	Lists Check = iota
 	CustomRules
-	IPCAPTCHA
-	URLCAPTCHA
 	CountryRule
 	VerifyBot
 	ActionRule
@@ -38,13 +33,9 @@ type definition struct {
 }
 
 var definitions = [Count]definition{
-	IPAllow:     {"IPAllow", true, false},
-	IPBlock:     {"IPBlock", true, false},
-	URLAllow:    {"URLAllow", true, false},
-	URLBlock:    {"URLBlock", true, false},
+	// Lists has no switch of its own: each list has one.
+	Lists:       {"Lists", false, false},
 	CustomRules: {"CustomRules", true, true},
-	IPCAPTCHA:   {"IPCAPTCHA", true, true},
-	URLCAPTCHA:  {"URLCAPTCHA", true, true},
 	CountryRule: {"CountryRule", true, true},
 	VerifyBot:   {"VerifyBot", true, true},
 	// ActionRule has no switch: it is driven by the rules other components install at runtime.
@@ -122,17 +113,27 @@ func skippableNames() []string {
 	return names
 }
 
+// ByName returns the check with the given name. Case, underscores and hyphens are ignored, so
+// "http_flood" and "HTTPFlood" name the same check.
+func ByName(name string) (Check, bool) {
+	want := foldName(name)
+	for c := Check(0); c < Count; c++ {
+		if foldName(definitions[c].name) == want {
+			return c, true
+		}
+	}
+	return Count, false
+}
+
 // ControlMaskByName returns the feature control bit of the check with the given name. Case,
 // underscores and hyphens are ignored, so "http_flood" and "HTTPFlood" name the same check.
 // It reports false for an unknown name and for a check that has no switch.
 func ControlMaskByName(name string) (uint16, bool) {
-	want := foldName(name)
-	for c := Check(0); c < Count; c++ {
-		if foldName(definitions[c].name) == want {
-			return c.ControlMask(), definitions[c].switchable
-		}
+	c, ok := ByName(name)
+	if !ok {
+		return 0, false
 	}
-	return 0, false
+	return c.ControlMask(), definitions[c].switchable
 }
 
 func foldName(name string) string {

@@ -99,3 +99,32 @@ func TestResolveCountry(t *testing.T) {
 		}
 	}
 }
+
+func TestKey(t *testing.T) {
+	for _, tt := range []struct {
+		raw  string
+		bits int
+		want string
+	}{
+		{"192.0.2.7", 64, "192.0.2.7"},
+		{"::ffff:192.0.2.7", 64, "192.0.2.7"},
+		{"2001:db8:1:2:3:4:5:6", 64, "2001:db8:1:2::"},
+		{"2001:db8:1:2::1", 64, "2001:db8:1:2::"},
+		{"2001:db8:1:3::1", 64, "2001:db8:1:3::"},
+		{"2001:db8:1:2:3:4:5:6", 48, "2001:db8:1::"},
+		{"2001:db8:1:2:3:4:5:6", 128, "2001:db8:1:2:3:4:5:6"},
+		{"not-an-ip", 64, "not-an-ip"},
+	} {
+		if got := Key(ParseAddr(tt.raw), tt.raw, tt.bits); got != tt.want {
+			t.Errorf("Key(%s, /%d) = %s, want %s", tt.raw, tt.bits, got, tt.want)
+		}
+	}
+	// Two addresses of one /64 are one client; a request without a key works it out.
+	a, b := UserRequest{RemoteIP: "2001:db8::1"}, UserRequest{RemoteIP: "2001:db8::ffff:1"}
+	if a.ClientKey() != b.ClientKey() || a.ClientKey() != "2001:db8::" {
+		t.Errorf("keys = %s, %s", a.ClientKey(), b.ClientKey())
+	}
+	if got := (UserRequest{RemoteIP: "2001:db8::1", Key: "set"}).ClientKey(); got != "set" {
+		t.Errorf("a filled key was replaced: %s", got)
+	}
+}

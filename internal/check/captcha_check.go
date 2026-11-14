@@ -48,7 +48,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 
 	failed := func(outcome CaptchaSubmission) CaptchaSubmission {
 		if failureCounter := rt.LimitersFor(reqData.Site).ChallengeFailureLimitCounter.Load(); failureCounter != nil {
-			failureCounter.Add(reqData.RemoteIP, 1)
+			failureCounter.Add(reqData.ClientKey(), 1)
 		} else {
 			logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
 		}

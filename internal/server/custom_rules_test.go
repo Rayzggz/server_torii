@@ -11,13 +11,12 @@ import (
 	"server_torii/internal/request"
 	"server_torii/internal/rules"
 	"server_torii/internal/state"
-	"server_torii/internal/urllist"
 	"testing"
 )
 
 func customRule(t *testing.T, id string, act action.Action, expr string, skip ...string) *rules.Rule {
 	t.Helper()
-	prog, err := rules.Compile(expr)
+	prog, err := rules.Compile(expr, nil)
 	if err != nil {
 		t.Fatalf("Compile(%q): %v", expr, err)
 	}
@@ -189,9 +188,7 @@ func TestCheckMainCustomRules(t *testing.T) {
 				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `true`)}
 			},
 			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
-				rs.URLAllowRule.List = &urllist.URLRuleList{}
-				rs.URLAllowRule.List.Append(&urllist.URLRule{Pattern: "/login?next=/"})
-				req.FeatureControl |= feature.URLAllow.ControlMask()
+				rs.Lists = config.NewListSet(config.MustNewList("url_allow", config.ListURL, action.ActionAllow, "/login?next=/"))
 			},
 			want: "pass",
 		},

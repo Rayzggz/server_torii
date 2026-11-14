@@ -39,7 +39,7 @@ func TestCustomRulesSchema(t *testing.T) {
 			wrapper, err := decodeServerRules([]byte("CustomRules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
 			dest := &rules.CustomRules{}
 			if err == nil {
-				err = mapCustomRules(wrapper.CustomRules, dest)
+				err = mapCustomRules(wrapper.CustomRules, dest, nil)
 			}
 			if tt.wantErr == "" {
 				if err != nil {
@@ -65,7 +65,7 @@ func TestCustomRulesDisabledRuleDropped(t *testing.T) {
 		t.Fatal(err)
 	}
 	dest := &rules.CustomRules{}
-	if err := mapCustomRules(wrapper.CustomRules, dest); err != nil {
+	if err := mapCustomRules(wrapper.CustomRules, dest, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !dest.Enabled || len(dest.Rules) != 1 || dest.Rules[0].ID != "on" {

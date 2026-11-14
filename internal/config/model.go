@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"server_torii/internal/request"
 	"strconv"
 )
 
@@ -27,6 +28,10 @@ type MainConfig struct {
 	NodeName     string           `yaml:"node_name" validate:"required"`
 	EnableGossip bool             `yaml:"enable_gossip"`
 	Sites        []AllSiteRuleSet `yaml:"sites" validate:"min=1,dive"`
+	// IPv6Prefix is the size, in bits, of the IPv6 network that counts as one client for rate
+	// limits, temporary rules and traffic analysis. Empty means 64. Every node of a cluster
+	// needs the same value: the rules the nodes share name clients by it.
+	IPv6Prefix int `yaml:"ipv6_prefix" validate:"omitempty,min=1,max=128"`
 	// DefaultSite is the ID of the site used for requests whose connector names no site.
 	// Empty means such requests get no decision.
 	DefaultSite string `yaml:"default_site"`
@@ -90,6 +95,14 @@ func (c *MainConfig) LogListenAddrs() []string {
 		return c.LogListen
 	}
 	return []string{"127.0.0.1:" + c.Port}
+}
+
+// IPv6PrefixBits returns the size of the IPv6 network that counts as one client.
+func (c *MainConfig) IPv6PrefixBits() int {
+	if c.IPv6Prefix > 0 {
+		return c.IPv6Prefix
+	}
+	return request.DefaultIPv6PrefixBits
 }
 
 // SocketMode returns the permission bits for Unix sockets, falling back to the default when

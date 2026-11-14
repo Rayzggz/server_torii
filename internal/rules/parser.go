@@ -8,8 +8,16 @@ import (
 	"strings"
 )
 
+// Lists resolves the lists of a site that an expression refers to as $name. An IP field is
+// tested against an IP list, a string field against a URL list.
+type Lists interface {
+	IPMatcher(name string) (func(netip.Addr) bool, error)
+	StringMatcher(name string) (func(string) bool, error)
+}
+
 // Compile parses a Cloudflare-style rule expression and type-checks it against the known fields.
-func Compile(src string) (*Program, error) {
+// lists may be nil; an expression that refers to a list is then an error.
+func Compile(src string, lists Lists) (*Program, error) {
 	if strings.TrimSpace(src) == "" {
 		return nil, fmt.Errorf("expression is empty")
 	}
@@ -17,7 +25,7 @@ func Compile(src string) (*Program, error) {
 	if err != nil {
 		return nil, err
 	}
-	p := &parser{toks: toks}
+	p := &parser{toks: toks, lists: lists}
 	root, err := p.parseOr()
 	if err != nil {
 		return nil, err
@@ -29,8 +37,9 @@ func Compile(src string) (*Program, error) {
 }
 
 type parser struct {
-	toks []token
-	i    int
+	toks  []token
+	i     int
+	lists Lists
 }
 
 func (p *parser) peek() token { return p.toks[p.i] }
@@ -269,8 +278,35 @@ func intPredicate(op string, n int64) func(value) bool {
 	}
 }
 
-// parseSet reads {a b c}; commas between items are optional.
+// parseListRef resolves $name, which stands where a {…} set could.
+func (p *parser) parseListRef(k kind) (func(value) bool, error) {
+	t := p.next()
+	if p.lists == nil {
+		return nil, p.errorf(t, "no lists are defined, so $%s cannot be used", t.text)
+	}
+	switch k {
+	case kindIP:
+		match, err := p.lists.IPMatcher(t.text)
+		if err != nil {
+			return nil, p.errorf(t, "%v", err)
+		}
+		return func(v value) bool { return v.ip.IsValid() && match(v.ip) }, nil
+	case kindString:
+		match, err := p.lists.StringMatcher(t.text)
+		if err != nil {
+			return nil, p.errorf(t, "%v", err)
+		}
+		return func(v value) bool { return match(v.s) }, nil
+	default:
+		return nil, p.errorf(t, "a list cannot be compared with a value of type %s", k)
+	}
+}
+
+// parseSet reads {a b c}, with optional commas between the items, or $name.
 func (p *parser) parseSet(k kind) (func(value) bool, error) {
+	if p.peek().kind == tokListRef {
+		return p.parseListRef(k)
+	}
 	if _, err := p.expect(tokLBrace, `"{"`); err != nil {
 		return nil, err
 	}

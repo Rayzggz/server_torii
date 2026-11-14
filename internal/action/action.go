@@ -41,6 +41,12 @@ type Decision struct {
 	// checks that follow still run and may end the pipeline with something stricter; if none
 	// does, the Challenge check runs whatever its switch and the skip mask say.
 	RequireChallenge bool
+	// Detail names what, within the check that is running, decided: a list, a custom rule. The
+	// pipeline adds it to the name of the check to form Reason.
+	Detail string
+	// Reason is the check behind the decision, with its Detail: "Lists:office", "HTTPFlood". The
+	// pipeline sets it when it ends.
+	Reason string
 }
 
 func NewDecision() *Decision {

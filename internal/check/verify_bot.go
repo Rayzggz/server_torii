@@ -46,7 +46,7 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	verified, fresh, err := defaultBotVerifier.verify(ip, bot, exptractRDNS)
 	if verified {
-		rt.MarkNeutral(reqData.Site, reqData.RemoteIP, verifiedBotMarkTTL)
+		rt.MarkNeutral(reqData.Site, reqData.ClientKey(), verifiedBotMarkTTL)
 		decision.Set(action.Done)
 		return
 	}

@@ -13,7 +13,6 @@ import (
 	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/state"
-	"server_torii/internal/urllist"
 	"strings"
 	"testing"
 	"time"
@@ -32,8 +31,7 @@ func newV1Server(t *testing.T) *Server {
 	shop.ID = "shop"
 	fallback := config.NewRuleSet()
 	fallback.ID = "default_site"
-	shop.URLBlockRule.Enabled = true
-	shop.URLBlockRule.List.Append(&urllist.URLRule{Pattern: "/blocked"})
+	shop.Lists = config.NewListSet(config.MustNewList("url_block", config.ListURL, action.ActionBlock, "/blocked"))
 	shop.Challenge = &config.ChallengeRule{SecretKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120}
 
 	configs := config.NewManager()
@@ -77,8 +75,8 @@ func TestV1CheckAnswersWithThePage(t *testing.T) {
 	if got := rec.Header().Get(headerDecision); got != "block" {
 		t.Errorf("decision = %q, want block", got)
 	}
-	if got := rec.Header().Get(headerReason); got != "URLBlock" {
-		t.Errorf("reason = %q, want URLBlock", got)
+	if got := rec.Header().Get(headerReason); got != "Lists:url_block" {
+		t.Errorf("reason = %q, want Lists:url_block", got)
 	}
 }
 
@@ -218,11 +216,12 @@ func TestApplyFeatureOverrides(t *testing.T) {
 	}{
 		{"", base, 0},
 		{"-challenge", feature.HTTPFlood.ControlMask(), 0},
-		{"-Challenge, +ip_block", feature.HTTPFlood.ControlMask() | feature.IPBlock.ControlMask(), 0},
+		{"-Challenge, +custom_rules", feature.HTTPFlood.ControlMask() | feature.CustomRules.ControlMask(), 0},
 		{"+HTTPFlood +http-flood", base, 0},
 		{"-http_flood,-challenge", 0, 0},
-		// Entries without a sign, unknown names and checks without a switch are reported.
-		{"captcha +nope -ActionRule +", base, 4},
+		// Entries without a sign, unknown names and checks without a switch are reported: they
+		// may name a list of the site, see TestListOverrides.
+		{"captcha +nope -ActionRule -Lists +url_block +", base, 6},
 	} {
 		got, unknown := applyFeatureOverrides(base, tt.header)
 		if got != tt.want || len(unknown) != tt.unknown {

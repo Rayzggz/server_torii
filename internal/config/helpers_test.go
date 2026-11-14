@@ -14,6 +14,15 @@ func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 	return wrapper, err
 }
 
+// siteDirectory makes the directory of a site whose Server.yml has the given sections; the
+// sections left out are added, switched off.
+func siteDirectory(t *testing.T, settings string) string {
+	t.Helper()
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "Server.yml"), settings)
+	return dir
+}
+
 func mustMkdirAll(t *testing.T, path string) {
 	t.Helper()
 
@@ -32,12 +41,7 @@ func writeRuleFiles(t *testing.T, dir string, files map[string]string) {
 
 // disabledSections is a complete Server.yml with every check switched off, by section.
 var disabledSections = []struct{ name, text string }{
-	{"IPAllow", "IPAllow: {enabled: false}\n"},
-	{"IPBlock", "IPBlock: {enabled: false}\n"},
-	{"IPCAPTCHA", "IPCAPTCHA: {enabled: false}\n"},
-	{"URLAllow", "URLAllow: {enabled: false}\n"},
-	{"URLBlock", "URLBlock: {enabled: false}\n"},
-	{"URLCAPTCHA", "URLCAPTCHA: {enabled: false}\n"},
+	{"Lists", "Lists: []\n"},
 	{"CountryRule", "CountryRule: {enabled: false}\n"},
 	{"Challenge", "Challenge: {enabled: false, mode: hcaptcha, secret_key: 1234567890abcdef, clearance_ttl: 60, session_ttl: 120, failure_limit: [\"3/1m\"], failure_block_duration: 60}\n"},
 	{"HTTPFlood", "HTTPFlood: {enabled: false, HTTPFloodSpeedLimit: [\"5/10s\"], HTTPFloodSameURILimit: [\"3/10s\"], HTTPFloodFailureLimit: [\"3/30s\"], failure_block_duration: 300}\n"},

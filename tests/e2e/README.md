@@ -54,7 +54,7 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 | --- | --- |
 | `routing` | Node identities and health, site selection by ID and the default site, feature overrides |
 | `connector` | Connector protocol v1: pass/deny decisions with the page as the response, sites named by ID, feature overrides, error answers without a decision, public endpoints, and the same checks over the Unix socket |
-| `access` | IPv4/CIDR and IPv4-mapped IPv6 allow/block/CAPTCHA lists, ignored native IPv6 rules, exact/regex URL rules, overlap precedence and nonmatches |
+| `access` | IPv4, IPv6 and IPv4-mapped allow/block/challenge lists, exact and `regex:` URL entries, the order of the lists and nonmatches |
 | `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/challenge/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
 | `country` | Pinned US/AU/GB database records, default and unknown policies, missing database, rule precedence |
 | `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry |
@@ -92,9 +92,8 @@ copies fixtures to a unique temporary directory, generates per-node paths and
 peers, and modifies only those copies during reload tests. The existing bundled
 GeoIP database is reused without downloading or changing it.
 
-The current IP-list trie intentionally ignores native IPv6 rules. The suite
-asserts this existing limitation explicitly; it does not claim native IPv6 list
-enforcement. IPv4-mapped IPv6 clients are tested against the IPv4 rules.
+IP lists hold IPv4 and IPv6 networks; IPv4-mapped IPv6 clients are tested against the
+IPv4 entries.
 
 The suite prints its artifact directory at startup. It contains per-node
 configuration/logs, recorded response headers/bodies, cookie jars, the crawler

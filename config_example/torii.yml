@@ -33,6 +33,10 @@ sites:
     rule_path: "/www/server_torii/config/rules/default"
   - id: "example"
     rule_path: "/www/server_torii/config/rules/example.com"
+# How many bits of an IPv6 address identify one client for rate limits, temporary blocks and
+# traffic analysis. A client can take any address of the /64 it is usually given, so counting
+# single addresses would let it escape every limit. Every node of a cluster needs the same value.
+# ipv6_prefix: 64
 # The site for requests that name none. Remove it to give such requests no decision.
 default_site: "default_site"
 

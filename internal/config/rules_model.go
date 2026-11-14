@@ -2,8 +2,6 @@ package config
 
 import (
 	"server_torii/internal/action"
-	"server_torii/internal/iptrie"
-	"server_torii/internal/urllist"
 )
 
 // ChallengeMode is how a site makes a client prove itself.
@@ -111,19 +109,6 @@ type URIDetectionRule struct {
 	RatioThreshold float64       `yaml:"ratio_threshold" validate:"min=0"`
 	FallbackShare  float64       `yaml:"fallback_share" validate:"min=0,max=1"`
 	Baseline       BaselineRule  `yaml:"baseline"`
-}
-
-// IPListRule switches one of a site's IP lists (allow, block, challenge). The list itself comes from the
-// matching .conf file, not from Server.yml.
-type IPListRule struct {
-	Enabled bool             `yaml:"enabled"`
-	Trie    *iptrie.TrieNode `yaml:"-"`
-}
-
-// URLListRule switches one of a site's URL lists (allow, block, challenge).
-type URLListRule struct {
-	Enabled bool                 `yaml:"enabled"`
-	List    *urllist.URLRuleList `yaml:"-"`
 }
 
 type CountryRule struct {

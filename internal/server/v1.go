@@ -47,14 +47,14 @@ func (s *Server) serveV1Check(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	decision, endedBy := s.runChecks(reqData, ruleSet)
+	decision, _ := s.runChecks(reqData, ruleSet)
 	w.Header().Set(headerDecision, decision.Verdict.String())
 	if decision.Verdict == action.VerdictAllow {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if endedBy < feature.Count {
-		w.Header().Set(headerReason, endedBy.String())
+	if decision.Reason != "" {
+		w.Header().Set(headerReason, decision.Reason)
 	}
 	s.serveVerdict(w, reqData, ruleSet, pages, decision.Verdict)
 }
@@ -122,17 +122,39 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 	reqData.Site = ruleSet.ID
 	// Everything the checks need to know about the client is worked out here, before the first
 	// check runs.
+	reqData.Key = request.Key(reqData.Addr, reqData.RemoteIP, s.cfg.IPv6PrefixBits())
 	if s.rt != nil {
 		reqData.ResolveCountry(s.rt.CountryResolver)
 	}
 	reqData.ShareLookups()
 
 	bits, unknown := applyFeatureOverrides(configFeatureBits(ruleSet), r.Header.Get(headerFeatures))
+	reqData.ListOverrides, unknown = listOverrides(ruleSet.Lists, unknown)
 	if len(unknown) > 0 {
 		logx.Error(reqData, fmt.Sprintf("Ignoring unknown %s entries: %s", headerFeatures, strings.Join(unknown, " ")), "v1Request")
 	}
 	reqData.FeatureControl = bits
 	return reqData, ruleSet, snap.Pages, true
+}
+
+// listOverrides picks, from the Torii-Features entries that name no check, the ones that name a
+// list of the site: "+name" switches the action of the list on for the request and "-name"
+// switches it off. It returns them with the entries that name nothing.
+func listOverrides(lists *config.ListSet, entries []string) (map[string]bool, []string) {
+	var overrides map[string]bool
+	var unknown []string
+	for _, entry := range entries {
+		name := strings.ToLower(entry[1:])
+		if (entry[0] != '+' && entry[0] != '-') || lists.ByName(name) == nil {
+			unknown = append(unknown, entry)
+			continue
+		}
+		if overrides == nil {
+			overrides = make(map[string]bool)
+		}
+		overrides[name] = entry[0] == '+'
+	}
+	return overrides, unknown
 }
 
 // applyFeatureOverrides applies a Torii-Features header to the bits the site configuration turns

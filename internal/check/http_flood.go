@@ -19,11 +19,11 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		logx.Error(reqData, "", "HTTPFlood counters are not initialized, skipping HTTPFlood checks")
 		return
 	}
-	ipKey := reqData.RemoteIP
+	ipKey := reqData.ClientKey()
 
 	speedCounter.Add(ipKey, 1)
 
-	uriKey := reqData.RemoteIP + "|" + reqData.Uri
+	uriKey := ipKey + "|" + reqData.Uri
 	sameURICounter.Add(uriKey, 1)
 
 	// Check failure limit

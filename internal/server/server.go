@@ -82,6 +82,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Run(ctx context.Context) error {
 	// Start AdaptiveTrafficAnalyzer
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(s.rt, s.configs)
+	ata.IPv6PrefixBits = s.cfg.IPv6PrefixBits()
 	s.rt.SetAnalyzer(ata)
 	ata.Start()
 	defer ata.Stop()

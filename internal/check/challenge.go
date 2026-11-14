@@ -20,7 +20,7 @@ func Challenge(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	if failureCounter == nil {
 		logx.Error(reqData, "", "Challenge failure counter is not initialized, skipping the failure limit")
 	}
-	ipKey := reqData.RemoteIP
+	ipKey := reqData.ClientKey()
 
 	if failureCounter != nil && rule.FailureBlockDuration > 0 {
 		for window, limit := range rule.FailureLimit {

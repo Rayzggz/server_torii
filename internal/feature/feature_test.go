@@ -7,7 +7,7 @@ import (
 
 func TestPipelineOrder(t *testing.T) {
 	// The order decides which rule wins when several match; changing it changes behavior.
-	want := "IPAllow IPBlock URLAllow URLBlock CustomRules IPCAPTCHA URLCAPTCHA CountryRule VerifyBot ActionRule HTTPFlood Challenge"
+	want := "Lists CustomRules CountryRule VerifyBot ActionRule HTTPFlood Challenge"
 	var names []string
 	for _, c := range Pipeline() {
 		names = append(names, c.String())
@@ -29,7 +29,7 @@ func TestMasksAreDistinct(t *testing.T) {
 				t.Errorf("%s control mask %b is not a distinct single bit", c, m)
 			}
 			control |= m
-		} else if c != ActionRule {
+		} else if c != ActionRule && c != Lists {
 			t.Errorf("%s has no feature control bit", c)
 		}
 		if m := c.SkipMask(); m != 0 {
@@ -53,12 +53,29 @@ func TestParseSkipTargets(t *testing.T) {
 	if mask, err := ParseSkipTargets(nil); err != nil || mask != 0 {
 		t.Fatalf("no targets = %b, %v", mask, err)
 	}
-	_, err = ParseSkipTargets([]string{"IPAllow"})
+	_, err = ParseSkipTargets([]string{"Lists"})
 	if err == nil {
-		t.Fatal("IPAllow runs before CustomRules and must not be a skip target")
+		t.Fatal("Lists runs before CustomRules and must not be a skip target")
 	}
-	const want = `invalid skip target "IPAllow": expected one of CustomRules, IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule, HTTPFlood, Challenge`
+	const want = `invalid skip target "Lists": expected one of CustomRules, CountryRule, VerifyBot, ActionRule, HTTPFlood, Challenge`
 	if err.Error() != want {
 		t.Fatalf("error = %s", err)
+	}
+}
+
+func TestByName(t *testing.T) {
+	for name, want := range map[string]Check{"HTTPFlood": HTTPFlood, "http_flood": HTTPFlood, "http-flood": HTTPFlood, "lists": Lists, "ActionRule": ActionRule} {
+		if got, ok := ByName(name); !ok || got != want {
+			t.Errorf("ByName(%q) = %s, %v", name, got, ok)
+		}
+	}
+	if _, ok := ByName("ip_allow"); ok {
+		t.Error("ip_allow is no longer a check")
+	}
+	// Lists and ActionRule are checks, but neither has a switch.
+	for _, name := range []string{"lists", "action_rule", "ip_allow"} {
+		if _, ok := ControlMaskByName(name); ok {
+			t.Errorf("%s has a switch", name)
+		}
 	}
 }

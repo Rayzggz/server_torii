@@ -15,12 +15,7 @@ const DefaultAltchaCost = 5000
 
 // ruleSetWrapper
 type ruleSetWrapper struct {
-	IPAllowRule                 *IPListRule                  `yaml:"IPAllow"`
-	IPBlockRule                 *IPListRule                  `yaml:"IPBlock"`
-	URLAllowRule                *URLListRule                 `yaml:"URLAllow"`
-	URLBlockRule                *URLListRule                 `yaml:"URLBlock"`
-	IPCAPTCHARule               *IPListRule                  `yaml:"IPCAPTCHA"`
-	URLCAPTCHARule              *URLListRule                 `yaml:"URLCAPTCHA"`
+	Lists                       *[]listWrapper               `yaml:"Lists"`
 	Challenge                   *challengeRuleWrapper        `yaml:"Challenge"`
 	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
 	HTTPFloodRule               *httpFloodRuleWrapper        `yaml:"HTTPFlood"`
@@ -37,12 +32,7 @@ func (w *ruleSetWrapper) missingSections() []string {
 		name    string
 		present bool
 	}{
-		{"IPAllow", w.IPAllowRule != nil},
-		{"IPBlock", w.IPBlockRule != nil},
-		{"IPCAPTCHA", w.IPCAPTCHARule != nil},
-		{"URLAllow", w.URLAllowRule != nil},
-		{"URLBlock", w.URLBlockRule != nil},
-		{"URLCAPTCHA", w.URLCAPTCHARule != nil},
+		{"Lists", w.Lists != nil},
 		{"CountryRule", w.CountryRule != nil},
 		{"Challenge", w.Challenge != nil},
 		{"HTTPFlood", w.HTTPFloodRule != nil},
@@ -212,7 +202,7 @@ func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error 
 }
 
 // mapCustomRules compiles every enabled rule; any error rejects the whole file so a reload keeps the old rules.
-func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error {
+func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules, lists rules.Lists) error {
 	dest.Enabled = wrapper.Enabled
 	dest.Rules = make([]*rules.Rule, 0, len(wrapper.Rules))
 	seen := make(map[string]bool, len(wrapper.Rules))
@@ -243,7 +233,7 @@ func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules) error 
 				return fmt.Errorf("%s: %w", label, err)
 			}
 		}
-		prog, err := rules.Compile(w.Expression)
+		prog, err := rules.Compile(w.Expression, lists)
 		if err != nil {
 			return fmt.Errorf("%s: expression %s", label, err)
 		}

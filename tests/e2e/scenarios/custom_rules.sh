@@ -18,6 +18,14 @@ test_custom_rules() {
     expect block 1 198.18.0.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
     expect pass 1 198.18.1.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
     expect challenge 1 198.18.0.3 "$custom" /neutral default_site -A 'Mozilla/5.0 BadBot/1.0'
+    assert_eq "$(header Torii-Reason)" CustomRules:challenge-badbot 'the reason names the rule'
+    # Rules refer to the lists of the site by name, whether or not the list itself is switched on:
+    # the mask switches every list off, and the rules still see their entries.
+    expect block 1 198.51.100.60 "$custom" /e2e/list
+    expect block 1 2001:db8:3::7 "$custom" /e2e/list
+    expect pass 1 198.51.100.80 "$custom" /e2e/list
+    expect block 1 198.18.0.6 "$custom" /protected/123 default_site -A 'Mozilla/5.0 ListRef/1.0'
+    expect pass 1 198.18.0.6 "$custom" /protected/abc default_site -A 'Mozilla/5.0 ListRef/1.0'
     # IP allow list runs before custom rules.
     expect pass 1 198.51.100.10 "$custom_ip_allow" /neutral default_site -H 'Referer: https://spam.e2e/'
     # allow ends the pipeline, so the later flood check never counts these requests.

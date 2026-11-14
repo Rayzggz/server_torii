@@ -2,7 +2,6 @@ package server
 
 import (
 	"errors"
-	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -10,7 +9,6 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
-	"server_torii/internal/iptrie"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
@@ -26,14 +24,8 @@ func (r serverCountryResolver) Country(netip.Addr) (string, error) {
 }
 
 func TestIPAllowBypassesCountryRule(t *testing.T) {
-	_, allowedNetwork, err := net.ParseCIDR("8.8.8.8/32")
-	if err != nil {
-		t.Fatalf("ParseCIDR returned error: %v", err)
-	}
-	trie := &iptrie.TrieNode{}
-	trie.Insert(allowedNetwork)
 	ruleSet := &config.RuleSet{
-		IPAllowRule: &config.IPListRule{Enabled: true, Trie: trie},
+		Lists: config.NewListSet(config.MustNewList("ip_allow", config.ListIP, action.ActionAllow, "8.8.8.8/32")),
 		CountryRule: &config.CountryRule{
 			Enabled:   true,
 			Countries: map[string]action.Action{"US": action.ActionBlock},
@@ -41,7 +33,7 @@ func TestIPAllowBypassesCountryRule(t *testing.T) {
 	}
 	reqData := request.UserRequest{
 		RemoteIP:       "8.8.8.8",
-		FeatureControl: feature.IPAllow.ControlMask() | feature.CountryRule.ControlMask(),
+		FeatureControl: feature.CountryRule.ControlMask(),
 	}
 	rt := &state.Runtime{CountryResolver: serverCountryResolver{country: "US"}}
 	if got := decide(rt, reqData, ruleSet); got != "pass" {
@@ -124,10 +116,7 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		IPAllowRule:   &config.IPListRule{},
-		IPBlockRule:   &config.IPListRule{},
-		URLAllowRule:  &config.URLListRule{},
-		URLBlockRule:  &config.URLListRule{},
+		Lists:         config.NewListSet(),
 		VerifyBotRule: &config.VerifyBotRule{},
 		HTTPFloodRule: &config.HTTPFloodRule{},
 		Challenge:     &config.ChallengeRule{},

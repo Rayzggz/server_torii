@@ -158,7 +158,8 @@ request() {
 header() { awk -v key="$1:" 'tolower($1)==tolower(key) {$1=""; sub(/^ /, ""); sub(/\r$/, ""); print}' "$RESPONSE.headers"; }
 # The scenarios select checks with a 16-character mask, one character per check in this order:
 # 1 forces the check on, 0 forces it off, _ keeps the setting of the site. An empty mask
-# changes nothing. Position 8 belonged to a check that no longer exists; it is kept, and
+# changes nothing. Six of the names are lists of the fixture, which the connector switches the
+# same way as checks. Position 8 belonged to a check that no longer exists; it is kept, and
 # ignored, so the masks of the scenarios keep their positions.
 FEATURE_NAMES=(ip_allow ip_block url_allow url_block verify_bot http_flood challenge ''
     country_rule ip_captcha url_captcha custom_rules)

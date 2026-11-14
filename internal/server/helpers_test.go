@@ -1,6 +1,7 @@
 package server
 
 import (
+	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
@@ -19,4 +20,9 @@ func decide(rt *state.Runtime, req request.UserRequest, rs *config.RuleSet) stri
 func featureBits(rs *config.RuleSet, overrides string) uint16 {
 	bits, _ := applyFeatureOverrides(configFeatureBits(rs), overrides)
 	return bits
+}
+
+// checkClearance issues the clearance a client of the site gets for passing its challenge.
+func checkClearance(req request.UserRequest, rs *config.RuleSet) []byte {
+	return check.GenClearance(req, *rs)
 }

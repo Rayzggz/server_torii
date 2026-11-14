@@ -46,7 +46,7 @@ func TestLoadRules_Strict(t *testing.T) {
 		"every problem is reported": {"Challenge: {mode: external, redirect_url: nowhere}", "Challenge.clearance_ttl"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := LoadRules(ipCaptchaDirectory(t, tt.settings))
+			_, err := LoadRules(siteDirectory(t, tt.settings))
 			if tt.want == "" {
 				if err != nil {
 					t.Fatalf("LoadRules: %v", err)
@@ -64,7 +64,7 @@ func TestLoadRules_Strict(t *testing.T) {
 // that are missing.
 func TestLoadRules_MissingSections(t *testing.T) {
 	load := func(t *testing.T, serverRules string) error {
-		dir := ipCaptchaDirectory(t, "")
+		dir := siteDirectory(t, "")
 		writeRawFile(t, filepath.Join(dir, "Server.yml"), serverRules)
 		_, err := LoadRules(dir)
 		return err
@@ -97,7 +97,7 @@ func TestLoadRules_MissingSections(t *testing.T) {
 
 // A check that is switched off is still loaded in full.
 func TestLoadRules_DisabledSectionsAreLoaded(t *testing.T) {
-	rules, err := LoadRules(ipCaptchaDirectory(t, ""))
+	rules, err := LoadRules(siteDirectory(t, ""))
 	if err != nil {
 		t.Fatal(err)
 	}

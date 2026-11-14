@@ -52,7 +52,7 @@ func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request,
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		status = http.StatusServiceUnavailable
 	case check.SubmissionGood:
-		s.rt.MarkVerified(reqData.Site, reqData.RemoteIP, time.Duration(ruleSet.Challenge.ClearanceTTL)*time.Second)
+		s.rt.MarkVerified(reqData.Site, reqData.ClientKey(), time.Duration(ruleSet.Challenge.ClearanceTTL)*time.Second)
 		setToriiCookie(w, "__torii_clearance", string(check.GenClearance(reqData, *ruleSet)), 0)
 	}
 	w.WriteHeader(status)
