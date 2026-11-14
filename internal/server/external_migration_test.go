@@ -77,7 +77,7 @@ func newExternalFixture(t *testing.T) *externalFixture {
 		ruleSet: &config.RuleSet{Challenge: &config.ChallengeRule{Mode: config.ChallengeExternal,
 			Enabled:      true,
 			RedirectURL:  "https://mitigation.invalid/verify",
-			SecretKey:    "external-secret-0123456789",
+			Keys:         []string{"external-secret-0123456789"},
 			ClearanceTTL: 600,
 		}},
 		cfg: &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"},
@@ -114,7 +114,7 @@ func (f *externalFixture) signedQuery(originalURI string, ts int64) url.Values {
 	return url.Values{
 		"original_uri": {originalURI},
 		"timestamp":    {stamp},
-		"hmac":         {check.CalculateExternalMigrationHMAC(f.reqData.ToriiSessionID, stamp, originalURI, f.ruleSet.Challenge.SecretKey)},
+		"hmac":         {check.CalculateExternalMigrationHMAC(f.reqData.ToriiSessionID, stamp, originalURI, f.ruleSet.Challenge.SigningKey())},
 	}
 }
 
@@ -306,7 +306,7 @@ func TestExternalVerdictRedirectsToProvider(t *testing.T) {
 		t.Fatalf("redirect query = %v", q)
 	}
 	stamp, _, _ := strings.Cut(session, ":")
-	wantHMAC := check.CalculateRedirectHMAC("example.com", stamp, "/protected", f.ruleSet.Challenge.SecretKey)
+	wantHMAC := check.CalculateRedirectHMAC("example.com", stamp, "/protected", f.ruleSet.Challenge.SigningKey())
 	if q.Get("hmac") != wantHMAC {
 		t.Fatalf("hmac = %q, want %q", q.Get("hmac"), wantHMAC)
 	}
@@ -325,7 +325,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 
 	// The provider verifies Torii's signature, then signs its own callback.
 	stamp, _, _ := strings.Cut(provider.Get("session_id"), ":")
-	key := f.ruleSet.Challenge.SecretKey
+	key := f.ruleSet.Challenge.SigningKey()
 	if provider.Get("hmac") != check.CalculateRedirectHMAC(provider.Get("domain"), stamp, provider.Get("original_uri"), key) {
 		t.Fatal("provider could not verify the redirect signature")
 	}
@@ -400,7 +400,7 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 			}
 			// The provider must be able to verify the signature from the decoded values.
 			stamp, _, _ := strings.Cut(q.Get("session_id"), ":")
-			want := check.CalculateRedirectHMAC(q.Get("domain"), stamp, q.Get("original_uri"), f.ruleSet.Challenge.SecretKey)
+			want := check.CalculateRedirectHMAC(q.Get("domain"), stamp, q.Get("original_uri"), f.ruleSet.Challenge.SigningKey())
 			if q.Get("hmac") != want {
 				t.Fatal("provider cannot verify the redirect signature")
 			}

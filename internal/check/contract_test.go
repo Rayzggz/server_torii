@@ -2,7 +2,10 @@ package check
 
 import (
 	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/sha512"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"server_torii/internal/config"
@@ -13,9 +16,10 @@ import (
 	"time"
 )
 
-// These tests pin the cookie and signature formats. Cookies already issued to visitors and
-// signatures exchanged with the external mitigation provider must keep verifying after an upgrade,
-// so the expected values are computed here independently of the implementation.
+// These tests pin the cookie and signature formats. Cookies already issued to visitors, by any
+// node that holds the key, and signatures exchanged with the external mitigation provider must
+// keep verifying after an upgrade, so the expected values are computed here independently of
+// the implementation.
 
 const contractKey = "0123456789abcdef"
 
@@ -25,14 +29,27 @@ func contractMAC(message string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// contractCookie builds a cookie the way the format is documented, without the token package:
+// "v2.<key id>.<unix seconds>.<signature>". The key id is the first six bytes of
+// SHA-256("torii token key id\0" + key); the signature is an HMAC-SHA256 over the version, the
+// label, the timestamp, the host and the user agent, each after its length as four big-endian
+// bytes. Both are base64url without padding.
 func contractCookie(ts int64, host, ua, label string) string {
-	return fmt.Sprintf("%d:%s", ts, contractMAC(fmt.Sprintf("%d%s%s%s", ts, host, ua, label)))
+	id := sha256.Sum256([]byte("torii token key id\x00" + contractKey))
+	stamp := strconv.FormatInt(ts, 10)
+	mac := hmac.New(sha256.New, []byte(contractKey))
+	for _, field := range []string{"v2", label, stamp, host, ua} {
+		mac.Write(binary.BigEndian.AppendUint32(nil, uint32(len(field))))
+		mac.Write([]byte(field))
+	}
+	b64 := base64.RawURLEncoding.EncodeToString
+	return "v2." + b64(id[:6]) + "." + stamp + "." + b64(mac.Sum(nil))
 }
 
 func contractFixture(mode config.ChallengeMode) (request.UserRequest, config.RuleSet) {
 	return request.UserRequest{Host: "example.com", UserAgent: "UA-X"},
 		config.RuleSet{
-			Challenge: &config.ChallengeRule{Mode: mode, SecretKey: contractKey, ClearanceTTL: 600, SessionTTL: 120},
+			Challenge: &config.ChallengeRule{Mode: mode, Keys: []string{contractKey}, ClearanceTTL: 600, SessionTTL: 120},
 			// The site ID is part of every token, so a token of one site is useless on another.
 			ID: "shop",
 		}
@@ -43,10 +60,10 @@ func TestCookieFormatContract(t *testing.T) {
 	if got := GetClearanceUserAgent("UA-X"); got != "UA-X" {
 		t.Fatalf("GetClearanceUserAgent = %q", got)
 	}
-	// Reference vector produced with: printf '%s' "$msg" | openssl dgst -sha512 -hmac "$key"
-	const wantMAC = "d52db683cd3f70018f08ba8778646732e1c5233ec2de95fd142859dcb836543e7e47d3fca6d5d476e680c96a4bd76353f054b43c326818c12fd54c1775f1f759"
-	if got := contractMAC("1700000000example.comUA-XCAPTCHA-CLEARANCE"); got != wantMAC {
-		t.Fatalf("reference MAC mismatch: %s", got)
+	// Reference vector computed outside Go, see the token package.
+	const want = "v2.OABn0b72.1700000000.tNuJKQAaAnW32fCWPU_mmCZbI1r3cULhwMRC610v4Ew"
+	if got := contractCookie(1700000000, "example.com", "UA-X", "CAPTCHA-CLEARANCE@shop"); got != want {
+		t.Fatalf("reference cookie mismatch: %s", got)
 	}
 
 	now := time.Now().Unix()
@@ -62,7 +79,7 @@ func TestCookieFormatContract(t *testing.T) {
 		name   string
 		mode   config.ChallengeMode
 		label  string
-		maxAge int64 // 0: the cookie never expires on its own
+		maxAge int64
 		gen    func(request.UserRequest, config.RuleSet) []byte
 		verify func(request.UserRequest, config.RuleSet, string) bool
 	}{
@@ -70,15 +87,17 @@ func TestCookieFormatContract(t *testing.T) {
 		{"altcha clearance", config.ChallengeAltcha, "CAPTCHA-CLEARANCE@shop", 600, GenClearance, verifyClearance},
 		{"captcha session", config.ChallengeHCaptcha, "CAPTCHA-SESSION@shop", 120, GenSessionID, verifySession},
 		{"external clearance", config.ChallengeExternal, "EXTERNAL-CLEARANCE@shop", 600, GenClearance, verifyClearance},
-		{"external session", config.ChallengeExternal, "EXTERNAL-SESSION@shop", 0, GenSessionID, verifySession},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			req, rs := contractFixture(tc.mode)
 
 			issued := string(tc.gen(req, rs))
-			tsText, _, ok := strings.Cut(issued, ":")
-			ts, err := strconv.ParseInt(tsText, 10, 64)
-			if !ok || err != nil || ts < now || ts > now+5 {
+			parts := strings.Split(issued, ".")
+			if len(parts) != 4 {
+				t.Fatalf("issued cookie %q does not have four parts", issued)
+			}
+			ts, err := strconv.ParseInt(parts[2], 10, 64)
+			if err != nil || ts < now || ts > now+5 {
 				t.Fatalf("issued cookie %q has no current timestamp", issued)
 			}
 			if want := contractCookie(ts, req.Host, req.UserAgent, tc.label); issued != want {
@@ -91,10 +110,11 @@ func TestCookieFormatContract(t *testing.T) {
 			}
 			for name, bad := range map[string]string{
 				"empty":            "",
-				"no separator":     strings.Replace(valid, ":", "", 1),
-				"extra field":      valid + ":x",
-				"bad timestamp":    "x" + valid,
-				"tampered mac":     valid[:len(valid)-1] + "0" + "0",
+				"no separator":     strings.ReplaceAll(valid, ".", ""),
+				"extra field":      valid + ".x",
+				"old format":       fmt.Sprintf("%d:%s", now-1, contractMAC(fmt.Sprintf("%d%s%s%s", now-1, req.Host, req.UserAgent, tc.label))),
+				"other version":    "v1" + strings.TrimPrefix(valid, "v2"),
+				"tampered mac":     valid[:len(valid)-2] + "00",
 				"other host":       contractCookie(now-1, "other.example", req.UserAgent, tc.label),
 				"other user agent": contractCookie(now-1, req.Host, "UA-Y", tc.label),
 				"other label":      contractCookie(now-1, req.Host, req.UserAgent, "OTHER"),
@@ -105,12 +125,6 @@ func TestCookieFormatContract(t *testing.T) {
 			}
 
 			old := contractCookie(now-100000, req.Host, req.UserAgent, tc.label)
-			if tc.maxAge == 0 {
-				if !tc.verify(req, rs, old) {
-					t.Error("cookie without an expiry rejected for its age")
-				}
-				return
-			}
 			if !tc.verify(req, rs, contractCookie(now-tc.maxAge+2, req.Host, req.UserAgent, tc.label)) {
 				t.Error("cookie rejected before its expiry")
 			}
@@ -121,6 +135,64 @@ func TestCookieFormatContract(t *testing.T) {
 				t.Error("very old cookie accepted")
 			}
 		})
+	}
+}
+
+// The session of the external mode is read by the provider, which takes the timestamp in front
+// of the colon to verify the redirect. It keeps the form "<unix seconds>:<hex HMAC-SHA512>".
+func TestExternalSessionContract(t *testing.T) {
+	req, rs := contractFixture(config.ChallengeExternal)
+	session := func(ts int64, host, ua, label string) string {
+		return fmt.Sprintf("%d:%s", ts, contractMAC(fmt.Sprintf("%d%s%s%s", ts, host, ua, label)))
+	}
+	verify := func(rs config.RuleSet, v string) bool {
+		r := req
+		r.ToriiSessionID = v
+		return VerifySessionIDCookie(r, rs)
+	}
+	const label = "EXTERNAL-SESSION@shop"
+	now := time.Now().Unix()
+
+	issued := string(GenSessionID(req, rs))
+	stamp, ok := ExternalSessionTimestamp(issued)
+	ts, err := strconv.ParseInt(stamp, 10, 64)
+	if !ok || err != nil || ts < now || ts > now+5 {
+		t.Fatalf("issued session %q has no current timestamp", issued)
+	}
+	if want := session(ts, req.Host, req.UserAgent, label); issued != want {
+		t.Fatalf("issued session = %q, want %q", issued, want)
+	}
+
+	valid := session(now-1, req.Host, req.UserAgent, label)
+	// The age of the session is bounded by the link that accompanies it, not by the session.
+	if !verify(rs, valid) || !verify(rs, session(now-100000, req.Host, req.UserAgent, label)) {
+		t.Fatal("independently built session rejected")
+	}
+	for name, bad := range map[string]string{
+		"empty":             "",
+		"no separator":      strings.Replace(valid, ":", "", 1),
+		"extra field":       valid + ":x",
+		"bad timestamp":     "x" + valid,
+		"padded timestamp":  "0" + valid,
+		"tampered mac":      valid[:len(valid)-2] + "00",
+		"other host":        session(now-1, "other.example", req.UserAgent, label),
+		"other user agent":  session(now-1, req.Host, "UA-Y", label),
+		"clearance label":   session(now-1, req.Host, req.UserAgent, "EXTERNAL-CLEARANCE@shop"),
+		"token of the site": contractCookie(now-1, req.Host, req.UserAgent, label),
+	} {
+		if verify(rs, bad) {
+			t.Errorf("%s session accepted", name)
+		}
+	}
+
+	// While a key is being replaced, sessions signed with the old one are still accepted.
+	rotated := rs
+	rotated.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, Keys: []string{"a-new-key-0123456789", contractKey}}
+	if !verify(rotated, valid) {
+		t.Error("session signed with the previous key rejected")
+	}
+	if verify(rs, string(GenSessionID(req, rotated))) {
+		t.Error("session signed with a key the site does not hold accepted")
 	}
 }
 

@@ -39,7 +39,7 @@ func TestChallengeNilCounterStillChallenges(t *testing.T) {
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{
-			SecretKey:            "1234567890abcdef",
+			Keys:                 []string{"1234567890abcdef"},
 			ClearanceTTL:         60,
 			FailureLimit:         map[int64]int64{1: 1},
 			FailureBlockDuration: 60,

@@ -1,7 +1,6 @@
 package check
 
 import (
-	"crypto/hmac"
 	"crypto/sha512"
 	"fmt"
 	"server_torii/internal/action"
@@ -9,6 +8,7 @@ import (
 	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
+	"server_torii/internal/token"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +19,7 @@ func testExternalRuleSet() *config.RuleSet {
 		Challenge: &config.ChallengeRule{Mode: config.ChallengeExternal,
 			Enabled:      true,
 			RedirectURL:  "https://mitigation.invalid/verify",
-			SecretKey:    "external-secret-0123456789",
+			Keys:         []string{"external-secret-0123456789"},
 			ClearanceTTL: 600,
 		},
 	}
@@ -47,9 +47,18 @@ func testExternalRequest() request.UserRequest {
 
 // signExternalClearance builds a clearance with an arbitrary timestamp, so expiry can be tested.
 func signExternalClearance(reqData request.UserRequest, secret string, ts int64) string {
-	mac := hmac.New(sha512.New, []byte(secret))
-	mac.Write(fmt.Appendf(nil, "%d%s%sEXTERNAL-CLEARANCE@", ts, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
-	return fmt.Sprintf("%d:%x", ts, mac.Sum(nil))
+	signer := token.Signer{Keys: []string{secret}, Label: "EXTERNAL-CLEARANCE@"}
+	return signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(ts, 0))
+}
+
+// splitToken returns "v2.<key id>.", the timestamp and the signature of a token.
+func splitToken(t *testing.T, value string) (prefix, ts, sig string) {
+	t.Helper()
+	parts := strings.Split(value, ".")
+	if len(parts) != 4 {
+		t.Fatalf("token %q does not have four parts", value)
+	}
+	return parts[0] + "." + parts[1] + ".", parts[2], parts[3]
 }
 
 func runExternalMigration(reqData request.UserRequest, ruleSet *config.RuleSet) *action.Decision {
@@ -64,10 +73,10 @@ func TestExternalMigrationClearance(t *testing.T) {
 	valid := string(GenClearance(base, *ruleSet))
 	now := time.Now().Unix()
 	timeout := ruleSet.Challenge.ClearanceTTL
-	ts, hash, _ := strings.Cut(valid, ":")
-	flipped := "0"
-	if hash[0] == '0' {
-		flipped = "1"
+	prefix, ts, hash := splitToken(t, valid)
+	flipped := "A"
+	if hash[0] == 'A' {
+		flipped = "B"
 	}
 
 	tests := []struct {
@@ -77,11 +86,11 @@ func TestExternalMigrationClearance(t *testing.T) {
 	}{
 		{"valid clearance", func(r *request.UserRequest) { r.ToriiClearance = valid }, true},
 		{"missing clearance", func(r *request.UserRequest) {}, false},
-		{"no separator", func(r *request.UserRequest) { r.ToriiClearance = ts + hash }, false},
-		{"extra separator", func(r *request.UserRequest) { r.ToriiClearance = valid + ":x" }, false},
-		{"non-numeric timestamp", func(r *request.UserRequest) { r.ToriiClearance = "abc:" + hash }, false},
-		{"tampered hash", func(r *request.UserRequest) { r.ToriiClearance = ts + ":" + flipped + hash[1:] }, false},
-		{"timestamp moved", func(r *request.UserRequest) { r.ToriiClearance = fmt.Sprintf("%d:%s", now-1, hash) }, false},
+		{"no separator", func(r *request.UserRequest) { r.ToriiClearance = strings.ReplaceAll(valid, ".", "") }, false},
+		{"extra separator", func(r *request.UserRequest) { r.ToriiClearance = valid + ".x" }, false},
+		{"non-numeric timestamp", func(r *request.UserRequest) { r.ToriiClearance = prefix + "abc." + hash }, false},
+		{"tampered hash", func(r *request.UserRequest) { r.ToriiClearance = prefix + ts + "." + flipped + hash[1:] }, false},
+		{"timestamp moved", func(r *request.UserRequest) { r.ToriiClearance = fmt.Sprintf("%s%d.%s", prefix, now-1, hash) }, false},
 		{"other host", func(r *request.UserRequest) {
 			r.ToriiClearance = valid
 			r.Host = "other.example.com"
@@ -91,10 +100,10 @@ func TestExternalMigrationClearance(t *testing.T) {
 			r.UserAgent = "curl/8.0"
 		}, false},
 		{"within timeout", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SecretKey, now-timeout+5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SigningKey(), now-timeout+5)
 		}, true},
 		{"expired", func(r *request.UserRequest) {
-			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SecretKey, now-timeout-5)
+			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.SigningKey(), now-timeout-5)
 		}, false},
 		{"signed with another key", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, "another-secret-0123456789", now)
@@ -162,7 +171,7 @@ func TestExternalMigrationSessionID(t *testing.T) {
 			rs := *ruleSet
 			if tt.keyOver != "" {
 				rule := *ruleSet.Challenge
-				rule.SecretKey = tt.keyOver
+				rule.Keys = []string{tt.keyOver}
 				rs.Challenge = &rule
 			}
 			if got := VerifySessionIDCookie(reqData, rs); got != tt.wantOK {

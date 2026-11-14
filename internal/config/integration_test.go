@@ -30,7 +30,7 @@ CountryRule:
 Challenge:
   mode: hcaptcha
   enabled: true
-  secret_key: "1234567890abcdef"
+  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"
@@ -149,7 +149,7 @@ sites:
 Challenge:
   mode: hcaptcha
   enabled: true
-  secret_key: "1234567890abcdef"
+  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   hcaptcha_secret: "hcaptcha-secret"

@@ -134,6 +134,8 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 		return fmt.Sprintf("value must be at least %s", fe.Param())
 	case "max":
 		return fmt.Sprintf("value must be at most %s", fe.Param())
+	case "unique":
+		return "entries must differ from one another"
 	case "numeric":
 		return "value must be numeric"
 	case "url":

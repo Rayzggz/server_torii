@@ -57,7 +57,7 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 			{"valid disabled", `Challenge:
   mode: hcaptcha
   enabled: false
-  secret_key: "1234567890abcdef"
+  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   failure_limit: ["3/1m"]

@@ -80,7 +80,7 @@ func TestCustomRulesDependencies(t *testing.T) {
 	const validCaptcha = `Challenge:
   mode: hcaptcha
   enabled: false
-  secret_key: "1234567890abcdef"
+  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   session_ttl: 120
   failure_limit: ["3/1m"]
@@ -90,7 +90,7 @@ func TestCustomRulesDependencies(t *testing.T) {
   mode: external
   enabled: false
   redirect_url: "https://example.com/migration"
-  secret_key: "1234567890abcdef"
+  keys: ["1234567890abcdef"]
   clearance_ttl: 60
   failure_limit: ["3/1m"]
   failure_block_duration: 60

@@ -158,8 +158,13 @@ func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.Challenge.SecretKey)
-	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
+	// The provider may still sign with a key that is being replaced.
+	signed := false
+	for _, key := range ruleSet.Challenge.Keys {
+		expected := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, key)
+		signed = signed || hmac.Equal([]byte(expected), []byte(hmacParam))
+	}
+	if !signed {
 		logx.Info(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
 		s.showExternalMigrationError(w, reqData, pages, "Invalid migration signature")
 		return
@@ -310,14 +315,14 @@ func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData requ
 	sessionID := string(check.GenSessionID(reqData, *ruleSet))
 	setToriiCookie(w, "__torii_session_id", sessionID, http.SameSiteLaxMode)
 
-	sessionParts := strings.Split(sessionID, ":")
-	if len(sessionParts) != 2 {
+	// The redirect is signed with the time the session was issued at.
+	timestamp, ok := check.ExternalSessionTimestamp(sessionID)
+	if !ok {
 		logx.Error(reqData, "Invalid session ID format", "redirectToExternalMigration")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
-	timestamp := sessionParts[0]
-	hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.Challenge.SecretKey)
+	hmacValue := check.CalculateRedirectHMAC(reqData.Host, timestamp, reqData.Uri, ruleSet.Challenge.SigningKey())
 
 	w.Header().Set("Location", externalRedirectLocation(ruleSet.Challenge.RedirectURL, reqData.Host, sessionID, reqData.Uri, hmacValue))
 	w.WriteHeader(http.StatusFound)

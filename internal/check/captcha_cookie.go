@@ -1,9 +1,7 @@
 package check
 
 import (
-	"fmt"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/token"
 	"time"
@@ -14,11 +12,7 @@ func verifyToken(reqData request.UserRequest, signer token.Signer, value string,
 	if value == "" {
 		return false
 	}
-	ok, err := signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), maxAge, time.Now())
-	if err != nil {
-		logx.Error(reqData, "", fmt.Sprintf("Error parsing timestamp: %v", err))
-	}
-	return ok
+	return signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), maxAge, time.Now())
 }
 
 func signToken(reqData request.UserRequest, signer token.Signer) []byte {
@@ -34,7 +28,7 @@ func challengeSigner(ruleSet config.RuleSet, kind string) token.Signer {
 	if ruleSet.Challenge.Mode == config.ChallengeExternal {
 		family = "EXTERNAL"
 	}
-	return token.Signer{Key: ruleSet.Challenge.SecretKey, Label: family + "-" + kind + "@" + ruleSet.ID}
+	return token.Signer{Keys: ruleSet.Challenge.Keys, Label: family + "-" + kind + "@" + ruleSet.ID}
 }
 
 // GenClearance issues the cookie that lets a client who passed the challenge through.
@@ -47,10 +41,13 @@ func verifyClearanceCookie(reqData request.UserRequest, ruleSet config.RuleSet) 
 }
 
 // GenSessionID issues the challenge session cookie. A CAPTCHA session the client already holds
-// is kept while it is valid. A client sent to the external provider always gets a new one: its
-// timestamp is part of the link that brings the client back.
+// is kept while it is valid. A client sent to the external provider always gets a new one, in
+// the form the provider expects: its timestamp is part of the link that brings the client back.
 func GenSessionID(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
-	if ruleSet.Challenge.ShowsCaptcha() && VerifySessionIDCookie(reqData, ruleSet) {
+	if !ruleSet.Challenge.ShowsCaptcha() {
+		return []byte(externalSession(reqData, ruleSet, ruleSet.Challenge.SigningKey(), time.Now().Unix()))
+	}
+	if VerifySessionIDCookie(reqData, ruleSet) {
 		return []byte(reqData.ToriiSessionID)
 	}
 	return signToken(reqData, challengeSigner(ruleSet, "SESSION"))
@@ -60,9 +57,8 @@ func GenSessionID(reqData request.UserRequest, ruleSet config.RuleSet) []byte {
 // CAPTCHA session expires after SessionTTL. For the external provider only the signature is
 // checked: the age is bounded by the 30-second lifetime of the link that must accompany it.
 func VerifySessionIDCookie(reqData request.UserRequest, ruleSet config.RuleSet) bool {
-	var maxAge int64
-	if ruleSet.Challenge.ShowsCaptcha() {
-		maxAge = ruleSet.Challenge.SessionTTL
+	if !ruleSet.Challenge.ShowsCaptcha() {
+		return verifyExternalSession(reqData, ruleSet)
 	}
-	return verifyToken(reqData, challengeSigner(ruleSet, "SESSION"), reqData.ToriiSessionID, maxAge)
+	return verifyToken(reqData, challengeSigner(ruleSet, "SESSION"), reqData.ToriiSessionID, ruleSet.Challenge.SessionTTL)
 }

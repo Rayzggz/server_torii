@@ -1,9 +1,6 @@
 package check
 
 import (
-	"crypto/hmac"
-	"crypto/sha512"
-	"fmt"
 	"server_torii/internal/config"
 	"server_torii/internal/request"
 	"testing"
@@ -63,7 +60,7 @@ func testCaptchaSessionRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			Mode:       mode,
-			SecretKey:  "1234567890abcdef",
+			Keys:       []string{"1234567890abcdef"},
 			SessionTTL: 120,
 		},
 	}
@@ -78,7 +75,5 @@ func testCaptchaSessionRequestData() request.UserRequest {
 }
 
 func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
-	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION@", timestamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)))
-	return fmt.Sprintf("%d:%x", timestamp, mac.Sum(nil))
+	return challengeSigner(ruleSet, "SESSION").Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(timestamp, 0))
 }

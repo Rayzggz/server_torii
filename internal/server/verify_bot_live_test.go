@@ -58,7 +58,7 @@ func verifyBotRuleSet() *config.RuleSet {
 		VerifyAppleBot:  true,
 	}
 	// CAPTCHA runs after VerifyBot, so a pass proves VerifyBot short-circuited the chain.
-	rs.Challenge = &config.ChallengeRule{Enabled: true, SecretKey: "1234567890abcdef", ClearanceTTL: 600}
+	rs.Challenge = &config.ChallengeRule{Enabled: true, Keys: []string{"1234567890abcdef"}, ClearanceTTL: 600}
 	return rs
 }
 

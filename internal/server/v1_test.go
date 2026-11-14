@@ -32,7 +32,7 @@ func newV1Server(t *testing.T) *Server {
 	fallback := config.NewRuleSet()
 	fallback.ID = "default_site"
 	shop.Lists = config.NewListSet(config.MustNewList("url_block", config.ListURL, action.ActionBlock, "/blocked"))
-	shop.Challenge = &config.ChallengeRule{SecretKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120}
+	shop.Challenge = &config.ChallengeRule{Keys: []string{"1234567890abcdef"}, ClearanceTTL: 60, SessionTTL: 120}
 
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{
