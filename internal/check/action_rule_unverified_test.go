@@ -19,7 +19,7 @@ func TestActionRuleCaptchaUnverified(t *testing.T) {
 	defer engine.Stop()
 	engine.AddURIRule("", "/members/:id", action.ActionChallengeUnverified, time.Minute)
 	rules := &config.RuleSet{Challenge: &config.ChallengeRule{
-		CookieKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120, FailureLimit: map[int64]int64{},
+		CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second, SessionTTL: 120 * time.Second, FailureLimit: ratelimit.Rates{},
 	}}
 	for _, tc := range []struct {
 		name          string

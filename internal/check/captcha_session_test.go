@@ -27,7 +27,7 @@ func TestGenSessionIDReusesValidSessionForEveryProvider(t *testing.T) {
 func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
 	ruleSet := testCaptchaSessionRuleSet(config.ChallengeAltcha)
 	reqData := testCaptchaSessionRequestData()
-	expiredAt := time.Now().Add(-time.Duration(ruleSet.Challenge.SessionTTL+1) * time.Second)
+	expiredAt := time.Now().Add(-ruleSet.Challenge.SessionTTL - time.Second)
 
 	tests := []struct {
 		name      string
@@ -61,7 +61,7 @@ func testCaptchaSessionRuleSet(mode config.ChallengeMode) *config.RuleSet {
 		Challenge: &config.ChallengeRule{
 			Mode:       mode,
 			CookieKey:  "1234567890abcdef",
-			SessionTTL: 120,
+			SessionTTL: 120 * time.Second,
 		},
 	}
 }

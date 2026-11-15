@@ -49,16 +49,11 @@ func verifyBotRuleSet() *config.RuleSet {
 	rs := featureControlRuleSet()
 	rs.CountryRule.Enabled = false
 	rs.VerifyBotRule = &config.VerifyBotRule{
-		Enabled:         true,
-		VerifyGoogleBot: true,
-		VerifyBingBot:   true,
-		VerifyBaiduBot:  true,
-		VerifyYandexBot: true,
-		VerifySogouBot:  true,
-		VerifyAppleBot:  true,
+		Enabled: true,
+		Bots:    config.AllBots(),
 	}
 	// CAPTCHA runs after VerifyBot, so a pass proves VerifyBot short-circuited the chain.
-	rs.Challenge = &config.ChallengeRule{Enabled: true, CookieKey: "1234567890abcdef", ClearanceTTL: 600}
+	rs.Challenge = &config.ChallengeRule{Enabled: true, CookieKey: "1234567890abcdef", ClearanceTTL: 600 * time.Second}
 	return rs
 }
 

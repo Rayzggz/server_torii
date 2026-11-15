@@ -5,8 +5,8 @@ import "testing"
 func TestDefaultMainConfig(t *testing.T) {
 	cfg := DefaultMainConfig()
 
-	if cfg.Port != DefaultPort {
-		t.Errorf("Port = %q, want %q", cfg.Port, DefaultPort)
+	if len(cfg.Listen) != 1 || cfg.Listen[0] != DefaultListen {
+		t.Errorf("Listen = %v, want %q", cfg.Listen, DefaultListen)
 	}
 	if cfg.WebPath != DefaultWebPath {
 		t.Errorf("WebPath = %q, want %q", cfg.WebPath, DefaultWebPath)

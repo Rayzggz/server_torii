@@ -2,7 +2,7 @@ package config
 
 // Default values for MainConfig fields.
 const (
-	DefaultPort      = "25555"
+	DefaultListen    = ":25555"
 	DefaultWebPath   = "/torii"
 	DefaultErrorPage = "/www/server_torii/config/error_page"
 	DefaultLogPath   = "/www/server_torii/log/"
@@ -14,7 +14,7 @@ const (
 
 // DefaultSites is the site list used when torii.yml names none.
 var (
-	DefaultSites = []AllSiteRuleSet{
+	DefaultSites = []Site{
 		{ID: DefaultSiteID, RulePath: "/www/server_torii/config/rules/default"},
 	}
 )
@@ -23,13 +23,12 @@ var (
 // global secret: gossip needs one every node shares, so it has to be configured.
 func DefaultMainConfig() *MainConfig {
 	return &MainConfig{
-		Port:         DefaultPort,
-		WebPath:      DefaultWebPath,
-		ErrorPage:    DefaultErrorPage,
-		LogPath:      DefaultLogPath,
-		NodeName:     DefaultNodeName,
-		EnableGossip: false,
-		Sites:        append([]AllSiteRuleSet{}, DefaultSites...),
-		DefaultSite:  DefaultSiteID,
+		Listen:      []string{DefaultListen},
+		WebPath:     DefaultWebPath,
+		ErrorPage:   DefaultErrorPage,
+		LogPath:     DefaultLogPath,
+		NodeName:    DefaultNodeName,
+		Sites:       append([]Site{}, DefaultSites...),
+		DefaultSite: DefaultSiteID,
 	}
 }

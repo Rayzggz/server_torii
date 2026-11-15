@@ -1,12 +1,10 @@
 # TEST ONLY. Paths, port and node name are substituted in a temporary copy.
-port: "@PORT@"
 listen: [":@PORT@", "unix:@NODE@/torii.sock"]
 web_path: /torii
 error_page: "@NODE@/pages"
 log_path: "@NODE@/log"
 global_secret: "e2e-only-global-secret-never-use-in-production"
 node_name: "Node_@INDEX@"
-enable_gossip: true
 sites:
   - id: default_site
     rule_path: "@NODE@/rules/default"
@@ -31,4 +29,6 @@ sites:
   - id: external
     rule_path: "@NODE@/rules/external"
 default_site: default_site
+# setup_cluster appends the other nodes as peers.
+enable_gossip: true
 peers:

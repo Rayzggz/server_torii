@@ -4,6 +4,8 @@ import (
 	"net/netip"
 	"path/filepath"
 	"server_torii/internal/action"
+	"server_torii/internal/ratelimit"
+	"slices"
 	"testing"
 )
 
@@ -17,44 +19,44 @@ func TestConfigIntegration_LoadAndReloadManager(t *testing.T) {
 		"IP_BlockList.conf":  "10.0.0.5\n",
 		"URL_AllowList.conf": "/healthz\nregex:^/api/.*$\n",
 		"URL_BlockList.conf": "/admin\n",
-		"Server.yml": `Lists:
+		"Server.yml": `lists:
   - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
   - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
   - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
   - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
-CountryRule:
+country_rule:
   enabled: true
   default_action: block
   countries:
     us: challenge
-Challenge:
+challenge:
   mode: hcaptcha
   enabled: true
-  clearance_ttl: 60
-  session_ttl: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   hcaptcha_secret: "hcaptcha-secret"
   failure_limit:
     - "3/1m"
     - "5/2m"
-  failure_block_duration: 300
-VerifyBot:
+  failure_block_duration: 300s
+verify_bot:
   enabled: true
-  verify_google_bot: true
-HTTPFlood:
+  bots: [google]
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit:
     - "10/1m"
     - "20/2m"
-  HTTPFloodSameURILimit:
+  same_uri_limit:
     - "5/30s"
     - "8/45s"
-  HTTPFloodFailureLimit:
+  failure_limit:
     - "4/5m"
-  failure_block_duration: 600
+  failure_block_duration: 600s
 `,
 	})
 
-	writeFile(t, filepath.Join(tempDir, "torii.yml"), `port: "8080"
+	writeFile(t, filepath.Join(tempDir, "torii.yml"), `listen: [":8080"]
 web_path: "/edge"
 node_name: "integration-node"
 global_secret: "integration-secret-0123456789abcdef"
@@ -68,8 +70,8 @@ sites:
 		t.Fatalf("LoadMainConfig returned unexpected error: %v", err)
 	}
 
-	if cfg.Port != "8080" {
-		t.Fatalf("Port = %q, want %q", cfg.Port, "8080")
+	if len(cfg.Listen) != 1 || cfg.Listen[0] != ":8080" {
+		t.Fatalf("Listen = %v, want %q", cfg.Listen, ":8080")
 	}
 	if cfg.WebPath != "/edge" {
 		t.Fatalf("WebPath = %q, want %q", cfg.WebPath, "/edge")
@@ -124,8 +126,8 @@ sites:
 	if !rules.Challenge.Enabled {
 		t.Fatal("Challenge.Enabled = false, want true")
 	}
-	if rules.Challenge.FailureLimit[120] != 5 {
-		t.Fatalf("FailureLimit[120] = %d, want 5", rules.Challenge.FailureLimit[120])
+	if want := (ratelimit.Rates{{Limit: 3, Window: 60}, {Limit: 5, Window: 120}}); !slices.Equal(rules.Challenge.FailureLimit, want) {
+		t.Fatalf("FailureLimit = %v, want %v", rules.Challenge.FailureLimit, want)
 	}
 	if !rules.VerifyBotRule.Enabled {
 		t.Fatal("VerifyBotRule.Enabled = false, want true")
@@ -133,37 +135,37 @@ sites:
 	if !rules.HTTPFloodRule.Enabled {
 		t.Fatal("HTTPFloodRule.Enabled = false, want true")
 	}
-	if rules.HTTPFloodRule.HTTPFloodSpeedLimit[120] != 20 {
-		t.Fatalf("HTTPFloodSpeedLimit[120] = %d, want 20", rules.HTTPFloodRule.HTTPFloodSpeedLimit[120])
+	if want := (ratelimit.Rates{{Limit: 10, Window: 60}, {Limit: 20, Window: 120}}); !slices.Equal(rules.HTTPFloodRule.SpeedLimit, want) {
+		t.Fatalf("SpeedLimit = %v, want %v", rules.HTTPFloodRule.SpeedLimit, want)
 	}
 
 	if got, want := snapshot.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, ChallengeFailure: 120}); got != want {
 		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
-	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `Lists:
+	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `lists:
   - {name: ip_allow, enabled: false, type: ip, file: IP_AllowList.conf, action: allow}
   - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
   - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
   - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
-Challenge:
+challenge:
   mode: hcaptcha
   enabled: true
-  clearance_ttl: 60
-  session_ttl: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   hcaptcha_secret: "hcaptcha-secret"
   failure_limit:
     - "7/4m"
-  failure_block_duration: 300
-HTTPFlood:
+  failure_block_duration: 300s
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit:
     - "11/4m"
-  HTTPFloodSameURILimit:
+  same_uri_limit:
     - "9/1m"
-  HTTPFloodFailureLimit:
+  failure_limit:
     - "4/15m"
-  failure_block_duration: 600
+  failure_block_duration: 600s
 `)
 
 	if err := manager.Reload(cfg); err != nil {

@@ -7,7 +7,6 @@ import (
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"time"
 )
 
 func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *action.Decision, rt *state.Runtime) {
@@ -27,10 +26,11 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	sameURICounter.Add(uriKey, 1)
 
 	// Check failure limit
-	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodFailureLimit {
+	for _, rate := range ruleSet.HTTPFloodRule.FailureLimit {
+		window, limit := rate.Window, rate.Limit
 		if failureCounter.Query(ipKey, window) > limit {
 			if ruleSet.HTTPFloodRule.FailureBlockDuration > 0 {
-				if !rt.BlockIP(reqData.Site, ipKey, time.Duration(ruleSet.HTTPFloodRule.FailureBlockDuration)*time.Second) {
+				if !rt.BlockIP(reqData.Site, ipKey, ruleSet.HTTPFloodRule.FailureBlockDuration) {
 					logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 				}
 				logx.Info(reqData, "", fmt.Sprintf("HTTPFlood failure rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
@@ -41,7 +41,8 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		}
 	}
 
-	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSpeedLimit {
+	for _, rate := range ruleSet.HTTPFloodRule.SpeedLimit {
+		window, limit := rate.Window, rate.Limit
 		if speedCounter.Query(ipKey, window) > limit {
 			logx.Info(reqData, "", fmt.Sprintf("HTTPFlood rate limit exceeded: IP %s window %d limit %d", ipKey, window, limit))
 			failureCounter.Add(ipKey, 1)
@@ -50,7 +51,8 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		}
 	}
 
-	for window, limit := range ruleSet.HTTPFloodRule.HTTPFloodSameURILimit {
+	for _, rate := range ruleSet.HTTPFloodRule.SameURILimit {
+		window, limit := rate.Window, rate.Limit
 		if sameURICounter.Query(uriKey, window) > limit {
 			logx.Info(reqData, "", fmt.Sprintf("HTTPFlood URI rate limit exceeded: IP %s URI %s window %d limit %d", ipKey, reqData.Uri, window, limit))
 			failureCounter.Add(ipKey, 1)

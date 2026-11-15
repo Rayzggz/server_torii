@@ -21,7 +21,7 @@ func testExternalRuleSet() *config.RuleSet {
 			RedirectURL:    "https://mitigation.invalid/verify",
 			CookieKey:      "cookie-key-0123456789",
 			ExternalSecret: "external-secret-0123456789",
-			ClearanceTTL:   600,
+			ClearanceTTL:   600 * time.Second,
 		},
 	}
 }
@@ -31,7 +31,7 @@ func captchaTwin(ruleSet *config.RuleSet) config.RuleSet {
 	twin := *ruleSet
 	rule := *ruleSet.Challenge
 	rule.Mode = config.ChallengeHCaptcha
-	rule.SessionTTL = 120
+	rule.SessionTTL = 120 * time.Second
 	twin.Challenge = &rule
 	return twin
 }
@@ -73,7 +73,7 @@ func TestExternalMigrationClearance(t *testing.T) {
 	base := testExternalRequest()
 	valid := string(GenClearance(base, *ruleSet))
 	now := time.Now().Unix()
-	timeout := ruleSet.Challenge.ClearanceTTL
+	timeout := int64(ruleSet.Challenge.ClearanceTTL / time.Second)
 	prefix, ts, hash := splitToken(t, valid)
 	flipped := "A"
 	if hash[0] == 'A' {

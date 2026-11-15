@@ -1,18 +1,21 @@
 package config
 
 import (
+	"server_torii/internal/ratelimit"
 	"strings"
 	"testing"
+	"time"
 )
 
 func challengeWrapper(mode ChallengeMode) *challengeRuleWrapper {
 	return &challengeRuleWrapper{
 		Enabled:              true,
 		Mode:                 mode,
-		ClearanceTTL:         60,
-		SessionTTL:           120,
+		HCaptchaSecret:       "test-hcaptcha-secret",
+		ClearanceTTL:         60 * time.Second,
+		SessionTTL:           120 * time.Second,
 		FailureLimit:         []string{"3/1m"},
-		FailureBlockDuration: 300,
+		FailureBlockDuration: 300 * time.Second,
 	}
 }
 
@@ -32,7 +35,7 @@ func TestMapChallengeRuleDefaults(t *testing.T) {
 	if dest.AltchaCost != DefaultAltchaCost {
 		t.Fatalf("AltchaCost = %d, want %d", dest.AltchaCost, DefaultAltchaCost)
 	}
-	if dest.FailureLimit[60] != 3 {
+	if len(dest.FailureLimit) != 1 || dest.FailureLimit[0] != (ratelimit.Rate{Limit: 3, Window: 60}) {
 		t.Fatalf("FailureLimit = %v", dest.FailureLimit)
 	}
 }
@@ -53,7 +56,7 @@ func TestMapChallengeRuleAltchaConfig(t *testing.T) {
 // The external mode needs the address of the provider and has no CAPTCHA session to time out.
 func TestMapChallengeRuleExternal(t *testing.T) {
 	wrapper := challengeWrapper(ChallengeExternal)
-	wrapper.SessionTTL = 0
+	wrapper.SessionTTL = 0 * time.Second
 	wrapper.RedirectURL = "https://provider.example/check"
 	wrapper.ExternalSecret = "provider-secret-0123456789"
 	dest := &ChallengeRule{}
@@ -70,15 +73,16 @@ func TestMapChallengeRuleRejects(t *testing.T) {
 		change func(*challengeRuleWrapper)
 		want   string
 	}{
-		"no mode":                     {func(w *challengeRuleWrapper) { w.Mode = "" }, "Challenge.mode"},
-		"unknown mode":                {func(w *challengeRuleWrapper) { w.Mode = "recaptcha" }, "Challenge.mode"},
-		"external without url":        {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "Challenge.redirect_url"},
-		"external with bad url":       {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal; w.RedirectURL = "provider" }, "Challenge.redirect_url"},
-		"external without secret":     {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "Challenge.external_secret: field is required with this mode"},
-		"short external secret":       {func(w *challengeRuleWrapper) { w.ExternalSecret = "short" }, "Challenge.external_secret: value must be at least 16 characters long"},
-		"captcha without session ttl": {func(w *challengeRuleWrapper) { w.SessionTTL = 0 }, "Challenge.session_ttl"},
-		"no clearance ttl":            {func(w *challengeRuleWrapper) { w.ClearanceTTL = 0 }, "Challenge.clearance_ttl"},
-		"no failure limit":            {func(w *challengeRuleWrapper) { w.FailureLimit = nil }, "Challenge.failure_limit"},
+		"no mode":                     {func(w *challengeRuleWrapper) { w.Mode = "" }, "challenge.mode"},
+		"unknown mode":                {func(w *challengeRuleWrapper) { w.Mode = "recaptcha" }, "challenge.mode"},
+		"external without url":        {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "challenge.redirect_url"},
+		"external with bad url":       {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal; w.RedirectURL = "provider" }, "challenge.redirect_url"},
+		"hcaptcha without secret":     {func(w *challengeRuleWrapper) { w.HCaptchaSecret = "" }, "challenge.hcaptcha_secret: field is required with this mode"},
+		"external without secret":     {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "challenge.external_secret: field is required with this mode"},
+		"short external secret":       {func(w *challengeRuleWrapper) { w.ExternalSecret = "short" }, "challenge.external_secret: value must be at least 16 characters long"},
+		"captcha without session ttl": {func(w *challengeRuleWrapper) { w.SessionTTL = 0 }, "challenge.session_ttl"},
+		"no clearance ttl":            {func(w *challengeRuleWrapper) { w.ClearanceTTL = 0 }, "challenge.clearance_ttl"},
+		"no failure limit":            {func(w *challengeRuleWrapper) { w.FailureLimit = nil }, "challenge.failure_limit"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			wrapper := challengeWrapper(ChallengeHCaptcha)

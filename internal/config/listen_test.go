@@ -38,20 +38,37 @@ func TestListenAddrValidation(t *testing.T) {
 }
 
 func TestListenDefaults(t *testing.T) {
-	cfg := &MainConfig{Port: "25555"}
-	if got := cfg.ListenAddrs(); len(got) != 1 || got[0] != ":25555" {
-		t.Errorf("default listen = %v, want [:25555]", got)
+	cfg := DefaultMainConfig()
+	if len(cfg.Listen) != 1 || cfg.Listen[0] != ":25555" {
+		t.Errorf("default listen = %v, want [:25555]", cfg.Listen)
 	}
 	if got := cfg.SocketMode(); got != os.FileMode(DefaultUnixSocketMode) {
 		t.Errorf("default socket mode = %o", got)
 	}
-
-	cfg.Listen = []string{"127.0.0.1:25555", "unix:/run/torii.sock"}
 	cfg.UnixSocketMode = "0660"
-	if got := cfg.ListenAddrs(); len(got) != 2 {
-		t.Errorf("listen = %v", got)
-	}
 	if got := cfg.SocketMode(); got != 0o660 {
 		t.Errorf("socket mode = %o, want 660", got)
+	}
+}
+
+// Reports are received on the loopback address, on the port of the first TCP address the server
+// listens on, unless log_listen says otherwise.
+func TestLogListenDefault(t *testing.T) {
+	for name, tt := range map[string]struct {
+		listen, logListen []string
+		want              string
+	}{
+		"every interface":     {[]string{":25555"}, nil, "127.0.0.1:25555"},
+		"one interface":       {[]string{"10.0.0.1:8080"}, nil, "127.0.0.1:8080"},
+		"IPv6":                {[]string{"[::1]:8081"}, nil, "127.0.0.1:8081"},
+		"socket first":        {[]string{"unix:/run/torii.sock", ":9000", ":9001"}, nil, "127.0.0.1:9000"},
+		"configured":          {[]string{":25555"}, []string{"unix:/run/log.sock"}, "unix:/run/log.sock"},
+		"sockets only":        {[]string{"unix:/run/torii.sock"}, nil, ""},
+		"sockets, configured": {[]string{"unix:/run/torii.sock"}, []string{"127.0.0.1:514"}, "127.0.0.1:514"},
+	} {
+		got := (&MainConfig{Listen: tt.listen, LogListen: tt.logListen}).LogListenAddrs()
+		if (tt.want == "" && len(got) != 0) || (tt.want != "" && (len(got) != 1 || got[0] != tt.want)) {
+			t.Errorf("%s: report addresses = %v, want %q", name, got, tt.want)
+		}
 	}
 }

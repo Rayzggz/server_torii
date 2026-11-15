@@ -3,24 +3,25 @@ package config
 import (
 	"server_torii/internal/action"
 	"strings"
+	"time"
 )
 
 // Default values for AdaptiveTrafficAnalyzer fields left at zero.
 const (
-	DefaultATAAnalysisInterval     = 10
+	DefaultATAAnalysisInterval     = 10 * time.Second
 	DefaultATAWindowBuckets        = 30
-	DefaultATAEvidenceTTL          = 21600
+	DefaultATAEvidenceTTL          = 6 * time.Hour
 	DefaultATADistinctPages        = 3
-	DefaultATABaselineHalfLife     = 21600
-	DefaultATABaselineWarmup       = 3600
+	DefaultATABaselineHalfLife     = 6 * time.Hour
+	DefaultATABaselineWarmup       = time.Hour
 	DefaultATAMinReferenceRequests = 200
 	DefaultATAHotURIMinRequests    = 100
 	DefaultATAHotURIMinDistinctIPs = 50
 	DefaultATAHotURIRatioThreshold = 5.0
-	DefaultATAHotURISustain        = 60
+	DefaultATAHotURISustain        = time.Minute
 	DefaultATAHotURIFallbackShare  = 0.8
-	DefaultATABlockDuration        = 600
-	DefaultATAMaxBlockDuration     = 86400
+	DefaultATABlockDuration        = 10 * time.Minute
+	DefaultATAMaxBlockDuration     = 24 * time.Hour
 	DefaultATAScoreThreshold       = 50
 	DefaultATAHotURIMinHits        = 3
 	DefaultATAMinFailures          = 30
@@ -88,7 +89,7 @@ func NormalizeAdaptiveTrafficAnalyzerRule(r *AdaptiveTrafficAnalyzerRule) {
 	}
 }
 
-func setDefault[T int | int64 | float64](v *T, def T) {
+func setDefault[T ~int | ~int64 | ~float64](v *T, def T) {
 	if *v <= 0 {
 		*v = def
 	}

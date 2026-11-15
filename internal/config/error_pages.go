@@ -56,11 +56,25 @@ func (e *ErrorPages) Get(p Page) *template.Template {
 // does not use a page need not ship it, but a file that exists and fails to parse is an error, so a
 // broken template is caught at startup or rejected on reload instead of failing each request.
 func LoadErrorPages(dir string) (*ErrorPages, error) {
+	return loadErrorPages(dir, nil)
+}
+
+// LoadSiteErrorPages parses the pages a site keeps in its own directory. A page the directory
+// does not hold is the one of fallback.
+func LoadSiteErrorPages(dir string, fallback *ErrorPages) (*ErrorPages, error) {
+	return loadErrorPages(dir, fallback)
+}
+
+func loadErrorPages(dir string, fallback *ErrorPages) (*ErrorPages, error) {
 	pages := &ErrorPages{}
 	for p, name := range pageFiles {
 		tpl, err := template.ParseFiles(filepath.Join(dir, name))
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) {
+				if fallback != nil {
+					pages.tpl[p] = fallback.tpl[p]
+					continue
+				}
 				log.Printf("[WARN] Error page %s not found in %s; requests for it will return 500", name, dir)
 				continue
 			}

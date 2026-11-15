@@ -238,7 +238,7 @@ func (ata *AdaptiveTrafficAnalyzer) ingestSettingsFor(rule *config.AdaptiveTraff
 	config.NormalizeAdaptiveTrafficAnalyzerRule(&normalized)
 	settings := &ingestSettings{
 		assets: toSet(normalized.BrowserEvidence.AssetExtensions),
-		ttl:    time.Duration(normalized.BrowserEvidence.TTL) * time.Second,
+		ttl:    normalized.BrowserEvidence.TTL,
 	}
 	ata.ingest.Store(rule, settings)
 	return settings
@@ -311,9 +311,9 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 			continue
 		}
 		rule := rules.AdaptiveTrafficAnalyzerRule
-		interval := time.Duration(rule.AnalysisInterval) * time.Second
+		interval := rule.AnalysisInterval
 		if interval <= 0 {
-			interval = config.DefaultATAAnalysisInterval * time.Second
+			interval = config.DefaultATAAnalysisInterval
 		}
 		window := ata.windows[site]
 		if window == nil {

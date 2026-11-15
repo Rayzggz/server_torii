@@ -101,21 +101,21 @@ setup_cluster() {
         done
         printf '/exact-site\n' >> "$node/rules/exact/URL_BlockList.conf"
         printf '/wildcard-site\n' >> "$node/rules/wildcard/URL_BlockList.conf"
-        sed -i 's/20\/30s/2\/30s/; s/session_ttl: 120/session_ttl: 2/' "$node/rules/failures/Server.yml"
+        sed -i 's/20\/30s/2\/30s/; s/session_ttl: 120s/session_ttl: 2s/' "$node/rules/failures/Server.yml"
         sed -i 's/unknown_action: continue/unknown_action: block/' "$node/rules/unknown/Server.yml"
         # The same site, handing its clients to the external provider instead of showing a CAPTCHA.
         sed -i 's/^  mode: altcha$/  mode: external/' "$node/rules/external/Server.yml"
-        sed -i 's/failure_block_duration: 300/failure_block_duration: 3/g' "$node/rules/expiry/Server.yml"
+        sed -i 's/failure_block_duration: 300s/failure_block_duration: 3s/g' "$node/rules/expiry/Server.yml"
         for site in non200 uri non200expiry uriexpiry; do
             cfg="$node/rules/$site/Server.yml"
             # Ranges end at the next top-level key so later sections such as CustomRules stay untouched.
-            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/" "$cfg"
+            sed -i "/^traffic_analyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/" "$cfg"
             if [[ "$site" == non200* ]]; then
                 sed -i '/^  ip_detection:/,/^[^ ]/s/enabled: false/enabled: true/' "$cfg"
             else
                 sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: challenge/' "$cfg"
             fi
-            if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300/block_duration: 3/g' "$cfg"; fi
+            if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300s/block_duration: 3s/g' "$cfg"; fi
         done
         # Bash replacement keeps paths literal even when TMPDIR contains sed metacharacters.
         cfg=$(cat "$E2E/fixtures/torii.yml")
@@ -125,6 +125,9 @@ setup_cluster() {
             (( i != j )) || continue
             printf '  - name: "Node_%s"\n    address: "http://127.0.0.1:%s"\n    host: "node-%s.local"\n' "$j" "$((BASE_PORT+j))" "$j" >> "$node/torii.yml"
         done
+        # The configuration check loads what the server will load, and starts nothing.
+        "$RUN/server_torii" -check-config -config "$node/torii.yml" > "$node/log/check.log" 2>&1 \
+            || fail "Node $i: configuration check failed: $(cat "$node/log/check.log")"
         "$RUN/server_torii" -config "$node/torii.yml" > "$node/log/startup.log" 2>&1 &
         NODE_PIDS+=("$!")
     done

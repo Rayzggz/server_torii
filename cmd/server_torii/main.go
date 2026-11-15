@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	"server_torii/internal/logx"
 	"server_torii/internal/server"
 	"server_torii/internal/state"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -26,8 +28,14 @@ func main() {
 
 func run() int {
 	var inputConfigPath string
+	var checkConfig bool
 	flag.StringVar(&inputConfigPath, "config", "", "Config file base path")
+	flag.BoolVar(&checkConfig, "check-config", false, "Check the configuration, report every problem and exit")
 	flag.Parse()
+
+	if checkConfig {
+		return runCheckConfig(inputConfigPath)
+	}
 
 	// Load MainConfig
 	cfg, err := config.LoadMainConfig(inputConfigPath)
@@ -77,7 +85,7 @@ func run() int {
 	// Initialize log system
 	logx.Init(cfg.LogPath)
 
-	log.Printf("Ready to start server on port %s", cfg.Port)
+	log.Printf("Ready to start server on %s", strings.Join(cfg.Listen, ", "))
 
 	closeLog, err := logToFile(filepath.Join(cfg.LogPath, "server_torii.log"))
 	if err != nil {
@@ -130,6 +138,22 @@ func run() int {
 			return 0
 		}
 	}
+}
+
+// runCheckConfig loads the configuration the way the server does at start and on reload: the
+// main file, the rules of every site with the list files they name, and the error pages. It
+// starts nothing and writes nothing but its verdict.
+func runCheckConfig(path string) int {
+	cfg, err := config.LoadMainConfig(path)
+	if err == nil {
+		_, err = config.LoadSnapshot(cfg)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	fmt.Printf("configuration OK: %d sites\n", len(cfg.Sites))
+	return 0
 }
 
 // logToFile sends the standard logger to path. The returned function restores stderr and closes the file.

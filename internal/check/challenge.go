@@ -7,7 +7,6 @@ import (
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
-	"time"
 )
 
 // Challenge is the last step of the pipeline and the only place a client is challenged. It runs
@@ -23,11 +22,12 @@ func Challenge(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	ipKey := reqData.ClientKey()
 
 	if failureCounter != nil && rule.FailureBlockDuration > 0 {
-		for window, limit := range rule.FailureLimit {
+		for _, rate := range rule.FailureLimit {
+			window, limit := rate.Window, rate.Limit
 			if failureCounter.Query(ipKey, window) <= limit {
 				continue
 			}
-			if !rt.BlockIP(reqData.Site, ipKey, time.Duration(rule.FailureBlockDuration)*time.Second) {
+			if !rt.BlockIP(reqData.Site, ipKey, rule.FailureBlockDuration) {
 				logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
 			}
 			logx.Info(reqData, "", fmt.Sprintf("Challenge failure limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))

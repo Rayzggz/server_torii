@@ -50,12 +50,16 @@ func TestLoadMainConfig_Rejects(t *testing.T) {
 		yaml string
 		want string
 	}{
-		"invalid YAML":         {"port: [invalid", "failed to parse"},
+		"invalid YAML":         {"listen: [invalid", "failed to parse"},
 		"unknown key":          {"prot: \"8080\"", `unknown field "prot"`},
 		"unknown site key":     {"sites:\n  - id: a\n    rule_path: .\n    host: example.com", `unknown field "host"`},
 		"removed header key":   {"connecting_ip_headers: [X-Real-IP]", `unknown field "connecting_ip_headers"`},
 		"wrong type":           {"enable_gossip: maybe", "cannot unmarshal"},
-		"bad port":             {"port: \"70000\"", "port: value must be a port number"},
+		"removed port":         {"port: \"25555\"", `unknown field "port"`},
+		"no listen address":    {"listen: []", "listen: list needs at least 1 entry"},
+		"bad port":             {"listen: [\"127.0.0.1:70000\"]", "listen[0]: value must be host:port or unix:/path/to.sock"},
+		"no report address":    {"listen: [\"unix:/run/torii.sock\"]", "log_listen: field is required when listen has no TCP address"},
+		"missing site pages":   {"sites:\n  - id: a\n    rule_path: .\n    error_page: /no/such/dir", "sites[0].error_page: path must be an existing directory"},
 		"bad web path":         {"web_path: torii", "web_path: value must start with /"},
 		"bad listen address":   {"listen: [\"nowhere\"]", "listen[0]: value must be host:port or unix:/path/to.sock"},
 		"bad socket mode":      {"unix_socket_mode: \"rw\"", "unix_socket_mode: value must be octal"},
@@ -81,11 +85,11 @@ func TestLoadMainConfig_Rejects(t *testing.T) {
 
 // Every problem is reported at once, so one start attempt is enough to fix the file.
 func TestLoadMainConfig_ReportsEveryProblem(t *testing.T) {
-	_, err := LoadMainConfig(writeMainConfig(t, "port: \"0\"\nweb_path: torii\ndefault_site: nowhere"))
+	_, err := LoadMainConfig(writeMainConfig(t, "listen: [\":0\"]\nweb_path: torii\ndefault_site: nowhere"))
 	if err == nil {
 		t.Fatal("no error")
 	}
-	for _, want := range []string{"port:", "web_path:", "default_site:"} {
+	for _, want := range []string{"listen[0]:", "web_path:", "default_site:"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error lacks %q:\n%v", want, err)
 		}
@@ -93,13 +97,13 @@ func TestLoadMainConfig_ReportsEveryProblem(t *testing.T) {
 }
 
 func TestLoadMainConfig_PartialConfigKeepsDefaults(t *testing.T) {
-	dir := writeMainConfig(t, "port: \"8080\"\nweb_path: \"/custom\"\nnode_name: \"custom-node\"")
+	dir := writeMainConfig(t, "listen: [\":8080\"]\nweb_path: \"/custom\"\nnode_name: \"custom-node\"")
 
 	cfg, err := LoadMainConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadMainConfig: %v", err)
 	}
-	if cfg.Port != "8080" || cfg.WebPath != "/custom" || cfg.NodeName != "custom-node" {
+	if len(cfg.Listen) != 1 || cfg.Listen[0] != ":8080" || cfg.WebPath != "/custom" || cfg.NodeName != "custom-node" {
 		t.Fatalf("configured values lost: %+v", cfg)
 	}
 	if cfg.ConfigDir != dir {
@@ -109,21 +113,24 @@ func TestLoadMainConfig_PartialConfigKeepsDefaults(t *testing.T) {
 		t.Fatalf("defaults lost: %+v", cfg)
 	}
 	if cfg.EnableGossip || len(cfg.Peers) != 0 {
-		t.Fatalf("gossip = %v, peers = %v, want none", cfg.EnableGossip, cfg.Peers)
+		t.Fatalf("gossip is on or has peers: %+v", cfg)
+	}
+	if got := cfg.LogListenAddrs(); len(got) != 1 || got[0] != "127.0.0.1:8080" {
+		t.Fatalf("report address = %v, want the loopback address on the port of listen", got)
 	}
 }
 
 func TestLoadMainConfig_FullConfig(t *testing.T) {
-	dir := writeMainConfig(t, "port: \"8081\"\nweb_path: \"/edge\"\nerror_page: \"/tmp/errors\"\nlog_path: \"/tmp/logs/\"\n"+
-		"global_secret: \"12345678901234567890123456789012\"\nnode_name: \"node-a\"\nenable_gossip: true\n"+
+	dir := writeMainConfig(t, "web_path: \"/edge\"\nerror_page: \"/tmp/errors\"\nlog_path: \"/tmp/logs/\"\n"+
+		"global_secret: \"12345678901234567890123456789012\"\nnode_name: \"node-a\"\n"+
 		"listen: [\"127.0.0.1:8081\", \"unix:/run/torii.sock\"]\nlog_listen: [\"unix:/run/torii_log.sock\"]\nunix_socket_mode: \"0660\"\n"+
-		"peers:\n  - name: \"peer-a\"\n    address: \"https://example.com\"\n    host: \"peer.example.com\"")
+		"enable_gossip: true\npeers:\n  - name: \"peer-a\"\n    address: \"https://example.com\"\n    host: \"peer.example.com\"")
 
 	cfg, err := LoadMainConfig(dir)
 	if err != nil {
 		t.Fatalf("LoadMainConfig: %v", err)
 	}
-	if cfg.Port != "8081" || cfg.WebPath != "/edge" || cfg.ErrorPage != "/tmp/errors" || cfg.LogPath != "/tmp/logs/" {
+	if cfg.WebPath != "/edge" || cfg.ErrorPage != "/tmp/errors" || cfg.LogPath != "/tmp/logs/" {
 		t.Fatalf("wrong values: %+v", cfg)
 	}
 	if cfg.GlobalSecret != "12345678901234567890123456789012" || !cfg.EnableGossip || cfg.NodeName != "node-a" {
@@ -132,8 +139,8 @@ func TestLoadMainConfig_FullConfig(t *testing.T) {
 	if len(cfg.Listen) != 2 || len(cfg.LogListen) != 1 || cfg.SocketMode() != 0o660 {
 		t.Fatalf("wrong listen values: %+v", cfg)
 	}
-	if len(cfg.Peers) != 1 || cfg.Peers[0].Address != "https://example.com" || cfg.Peers[0].Host != "peer.example.com" {
-		t.Fatalf("Peers = %v", cfg.Peers)
+	if peers := cfg.Peers; len(peers) != 1 || peers[0].Address != "https://example.com" || peers[0].Host != "peer.example.com" {
+		t.Fatalf("Peers = %v", peers)
 	}
 }
 

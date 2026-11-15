@@ -21,13 +21,8 @@ func (m *recordingMarker) MarkNeutral(_, ip string, _ time.Duration) {
 
 func allBotsRuleSet() *config.RuleSet {
 	return &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{
-		Enabled:         true,
-		VerifyGoogleBot: true,
-		VerifyBingBot:   true,
-		VerifyBaiduBot:  true,
-		VerifyYandexBot: true,
-		VerifySogouBot:  true,
-		VerifyAppleBot:  true,
+		Enabled: true,
+		Bots:    config.AllBots(),
 	}}
 }
 
@@ -40,8 +35,8 @@ func TestVerifyBotSkipsWithoutDNS(t *testing.T) {
 	}{
 		{"ordinary browser", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (Windows NT 10.0) Chrome/120", allBotsRuleSet()},
 		{"empty user agent", feature.VerifyBot.ControlMask(), "", allBotsRuleSet()},
-		{"googlebot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{VerifyBingBot: true}}},
-		{"bingbot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{VerifyGoogleBot: true}}},
+		{"googlebot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{Bots: map[string]bool{"bing": true}}}},
+		{"bingbot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{Bots: map[string]bool{"google": true}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

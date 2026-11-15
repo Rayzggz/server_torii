@@ -30,7 +30,7 @@ func newDetectorHarness(t *testing.T, mutate func(r *config.AdaptiveTrafficAnaly
 		Enabled: true,
 		URIDetection: config.URIDetectionRule{
 			MinRequests: 30, MinDistinctIPs: 10,
-			Baseline: config.BaselineRule{Warmup: 1, MinReferenceRequests: 20},
+			Baseline: config.BaselineRule{Warmup: 1 * time.Second, MinReferenceRequests: 20},
 		},
 		IPDetection: config.IPDetectionRule{
 			Enabled: true,
@@ -222,7 +222,7 @@ func TestDetectorURIActionAndExemptions(t *testing.T) {
 
 func TestDetectorWarmupFallback(t *testing.T) {
 	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
-		r.URIDetection.Baseline.Warmup = 3600
+		r.URIDetection.Baseline.Warmup = 3600 * time.Second
 		r.URIDetection.FallbackShare = 0.7
 	})
 	// Paused for one window while browser evidence accumulates.
@@ -251,7 +251,7 @@ func TestDetectorWarmupFallback(t *testing.T) {
 // because it clears min_requests and min_distinct_ips, while a real attack still must.
 func TestDetectorZeroBaselineMix(t *testing.T) {
 	// A short half-life lets the baseline settle within the test.
-	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.URIDetection.Baseline.HalfLife = 120 })
+	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) { r.URIDetection.Baseline.HalfLife = 120 * time.Second })
 	humansOnly := func(tick int) []LogEntry {
 		var logs []LogEntry
 		for _, e := range humanTraffic(tick) {
@@ -400,8 +400,8 @@ func TestDetectorActions(t *testing.T) {
 func TestDetectorEscalation(t *testing.T) {
 	h := newDetectorHarness(t, func(r *config.AdaptiveTrafficAnalyzerRule) {
 		r.IPDetection.Action = action.ActionObserve
-		r.IPDetection.BlockDuration = 60
-		r.IPDetection.MaxBlockDuration = 200
+		r.IPDetection.BlockDuration = 60 * time.Second
+		r.IPDetection.MaxBlockDuration = 200 * time.Second
 	})
 	var durations []time.Duration
 	for len(durations) < 4 {

@@ -79,7 +79,7 @@ func newExternalFixture(t *testing.T) *externalFixture {
 			RedirectURL:    "https://mitigation.invalid/verify",
 			CookieKey:      "cookie-key-0123456789",
 			ExternalSecret: "external-secret-0123456789",
-			ClearanceTTL:   600,
+			ClearanceTTL:   600 * time.Second,
 		}},
 		cfg: &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"},
 		reqData: request.UserRequest{

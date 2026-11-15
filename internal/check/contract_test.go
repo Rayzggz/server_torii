@@ -46,7 +46,7 @@ func contractCookie(ts int64, host, ua, label string) string {
 func contractFixture(mode config.ChallengeMode) (request.UserRequest, config.RuleSet) {
 	return request.UserRequest{Host: "example.com", UserAgent: "UA-X"},
 		config.RuleSet{
-			Challenge: &config.ChallengeRule{Mode: mode, CookieKey: contractKey, ExternalSecret: contractKey, ClearanceTTL: 600, SessionTTL: 120},
+			Challenge: &config.ChallengeRule{Mode: mode, CookieKey: contractKey, ExternalSecret: contractKey, ClearanceTTL: 600 * time.Second, SessionTTL: 120 * time.Second},
 			// The site ID is part of every token, so a token of one site is useless on another.
 			ID: "shop",
 		}

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const listsFixture = `Lists:
+const listsFixture = `lists:
   - {name: office, enabled: true, type: ip, file: office.conf, action: allow}
   - {name: bad_networks, enabled: false, type: ip, file: lists/bad.conf, action: block}
   - {name: login, enabled: true, type: url, file: login.conf, action: challenge}
@@ -66,7 +66,7 @@ func TestListsLoad(t *testing.T) {
 }
 
 func TestListsRejects(t *testing.T) {
-	one := func(fields string) string { return "Lists:\n  - {" + fields + "}\n" }
+	one := func(fields string) string { return "lists:\n  - {" + fields + "}\n" }
 	const valid = "name: a, enabled: true, type: ip, file: a.conf"
 	for name, tt := range map[string]struct {
 		settings string
@@ -78,7 +78,7 @@ func TestListsRejects(t *testing.T) {
 		"name with a dash":    {one("name: my-list, enabled: true, type: ip, file: a.conf"), nil, "lower-case letters"},
 		"name of a check":     {one("name: http_flood, enabled: true, type: ip, file: a.conf"), nil, "is the name of a check"},
 		"name of Lists":       {one("name: lists, enabled: true, type: ip, file: a.conf"), nil, "is the name of a check"},
-		"duplicate name":      {"Lists:\n  - {" + valid + "}\n  - {" + valid + "}\n", map[string]string{"a.conf": ""}, "duplicate name"},
+		"duplicate name":      {"lists:\n  - {" + valid + "}\n  - {" + valid + "}\n", map[string]string{"a.conf": ""}, "duplicate name"},
 		"no enabled":          {one("name: a, type: ip, file: a.conf"), nil, "enabled"},
 		"no type":             {one("name: a, enabled: true, file: a.conf"), nil, "type"},
 		"unknown type":        {one("name: a, enabled: true, type: asn, file: a.conf"), nil, "type"},
@@ -105,7 +105,7 @@ func TestListsRejects(t *testing.T) {
 // the wrong type, rejects the file.
 func TestCustomRulesReferToLists(t *testing.T) {
 	rule := func(expression string) string {
-		return listsFixture + "CustomRules:\n  enabled: true\n  rules:\n    - {id: r, action: block, expression: '" + expression + "'}\n"
+		return listsFixture + "custom_rules:\n  enabled: true\n  rules:\n    - {id: r, action: block, expression: '" + expression + "'}\n"
 	}
 	for name, tt := range map[string]struct {
 		expression string

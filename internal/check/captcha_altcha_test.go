@@ -173,12 +173,12 @@ func testAltchaRuleSet() *config.RuleSet {
 		Challenge: &config.ChallengeRule{
 			Mode:                 config.ChallengeAltcha,
 			CookieKey:            "1234567890abcdef",
-			ClearanceTTL:         60,
-			SessionTTL:           120,
+			ClearanceTTL:         60 * time.Second,
+			SessionTTL:           120 * time.Second,
 			AltchaHMACSecret:     "altcha-secret",
 			AltchaCost:           1,
-			FailureLimit:         map[int64]int64{60: 3},
-			FailureBlockDuration: 300,
+			FailureLimit:         ratelimit.Rates{{Limit: 3, Window: 60}},
+			FailureBlockDuration: 300 * time.Second,
 		},
 	}
 	return ruleSet

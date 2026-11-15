@@ -1,62 +1,57 @@
 # TEST ONLY: deliberately low thresholds and public test secrets.
 # The names are the ones the scenarios switch per request; the order is the one the lists apply in.
-Lists:
+lists:
   - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
   - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
   - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
   - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
   - {name: ip_captcha, enabled: true, type: ip, file: IP_CAPTCHAList.conf, action: challenge}
   - {name: url_captcha, enabled: true, type: url, file: URL_CAPTCHAList.conf, action: challenge}
-CountryRule:
+country_rule:
   enabled: false
   default_action: block
   unknown_action: continue
   countries: {US: challenge, AU: continue}
 # One challenge per site: ALTCHA here, the external provider on the "external" site, which
 # setup_cluster makes by changing the mode.
-Challenge:
+challenge:
   enabled: false
   mode: altcha
   external_secret: "e2e-only-challenge-secret-never-use-in-production"
-  clearance_ttl: 5
-  session_ttl: 120
+  clearance_ttl: 5s
+  session_ttl: 120s
   altcha_hmac_secret: "e2e-only-altcha-secret-never-use-in-production"
   altcha_cost: 1
   redirect_url: "https://mitigation.invalid/verify"
   failure_limit: ["20/30s"]
-  failure_block_duration: 300
-HTTPFlood:
+  failure_block_duration: 300s
+http_flood:
   enabled: false
-  HTTPFloodSpeedLimit: ["5/10s"]
-  HTTPFloodSameURILimit: ["3/10s"]
-  HTTPFloodFailureLimit: ["3/30s"]
-  failure_block_duration: 300
-VerifyBot:
+  speed_limit: ["5/10s"]
+  same_uri_limit: ["3/10s"]
+  failure_limit: ["3/30s"]
+  failure_block_duration: 300s
+verify_bot:
   enabled: false
-  verify_google_bot: true
-  verify_bing_bot: true
-  verify_baidu_bot: true
-  verify_yandex_bot: true
-  verify_sogou_bot: true
-  verify_apple_bot: true
-AdaptiveTrafficAnalyzer:
+  bots: [google, bing, baidu, yandex, sogou, apple]
+traffic_analyzer:
   enabled: false
-  analysis_interval: 2
+  analysis_interval: 2s
   window_buckets: 2
   uri_detection:
     action: observe
-    block_duration: 300
+    block_duration: 300s
     min_requests: 10
     min_distinct_ips: 5
-    sustain: 2
+    sustain: 2s
     fallback_share: 0.8
   ip_detection:
     enabled: false
     action: block
-    block_duration: 300
+    block_duration: 300s
     min_failures: 5
     fail_rate_threshold: 0.5
-CustomRules:
+custom_rules:
   enabled: false
   rules:
     - id: cookie-query

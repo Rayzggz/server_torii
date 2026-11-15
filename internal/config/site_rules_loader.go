@@ -49,17 +49,16 @@ func mapServerRules(wrapper *ruleSetWrapper, rs *RuleSet, dir string) error {
 			strings.Join(missing, ", "))
 	}
 
-	*rs.VerifyBotRule = *wrapper.VerifyBotRule
-
 	// Custom rules refer to the lists, so the lists come first; without them the rules cannot
 	// be checked. Everything else is checked regardless, so one load reports every problem.
 	lists, listsErr := mapLists(*wrapper.Lists, dir)
 	problems := []error{
 		listsErr,
 		mapChallengeRule(wrapper.Challenge, rs.Challenge),
-		mapAdaptiveTrafficAnalyzerRule(wrapper.AdaptiveTrafficAnalyzerRule, rs.AdaptiveTrafficAnalyzerRule),
+		mapAdaptiveTrafficAnalyzerRule(wrapper.TrafficAnalyzer, rs.AdaptiveTrafficAnalyzerRule),
 		mapCountryRule(wrapper.CountryRule, rs.CountryRule),
-		mapHTTPFloodRule(wrapper.HTTPFloodRule, rs.HTTPFloodRule),
+		mapHTTPFloodRule(wrapper.HTTPFlood, rs.HTTPFloodRule),
+		mapVerifyBotRule(wrapper.VerifyBot, rs.VerifyBotRule),
 	}
 	if listsErr == nil {
 		rs.Lists = lists

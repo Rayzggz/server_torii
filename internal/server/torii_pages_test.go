@@ -172,8 +172,8 @@ func testAltchaServerRuleSet() *config.RuleSet {
 	return &config.RuleSet{Challenge: &config.ChallengeRule{
 		Mode:             config.ChallengeAltcha,
 		CookieKey:        "1234567890abcdef",
-		ClearanceTTL:     600,
-		SessionTTL:       120,
+		ClearanceTTL:     600 * time.Second,
+		SessionTTL:       120 * time.Second,
 		AltchaHMACSecret: "altcha-secret",
 		AltchaCost:       1,
 	}}
@@ -228,7 +228,7 @@ func TestCaptchaSuccessMarksClientVerified(t *testing.T) {
 	if !ata.Marked("", reqData.RemoteIP, now) {
 		t.Fatal("solving the CAPTCHA did not exempt the IP from traffic analysis")
 	}
-	ttl := time.Duration(ruleSet.Challenge.ClearanceTTL) * time.Second
+	ttl := ruleSet.Challenge.ClearanceTTL
 	if ata.Marked("", reqData.RemoteIP, now.Add(ttl+time.Second)) {
 		t.Fatal("verified mark outlives the CAPTCHA validate time")
 	}

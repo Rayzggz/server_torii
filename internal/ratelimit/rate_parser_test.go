@@ -1,42 +1,34 @@
 package ratelimit
 
 import (
+	"slices"
+	"strings"
 	"testing"
 )
 
-func TestParseRateList_ValidRates(t *testing.T) {
-	rates := []string{"100/1s", "500/5m", "1000/1h"}
-	result, err := ParseRateList(rates)
+// Rates keep the order they are written in: the first limit a client exceeds is reported.
+func TestParseRatesKeepsTheOrder(t *testing.T) {
+	result, err := ParseRates([]string{"1000/1h", "100/1s", "500/5m"})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-
-	expected := map[int64]int64{
-		1:    100,
-		300:  500,
-		3600: 1000,
-	}
-	if len(result) != len(expected) {
-		t.Fatalf("got %d entries, want %d", len(result), len(expected))
-	}
-	for k, v := range expected {
-		if result[k] != v {
-			t.Errorf("result[%d] = %d, want %d", k, result[k], v)
-		}
+	want := Rates{{Limit: 1000, Window: 3600}, {Limit: 100, Window: 1}, {Limit: 500, Window: 300}}
+	if !slices.Equal(result, want) {
+		t.Fatalf("rates = %v, want %v", result, want)
 	}
 }
 
-func TestParseRateList_Empty(t *testing.T) {
-	result, err := ParseRateList(nil)
+func TestParseRatesEmpty(t *testing.T) {
+	result, err := ParseRates(nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if len(result) != 0 {
-		t.Errorf("expected empty map, got %v", result)
+	if len(result) != 0 || result.MaxWindow() != 0 {
+		t.Errorf("expected no rates, got %v", result)
 	}
 }
 
-func TestParseRateList_InvalidFormat(t *testing.T) {
+func TestParseRatesInvalidFormat(t *testing.T) {
 	tests := []struct {
 		name  string
 		rates []string
@@ -54,7 +46,7 @@ func TestParseRateList_InvalidFormat(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseRateList(tt.rates)
+			_, err := ParseRates(tt.rates)
 			if err == nil {
 				t.Errorf("expected error for rates %v", tt.rates)
 			}
@@ -62,31 +54,30 @@ func TestParseRateList_InvalidFormat(t *testing.T) {
 	}
 }
 
-func TestParseRateList_DuplicateWindowLastWins(t *testing.T) {
-	rates := []string{"100/1s", "200/1s"}
-	result, err := ParseRateList(rates)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if result[1] != 200 {
-		t.Errorf("result[1] = %d, want 200 (last value wins)", result[1])
+// Two limits for one window cannot both matter, also when the window is written differently.
+func TestParseRatesRejectsARepeatedWindow(t *testing.T) {
+	for _, rates := range [][]string{{"100/1s", "200/1s"}, {"100/60s", "5/10s", "200/1m"}} {
+		_, err := ParseRates(rates)
+		if err == nil || !strings.Contains(err.Error(), "same window") {
+			t.Errorf("%v: error = %v", rates, err)
+		}
 	}
 }
 
-func TestFindMaxRateTime(t *testing.T) {
+func TestMaxWindow(t *testing.T) {
 	tests := []struct {
 		name  string
-		rates map[int64]int64
+		rates Rates
 		want  int64
 	}{
 		{"nil", nil, 0},
-		{"single window", map[int64]int64{60: 100}, 60},
-		{"picks the longest window, not the highest limit", map[int64]int64{1: 1000, 3600: 5, 300: 50}, 3600},
+		{"single window", Rates{{Limit: 100, Window: 60}}, 60},
+		{"picks the longest window, not the highest limit", Rates{{Limit: 1000, Window: 1}, {Limit: 5, Window: 3600}, {Limit: 50, Window: 300}}, 3600},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := FindMaxRateTime(tt.rates); got != tt.want {
-				t.Fatalf("FindMaxRateTime(%v) = %d, want %d", tt.rates, got, tt.want)
+			if got := tt.rates.MaxWindow(); got != tt.want {
+				t.Fatalf("MaxWindow(%v) = %d, want %d", tt.rates, got, tt.want)
 			}
 		})
 	}

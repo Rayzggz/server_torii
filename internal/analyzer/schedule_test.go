@@ -29,7 +29,7 @@ func (r *recordingAnalyzer) Analyze(ctx *analysisContext) {
 
 func scheduledRule(interval int64) *config.RuleSet {
 	return &config.RuleSet{AdaptiveTrafficAnalyzerRule: &config.AdaptiveTrafficAnalyzerRule{
-		Enabled: true, AnalysisInterval: interval,
+		Enabled: true, AnalysisInterval: time.Duration(interval) * time.Second,
 	}}
 }
 
@@ -64,7 +64,7 @@ func TestAnalysisIndependentIntervals(t *testing.T) {
 				a.processBatchAt(start.Add(time.Duration(second) * time.Second))
 				wantCalls := 0
 				for _, rule := range []*config.RuleSet{fast, slow} {
-					if second%rule.AdaptiveTrafficAnalyzerRule.AnalysisInterval == 0 {
+					if second%int64(rule.AdaptiveTrafficAnalyzerRule.AnalysisInterval/time.Second) == 0 {
 						wantCalls++
 					}
 				}
@@ -72,7 +72,7 @@ func TestAnalysisIndependentIntervals(t *testing.T) {
 					t.Fatalf("second %d: got %d calls, want %d", second, len(recorder.calls)-before, wantCalls)
 				}
 				for _, call := range recorder.calls[before:] {
-					interval := call.rule.AdaptiveTrafficAnalyzerRule.AnalysisInterval
+					interval := int64(call.rule.AdaptiveTrafficAnalyzerRule.AnalysisInterval / time.Second)
 					if int64(len(call.logs)) != interval {
 						t.Fatalf("second %d: got %d logs, want %d", second, len(call.logs), interval)
 					}

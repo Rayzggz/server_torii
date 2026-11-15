@@ -12,6 +12,7 @@ import (
 	"server_torii/internal/rules"
 	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 func customRule(t *testing.T, id string, act action.Action, expr string, skip ...string) *rules.Rule {
@@ -29,7 +30,7 @@ func customRule(t *testing.T, id string, act action.Action, expr string, skip ..
 
 func TestCheckMainCustomRules(t *testing.T) {
 	floodLimited := func(rs *config.RuleSet, shared *state.Runtime) {
-		rs.HTTPFloodRule.HTTPFloodSpeedLimit = map[int64]int64{1: 0}
+		rs.HTTPFloodRule.SpeedLimit = ratelimit.Rates{{Limit: 0, Window: 1}}
 		shared.HTTPFloodSpeedLimitCounter.Store(ratelimit.NewCounter(16, 1))
 		shared.HTTPFloodSameURILimitCounter.Store(ratelimit.NewCounter(16, 1))
 		shared.HTTPFloodFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
@@ -205,8 +206,8 @@ func TestCheckMainCustomRules(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rs := featureControlRuleSet()
-			rs.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60}
-			rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, CookieKey: "1234567890abcdef", ClearanceTTL: 60}
+			rs.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second}
+			rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second}
 			rs.CustomRules = &rules.CustomRules{Enabled: true, Rules: tc.rules(t)}
 			headers := http.Header{}
 			headers.Set("Referer", "https://evil.example/landing")

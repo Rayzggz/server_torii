@@ -20,18 +20,18 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	var bot string
 	var exptractRDNS []string
 	switch {
-	case strings.Contains(ua, "googlebot") && ruleSet.VerifyBotRule.VerifyGoogleBot:
+	case strings.Contains(ua, "googlebot") && ruleSet.VerifyBotRule.Verifies("google"):
 		// Not googleusercontent.com: every Google Cloud VM reverse-resolves there.
 		bot, exptractRDNS = "google", []string{"googlebot.com", "google.com"}
-	case strings.Contains(ua, "bingbot") && ruleSet.VerifyBotRule.VerifyBingBot:
+	case strings.Contains(ua, "bingbot") && ruleSet.VerifyBotRule.Verifies("bing"):
 		bot, exptractRDNS = "bing", []string{"search.msn.com"}
-	case strings.Contains(ua, "baiduspider") && ruleSet.VerifyBotRule.VerifyBaiduBot:
+	case strings.Contains(ua, "baiduspider") && ruleSet.VerifyBotRule.Verifies("baidu"):
 		bot, exptractRDNS = "baidu", []string{"baidu.com", "baidu.jp"}
-	case strings.Contains(ua, "yandex.com/bots") && ruleSet.VerifyBotRule.VerifyYandexBot:
+	case strings.Contains(ua, "yandex.com/bots") && ruleSet.VerifyBotRule.Verifies("yandex"):
 		bot, exptractRDNS = "yandex", []string{"yandex.com", "yandex.ru", "yandex.net"}
-	case strings.Contains(ua, "sogou web spider") && ruleSet.VerifyBotRule.VerifySogouBot:
+	case strings.Contains(ua, "sogou web spider") && ruleSet.VerifyBotRule.Verifies("sogou"):
 		bot, exptractRDNS = "sogou", []string{"sogou.com"}
-	case strings.Contains(ua, "applebot") && ruleSet.VerifyBotRule.VerifyAppleBot:
+	case strings.Contains(ua, "applebot") && ruleSet.VerifyBotRule.Verifies("apple"):
 		bot, exptractRDNS = "apple", []string{"apple.com"}
 	default:
 		return

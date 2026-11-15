@@ -33,13 +33,6 @@ func init() {
 		log.Fatalf("failed to register \"dir\" validator: %v", err)
 	}
 
-	// Register custom validation for TCP/UDP port numbers stored as strings.
-	// min/max on a string field compare length, not value, so they cannot express a port range.
-	err = validate.RegisterValidation("port", validatePort)
-	if err != nil {
-		log.Fatalf("failed to register \"port\" validator: %v", err)
-	}
-
 	if err = validate.RegisterValidation("listen_addr", validateListenAddr); err != nil {
 		log.Fatalf("failed to register \"listen_addr\" validator: %v", err)
 	}
@@ -51,12 +44,6 @@ func init() {
 	}); err != nil {
 		log.Fatalf("failed to register \"site_id\" validator: %v", err)
 	}
-}
-
-// validatePort validates that a string is a decimal port number in the range 1-65535.
-func validatePort(fl validator.FieldLevel) bool {
-	port, err := strconv.Atoi(fl.Field().String())
-	return err == nil && port >= 1 && port <= 65535
 }
 
 // validateListenAddr accepts "host:port" (host may be empty) or "unix:" followed by a path.
@@ -144,8 +131,6 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 		return "value must be a valid rate format"
 	case "dir":
 		return "path must be an existing directory"
-	case "port":
-		return "value must be a port number between 1 and 65535"
 	case "listen_addr":
 		return "value must be host:port or unix:/path/to.sock"
 	case "socket_mode":
@@ -161,6 +146,9 @@ func validateMainConfig(cfg *MainConfig) error {
 	if cfg.EnableGossip && cfg.GlobalSecret == DefaultGlobalSecret {
 		problems = append(problems, errors.New("global_secret: this is the public value from the example configuration, "+
 			"so anyone could forge gossip messages; set a random one, e.g. the output of `openssl rand -hex 16`"))
+	}
+	if len(cfg.Listen) > 0 && len(cfg.LogListenAddrs()) == 0 {
+		problems = append(problems, errors.New("log_listen: field is required when listen has no TCP address to take the port from"))
 	}
 	seen := make(map[string]bool, len(cfg.Sites))
 	for i, site := range cfg.Sites {

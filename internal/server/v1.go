@@ -134,7 +134,7 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 		logx.Error(reqData, fmt.Sprintf("Ignoring unknown %s entries: %s", headerFeatures, strings.Join(unknown, " ")), "v1Request")
 	}
 	reqData.FeatureControl = bits
-	return reqData, ruleSet, snap.Pages, true
+	return reqData, ruleSet, snap.PagesFor(ruleSet.ID), true
 }
 
 // listOverrides picks, from the Torii-Features entries that name no check, the ones that name a

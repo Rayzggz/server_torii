@@ -29,7 +29,7 @@ func TestCountryRuleSchema(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wrapper, err := decodeServerRules([]byte("CountryRule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
+			wrapper, err := decodeServerRules([]byte("country_rule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
 			rule := &CountryRule{}
 			if err == nil {
 				err = mapCountryRule(wrapper.CountryRule, rule)
@@ -53,19 +53,20 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 			name, yaml string
 			invalid    bool
 		}{
-			{"invalid", "Challenge: { enabled: false }", true},
-			{"valid disabled", `Challenge:
+			{"invalid", "challenge: { enabled: false }", true},
+			{"valid disabled", `challenge:
   mode: hcaptcha
+  hcaptcha_secret: test-hcaptcha-secret
   enabled: false
-  clearance_ttl: 60
-  session_ttl: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   failure_limit: ["3/1m"]
-  failure_block_duration: 60
+  failure_block_duration: 60s
 `, false},
 		} {
 			t.Run(policy+"/"+config.name, func(t *testing.T) {
 				file := filepath.Join(t.TempDir(), "Server.yml")
-				writeFile(t, file, "CountryRule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
+				writeFile(t, file, "country_rule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
 				rules := NewRuleSet()
 				err := loadServerRules(file, rules)
 				if (err != nil) != config.invalid {
@@ -88,14 +89,14 @@ func TestExampleCountryRulesLoad(t *testing.T) {
 
 func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleFiles(t, dir, map[string]string{"Server.yml": "CountryRule: { default_action: block }"})
-	cfg := &MainConfig{Sites: []AllSiteRuleSet{{ID: "default_site", RulePath: dir}}}
+	writeRuleFiles(t, dir, map[string]string{"Server.yml": "country_rule: { default_action: block }"})
+	cfg := &MainConfig{Sites: []Site{{ID: "default_site", RulePath: dir}}}
 	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	before := manager.Get()
-	writeFile(t, filepath.Join(dir, "Server.yml"), "CountryRule: { default_action: invalid }")
+	writeFile(t, filepath.Join(dir, "Server.yml"), "country_rule: { default_action: invalid }")
 	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("invalid reload succeeded")
 	}

@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"log"
-	"server_torii/internal/ratelimit"
 	"sync/atomic"
 )
 
@@ -13,7 +12,18 @@ type SiteConfigSnapshot struct {
 	SiteRules map[string]*RuleSet
 	// DefaultSite is the ID of the site for requests that name none; it may be empty.
 	DefaultSite string
-	Pages       *ErrorPages
+	// Pages are the error pages of the sites that have none of their own.
+	Pages *ErrorPages
+	// SitePages holds the pages of the sites that configure an error_page directory.
+	SitePages map[string]*ErrorPages
+}
+
+// PagesFor returns the error pages of a site: its own, or the common ones.
+func (s *SiteConfigSnapshot) PagesFor(siteID string) *ErrorPages {
+	if pages, ok := s.SitePages[siteID]; ok {
+		return pages
+	}
+	return s.Pages
 }
 
 // Site returns the site with the given ID. An empty ID selects the default site. It returns nil
@@ -39,10 +49,10 @@ type CounterWindows struct {
 // CounterWindows returns the longest rate-limit windows the site configures.
 func (rs *RuleSet) CounterWindows() CounterWindows {
 	return CounterWindows{
-		HTTPFloodSpeed:   ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSpeedLimit),
-		HTTPFloodSameURI: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodSameURILimit),
-		HTTPFloodFailure: ratelimit.FindMaxRateTime(rs.HTTPFloodRule.HTTPFloodFailureLimit),
-		ChallengeFailure: ratelimit.FindMaxRateTime(rs.Challenge.FailureLimit),
+		HTTPFloodSpeed:   rs.HTTPFloodRule.SpeedLimit.MaxWindow(),
+		HTTPFloodSameURI: rs.HTTPFloodRule.SameURILimit.MaxWindow(),
+		HTTPFloodFailure: rs.HTTPFloodRule.FailureLimit.MaxWindow(),
+		ChallengeFailure: rs.Challenge.FailureLimit.MaxWindow(),
 	}
 }
 
@@ -91,7 +101,16 @@ func LoadSnapshot(cfg *MainConfig) (*SiteConfigSnapshot, error) {
 		return nil, fmt.Errorf("failed to reload error pages: %w", err)
 	}
 
-	return &SiteConfigSnapshot{SiteRules: siteRules, DefaultSite: cfg.DefaultSite, Pages: pages}, nil
+	sitePages := make(map[string]*ErrorPages)
+	for _, site := range cfg.Sites {
+		if site.ErrorPage == "" {
+			continue
+		}
+		if sitePages[site.ID], err = LoadSiteErrorPages(site.ErrorPage, pages); err != nil {
+			return nil, fmt.Errorf("failed to reload error pages of site %s: %w", site.ID, err)
+		}
+	}
+	return &SiteConfigSnapshot{SiteRules: siteRules, DefaultSite: cfg.DefaultSite, Pages: pages, SitePages: sitePages}, nil
 }
 
 // Reload re-reads all site rules and swaps the snapshot without interrupting current requests.

@@ -5,9 +5,11 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
+	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 func TestHTTPFloodNilCountersContinue(t *testing.T) {
@@ -15,9 +17,9 @@ func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
 		HTTPFloodRule: &config.HTTPFloodRule{
-			HTTPFloodSpeedLimit:   map[int64]int64{1: 1},
-			HTTPFloodSameURILimit: map[int64]int64{1: 1},
-			HTTPFloodFailureLimit: map[int64]int64{1: 1},
+			SpeedLimit:   ratelimit.Rates{{Limit: 1, Window: 1}},
+			SameURILimit: ratelimit.Rates{{Limit: 1, Window: 1}},
+			FailureLimit: ratelimit.Rates{{Limit: 1, Window: 1}},
 		},
 	}
 	reqData := request.UserRequest{
@@ -40,9 +42,9 @@ func TestChallengeNilCounterStillChallenges(t *testing.T) {
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{
 			CookieKey:            "1234567890abcdef",
-			ClearanceTTL:         60,
-			FailureLimit:         map[int64]int64{1: 1},
-			FailureBlockDuration: 60,
+			ClearanceTTL:         60 * time.Second,
+			FailureLimit:         ratelimit.Rates{{Limit: 1, Window: 1}},
+			FailureBlockDuration: 60 * time.Second,
 		},
 	}
 	reqData := request.UserRequest{RemoteIP: "127.0.0.1"}

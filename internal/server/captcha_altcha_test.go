@@ -12,6 +12,7 @@ import (
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
+	"time"
 
 	altcha "github.com/altcha-org/altcha-lib-go/v2"
 )
@@ -21,7 +22,7 @@ func TestAltchaChallengeEndpoint(t *testing.T) {
 		Challenge: &config.ChallengeRule{
 			Mode:             config.ChallengeAltcha,
 			CookieKey:        "1234567890abcdef",
-			SessionTTL:       120,
+			SessionTTL:       120 * time.Second,
 			AltchaHMACSecret: "altcha-secret",
 			AltchaCost:       1,
 		},
@@ -66,7 +67,7 @@ func TestAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 		Challenge: &config.ChallengeRule{
 			Mode:             config.ChallengeAltcha,
 			CookieKey:        "1234567890abcdef",
-			SessionTTL:       120,
+			SessionTTL:       120 * time.Second,
 			AltchaHMACSecret: "altcha-secret",
 			AltchaCost:       1,
 		},
@@ -164,7 +165,7 @@ func captchaPageRuleSet(mode config.ChallengeMode) *config.RuleSet {
 		Challenge: &config.ChallengeRule{
 			Mode:       mode,
 			CookieKey:  "1234567890abcdef",
-			SessionTTL: 120,
+			SessionTTL: 120 * time.Second,
 		},
 	}
 }

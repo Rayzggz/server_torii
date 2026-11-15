@@ -1,5 +1,9 @@
 # Every section of this file is required and must be complete and valid, also with
 # `enabled: false`: a missing section, an unknown key or an invalid value rejects the whole file.
+# `server_torii -check-config -config <dir>` reports every problem without starting anything.
+#
+# A duration is a number with a unit: 30s, 10m, 2h, 1h30m. A number without a unit is rejected.
+# A rate is "<count>/<window>", as in "150/10s"; the window takes s, m or h.
 # Lists of IP addresses and of URLs, each read from a file in this directory (or from an
 # absolute path). A list with an `action` is applied to every request before any other check, in
 # the order written here: the first list a request is on decides and the lists after it are not
@@ -16,7 +20,7 @@
 #
 # Blank lines and lines starting with `#` are skipped in the files; any other line that is not
 # valid rejects the whole configuration.
-Lists:
+lists:
   - name: ip_allow
     enabled: true
     type: ip
@@ -47,7 +51,7 @@ Lists:
     type: url
     file: URL_ChallengeList.conf
     action: challenge
-CountryRule:
+country_rule:
   enabled: false
   default_action: block
   unknown_action: continue
@@ -57,68 +61,66 @@ CountryRule:
 # The one challenge of the site: how a client proves itself. `enabled: true` challenges every
 # client. With `enabled: false` only the clients a rule singles out are challenged: a list,
 # a country rule or a custom rule with the `challenge` action, and the traffic analyzer.
-Challenge:
+challenge:
   enabled: true
-  mode: "hcaptcha" # hcaptcha | altcha: a CAPTCHA page; external: a redirect to an external provider
-  clearance_ttl: 600 # seconds a client stays cleared after passing
-  session_ttl: 120 # seconds a client has to answer the CAPTCHA; not used by the external mode
-  hcaptcha_secret: ""
+  mode: "altcha" # hcaptcha | altcha: a CAPTCHA page; external: a redirect to an external provider
+  clearance_ttl: 10m # how long a client stays cleared after passing
+  session_ttl: 2m # how long a client has to answer the CAPTCHA; not used by the external mode
+  # hcaptcha_secret: "" # the secret of the hCaptcha account; required by the hcaptcha mode
   altcha_hmac_secret: "0378b0f84c4310279918d71a5647ba5d"
   altcha_cost: 50000
   # redirect_url: "https://example.com/migration" # where the external mode sends the client
   # external_secret: "" # the key shared with that provider, at least 16 characters; required by the external mode
   failure_limit: # a client challenged more often than this without passing is blocked
-    - "300/300s"
-  failure_block_duration: 1200
-HTTPFlood:
+    - "300/5m"
+  failure_block_duration: 20m
+# Each list is checked in the order written; no two entries of a list may have the same window.
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit: # requests of one client
     - "150/10s"
-  HTTPFloodSameURILimit:
+  same_uri_limit: # requests of one client for one URI
     - "50/10s"
-  HTTPFloodFailureLimit:
-    - "300/300s"
-  failure_block_duration: 1200
-VerifyBot:
+  failure_limit: # a client that runs into the two limits above more often than this is blocked
+    - "300/5m"
+  failure_block_duration: 20m
+# A client that claims to be one of these crawlers is let through when DNS confirms the claim
+# and blocked when it does not. Crawlers: google, bing, baidu, yandex, sogou, apple.
+verify_bot:
   enabled: true
-  verify_google_bot: true
-  verify_bing_bot: true
-  verify_baidu_bot: true
-  verify_yandex_bot: true
-  verify_sogou_bot: true
-  verify_apple_bot: true
-AdaptiveTrafficAnalyzer:
+  bots: [google, bing, baidu, yandex, sogou, apple]
+traffic_analyzer:
   enabled: true
-  analysis_interval: 10
+  analysis_interval: 10s
   window_buckets: 30
   browser_evidence: # decides which clients look like browsers; used by both detections and challenge_unverified
-    ttl: 21600
+    ttl: 6h
     distinct_pages: 3
     asset_extensions: [] # empty uses the built-in static asset list
   uri_detection:
     action: challenge_unverified # observe | challenge_unverified | challenge | block; challenge_unverified challenges only clients without browser evidence
-    block_duration: 600
+    block_duration: 10m
     min_requests: 100
     min_distinct_ips: 50
-    sustain: 60
+    sustain: 1m
     ratio_threshold: 5
     fallback_share: 0.8
     baseline:
-      half_life: 21600
-      warmup: 3600
+      half_life: 6h
+      warmup: 1h
       min_reference_requests: 200
   ip_detection:
     enabled: true
     action: observe # observe | challenge_unverified | challenge | block
-    block_duration: 600
-    max_block_duration: 86400
+    block_duration: 10m
+    max_block_duration: 24h
     score_threshold: 50
     hot_uri_min_hits: 3
     min_failures: 30
     fail_rate_threshold: 0.6
     scan_paths_threshold: 30
     max_broadcast_per_tick: 200
-CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after the lists
+custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after the lists
   enabled: false
   # Fields: ip.src, ip.src.country (alias ip.geoip.country), http.host, http.request.uri, http.request.uri.path,
   #   http.request.uri.query, http.request.uri.path.extension, http.request.uri.args["k"], http.request.method,

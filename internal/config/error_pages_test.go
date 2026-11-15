@@ -43,7 +43,7 @@ func TestReloadErrorPages(t *testing.T) {
 	pagesDir := t.TempDir()
 	page := filepath.Join(pagesDir, "403.html")
 	writeFile(t, page, "v1")
-	cfg := &MainConfig{ErrorPage: pagesDir, Sites: []AllSiteRuleSet{{ID: "default_site", RulePath: rules}}}
+	cfg := &MainConfig{ErrorPage: pagesDir, Sites: []Site{{ID: "default_site", RulePath: rules}}}
 	manager := &Manager{}
 	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
@@ -88,5 +88,57 @@ func TestReloadErrorPages(t *testing.T) {
 	}
 	if manager.Get().Pages.Get(PageForbidden) != nil {
 		t.Fatal("removed page still served")
+	}
+}
+
+// A site with pages of its own shows them, and the common page for every page it does not hold.
+func TestSiteErrorPages(t *testing.T) {
+	common, own := t.TempDir(), t.TempDir()
+	writeFile(t, filepath.Join(common, "403.html"), "common 403")
+	writeFile(t, filepath.Join(common, "429.html"), "common 429")
+	writeFile(t, filepath.Join(own, "403.html"), "shop 403")
+
+	render := func(pages *ErrorPages, p Page) string {
+		tpl := pages.Get(p)
+		if tpl == nil {
+			return ""
+		}
+		var buf bytes.Buffer
+		if err := tpl.Execute(&buf, nil); err != nil {
+			t.Fatal(err)
+		}
+		return buf.String()
+	}
+
+	dir := writeMainConfig(t, "error_page: \""+filepath.ToSlash(common)+"\"")
+	cfg, err := LoadMainConfig(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(cfg.Sites[0].RulePath, "Server.yml"), "")
+	cfg.Sites = append(cfg.Sites, Site{ID: "shop", RulePath: cfg.Sites[0].RulePath, ErrorPage: own})
+	snap, err := LoadSnapshot(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, tt := range map[string]struct {
+		site string
+		page Page
+		want string
+	}{
+		"site without pages":        {"default_site", PageForbidden, "common 403"},
+		"own page":                  {"shop", PageForbidden, "shop 403"},
+		"page the site lacks":       {"shop", PageTooManyRequests, "common 429"},
+		"page nobody has":           {"shop", PageCaptcha, ""},
+		"a site that is not listed": {"nowhere", PageForbidden, "common 403"},
+	} {
+		if got := render(snap.PagesFor(tt.site), tt.page); got != tt.want {
+			t.Errorf("%s: page = %q, want %q", name, got, tt.want)
+		}
+	}
+
+	writeFile(t, filepath.Join(own, "429.html"), "{{.Broken")
+	if _, err := LoadSnapshot(cfg); err == nil {
+		t.Fatal("broken page of a site accepted")
 	}
 }

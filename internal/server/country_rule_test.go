@@ -13,6 +13,7 @@ import (
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 type serverCountryResolver struct {
@@ -75,9 +76,9 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 	}
 	ruleSet.Challenge = &config.ChallengeRule{
 		CookieKey:    "1234567890abcdef",
-		ClearanceTTL: 60,
-		SessionTTL:   120,
-		FailureLimit: map[int64]int64{},
+		ClearanceTTL: 60 * time.Second,
+		SessionTTL:   120 * time.Second,
+		FailureLimit: ratelimit.Rates{},
 	}
 	sharedMem := &state.Runtime{CountryResolver: database}
 	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))

@@ -8,11 +8,11 @@ import (
 )
 
 // verifyToken checks a cookie value against the request's host and user agent.
-func verifyToken(reqData request.UserRequest, signer token.Signer, value string, maxAge int64) bool {
+func verifyToken(reqData request.UserRequest, signer token.Signer, value string, maxAge time.Duration) bool {
 	if value == "" {
 		return false
 	}
-	return signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), maxAge, time.Now())
+	return signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), int64(maxAge/time.Second), time.Now())
 }
 
 func signToken(reqData request.UserRequest, signer token.Signer) []byte {

@@ -2,6 +2,8 @@ package config
 
 import (
 	"server_torii/internal/action"
+	"server_torii/internal/ratelimit"
+	"time"
 )
 
 // ChallengeMode is how a site makes a client prove itself.
@@ -27,20 +29,20 @@ type ChallengeRule struct {
 	// ExternalSecret is the key the site shares with its external provider. It signs only
 	// what the two exchange, so the provider cannot issue cookies.
 	ExternalSecret string
-	// ClearanceTTL is how long, in seconds, a cleared client stays cleared.
-	ClearanceTTL int64
-	// SessionTTL is how long, in seconds, a client has to answer a CAPTCHA. The external mode
-	// does not use it: its sessions are bounded by the lifetime of the link that brings the client back.
-	SessionTTL       int64
+	// ClearanceTTL is how long a cleared client stays cleared.
+	ClearanceTTL time.Duration
+	// SessionTTL is how long a client has to answer a CAPTCHA. The external mode does not use
+	// it: its sessions are bounded by the lifetime of the link that brings the client back.
+	SessionTTL       time.Duration
 	HCaptchaSecret   string
 	AltchaHMACSecret string
 	AltchaCost       int
 	// RedirectURL is where the external mode sends the client.
 	RedirectURL string
 	// FailureLimit bounds how often a client may be challenged without clearing; beyond it the
-	// client is blocked for FailureBlockDuration seconds.
-	FailureLimit         map[int64]int64
-	FailureBlockDuration int64
+	// client is blocked for FailureBlockDuration.
+	FailureLimit         ratelimit.Rates
+	FailureBlockDuration time.Duration
 }
 
 // ShowsCaptcha reports whether the challenge is a CAPTCHA page, as opposed to a redirect.
@@ -48,27 +50,46 @@ func (r *ChallengeRule) ShowsCaptcha() bool {
 	return r != nil && r.Mode != ChallengeExternal
 }
 
+// Bots are the crawlers whose claims can be verified, by the name the configuration uses.
+var Bots = []string{"google", "bing", "baidu", "yandex", "sogou", "apple"}
+
+// VerifyBotRule lists the crawlers a site verifies. A client that claims to be one of them is
+// let through when DNS confirms the claim, and blocked when it does not.
 type VerifyBotRule struct {
-	Enabled         bool `yaml:"enabled"`
-	VerifyGoogleBot bool `yaml:"verify_google_bot"`
-	VerifyBingBot   bool `yaml:"verify_bing_bot"`
-	VerifyBaiduBot  bool `yaml:"verify_baidu_bot"`
-	VerifyYandexBot bool `yaml:"verify_yandex_bot"`
-	VerifySogouBot  bool `yaml:"verify_sogou_bot"`
-	VerifyAppleBot  bool `yaml:"verify_apple_bot"`
+	Enabled bool
+	Bots    map[string]bool
 }
 
+// Verifies reports whether the site verifies the crawler.
+func (r *VerifyBotRule) Verifies(bot string) bool {
+	return r != nil && r.Bots[bot]
+}
+
+// AllBots returns a set with every crawler, for rules built in code.
+func AllBots() map[string]bool {
+	all := make(map[string]bool, len(Bots))
+	for _, bot := range Bots {
+		all[bot] = true
+	}
+	return all
+}
+
+// HTTPFloodRule limits how fast one client may send requests. Each list is checked in the
+// order it is configured in.
 type HTTPFloodRule struct {
-	Enabled               bool `yaml:"enabled"`
-	HTTPFloodSpeedLimit   map[int64]int64
-	HTTPFloodSameURILimit map[int64]int64
-	HTTPFloodFailureLimit map[int64]int64
-	FailureBlockDuration  int64
+	Enabled bool
+	// SpeedLimit bounds the requests of a client, SameURILimit its requests for one URI.
+	SpeedLimit   ratelimit.Rates
+	SameURILimit ratelimit.Rates
+	// FailureLimit bounds how often a client may run into the two limits above; beyond it the
+	// client is blocked for FailureBlockDuration.
+	FailureLimit         ratelimit.Rates
+	FailureBlockDuration time.Duration
 }
 
 type AdaptiveTrafficAnalyzerRule struct {
 	Enabled          bool                `yaml:"enabled"`
-	AnalysisInterval int64               `yaml:"analysis_interval" validate:"min=0"`
+	AnalysisInterval time.Duration       `yaml:"analysis_interval" validate:"min=0s"`
 	WindowBuckets    int                 `yaml:"window_buckets" validate:"min=0"`
 	BrowserEvidence  BrowserEvidenceRule `yaml:"browser_evidence"`
 	URIDetection     URIDetectionRule    `yaml:"uri_detection"`
@@ -78,23 +99,23 @@ type AdaptiveTrafficAnalyzerRule struct {
 // BrowserEvidenceRule decides which clients look like browsers; URI detection, IP detection
 // and the challenge_unverified action all use it.
 type BrowserEvidenceRule struct {
-	TTL             int64    `yaml:"ttl" validate:"min=0"`
-	DistinctPages   int      `yaml:"distinct_pages" validate:"min=0"`
-	AssetExtensions []string `yaml:"asset_extensions"`
+	TTL             time.Duration `yaml:"ttl" validate:"min=0s"`
+	DistinctPages   int           `yaml:"distinct_pages" validate:"min=0"`
+	AssetExtensions []string      `yaml:"asset_extensions"`
 }
 
 // BaselineRule controls the reference rate learned from browser-like clients.
 type BaselineRule struct {
-	HalfLife             int64 `yaml:"half_life" validate:"min=0"`
-	Warmup               int64 `yaml:"warmup" validate:"min=0"`
-	MinReferenceRequests int64 `yaml:"min_reference_requests" validate:"min=0"`
+	HalfLife             time.Duration `yaml:"half_life" validate:"min=0s"`
+	Warmup               time.Duration `yaml:"warmup" validate:"min=0s"`
+	MinReferenceRequests int64         `yaml:"min_reference_requests" validate:"min=0"`
 }
 
 type IPDetectionRule struct {
 	Enabled             bool          `yaml:"enabled"`
 	Action              action.Action `yaml:"action" validate:"omitempty,oneof=observe challenge_unverified challenge block"`
-	BlockDuration       int64         `yaml:"block_duration" validate:"min=0"`
-	MaxBlockDuration    int64         `yaml:"max_block_duration" validate:"min=0"`
+	BlockDuration       time.Duration `yaml:"block_duration" validate:"min=0s"`
+	MaxBlockDuration    time.Duration `yaml:"max_block_duration" validate:"min=0s"`
 	ScoreThreshold      int           `yaml:"score_threshold" validate:"min=0"`
 	HotURIMinHits       int64         `yaml:"hot_uri_min_hits" validate:"min=0"`
 	MinFailures         int64         `yaml:"min_failures" validate:"min=0"`
@@ -106,10 +127,10 @@ type IPDetectionRule struct {
 // URIDetectionRule finds hot URIs and sets the action applied to them.
 type URIDetectionRule struct {
 	Action         action.Action `yaml:"action" validate:"omitempty,oneof=observe challenge_unverified challenge block"`
-	BlockDuration  int64         `yaml:"block_duration" validate:"min=0"`
+	BlockDuration  time.Duration `yaml:"block_duration" validate:"min=0s"`
 	MinRequests    int64         `yaml:"min_requests" validate:"min=0"`
 	MinDistinctIPs int           `yaml:"min_distinct_ips" validate:"min=0"`
-	Sustain        int64         `yaml:"sustain" validate:"min=0"`
+	Sustain        time.Duration `yaml:"sustain" validate:"min=0s"`
 	RatioThreshold float64       `yaml:"ratio_threshold" validate:"min=0"`
 	FallbackShare  float64       `yaml:"fallback_share" validate:"min=0,max=1"`
 	Baseline       BaselineRule  `yaml:"baseline"`

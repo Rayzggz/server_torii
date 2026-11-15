@@ -32,7 +32,7 @@ func newV1Server(t *testing.T) *Server {
 	fallback := config.NewRuleSet()
 	fallback.ID = "default_site"
 	shop.Lists = config.NewListSet(config.MustNewList("url_block", config.ListURL, action.ActionBlock, "/blocked"))
-	shop.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60, SessionTTL: 120}
+	shop.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second, SessionTTL: 120 * time.Second}
 
 	configs := config.NewManager()
 	configs.Set(&config.SiteConfigSnapshot{
@@ -125,9 +125,9 @@ func TestV1SitesAreIsolated(t *testing.T) {
 	snap := s.configs.Get()
 	for _, rs := range snap.SiteRules {
 		rs.HTTPFloodRule.Enabled = true
-		rs.HTTPFloodRule.HTTPFloodSpeedLimit = map[int64]int64{10: 2}
-		rs.HTTPFloodRule.HTTPFloodSameURILimit = map[int64]int64{10: 100}
-		rs.HTTPFloodRule.HTTPFloodFailureLimit = map[int64]int64{10: 100}
+		rs.HTTPFloodRule.SpeedLimit = ratelimit.Rates{{Limit: 2, Window: 10}}
+		rs.HTTPFloodRule.SameURILimit = ratelimit.Rates{{Limit: 100, Window: 10}}
+		rs.HTTPFloodRule.FailureLimit = ratelimit.Rates{{Limit: 100, Window: 10}}
 	}
 	s.rt.ResizeSites(snap.CounterWindows())
 
@@ -286,8 +286,6 @@ func TestRunServesTCPAndUnix(t *testing.T) {
 	_ = tcp.Close()
 
 	s := newV1Server(t)
-	_, port, _ := net.SplitHostPort(tcpAddr)
-	s.cfg.Port = port
 	s.cfg.Listen = []string{tcpAddr, config.UnixListenPrefix + sock}
 
 	ctx, cancel := context.WithCancel(context.Background())

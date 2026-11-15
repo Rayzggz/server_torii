@@ -208,7 +208,7 @@ func mapLists(wrappers []listWrapper, dir string) (*ListSet, error) {
 	lists := make([]*List, 0, len(wrappers))
 	seen := make(map[string]bool, len(wrappers))
 	for i, w := range wrappers {
-		label := fmt.Sprintf("Lists[%d]", i)
+		label := fmt.Sprintf("lists[%d]", i)
 		if w.Name != "" {
 			label = fmt.Sprintf("Lists %q", w.Name)
 		}

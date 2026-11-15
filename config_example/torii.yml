@@ -2,16 +2,15 @@
 # invalid value, and reports every problem it finds. The same holds for each site's rules, where
 # every section is required as well;
 # on reload (SIGHUP) a rejected rule set leaves the rules already in use untouched.
-port: "25555"
 # Addresses the HTTP server listens on: "host:port" for TCP, "unix:/path" for a Unix domain socket.
-# Both kinds can be listed together. When omitted, Torii listens on every interface on `port`.
-# `port` is also the default UDP port for request reports, see `log_listen`.
-# listen:
-#   - "127.0.0.1:25555"
-#   - "unix:/run/server_torii.sock"
+# Both kinds can be listed together. An empty host listens on every interface.
+listen:
+  - ":25555"
+  # - "unix:/run/server_torii.sock"
 # Where the connector's request reports are received (`torii_log` in nginx): "host:port" for UDP,
 # "unix:/path" for a Unix datagram socket. Reports are trusted and not authenticated, so keep
-# this reachable from nginx only. When omitted, Torii listens on UDP 127.0.0.1:`port`.
+# this reachable from nginx only. When omitted, Torii listens on UDP 127.0.0.1, on the port of
+# the first TCP address in `listen`; with only Unix sockets in `listen` it has to be set.
 # log_listen:
 #   - "unix:/run/server_torii_log.sock"
 # Permission of the Unix sockets (octal). The nginx worker user must be able to write to the socket.
@@ -23,10 +22,9 @@ log_path: "/www/server_torii/log/"
 # the gossip messages; every node needs the same value, and a cookie issued by one node is then
 # accepted by all of them. Changing it makes every client pass its challenge again.
 # This example value is public: anyone who knows it can issue cookies. Generate your own, e.g.
-# with `openssl rand -hex 16`. It is refused when `enable_gossip` is true.
+# with `openssl rand -hex 16`. It is refused when gossip is enabled.
 global_secret: "0378b0f84c4310279918d71a5647ba5d"
 node_name: "Server Torii"
-enable_gossip: false
 # Every protected site has an ID. Nginx names the site of a request with `torii_site <id>;`.
 # An ID may contain letters, digits and underscores, at most 32 characters. Rate counters,
 # temporary blocks, logs and traffic analysis are kept per site.
@@ -35,6 +33,9 @@ sites:
     rule_path: "/www/server_torii/config/rules/default"
   - id: "example"
     rule_path: "/www/server_torii/config/rules/example.com"
+    # A site can have pages of its own. A page this directory does not hold is taken from the
+    # `error_page` directory above.
+    # error_page: "/www/server_torii/config/error_page/example.com"
 # How many bits of an IPv6 address identify one client for rate limits, temporary blocks and
 # traffic analysis. A client can take any address of the /64 it is usually given, so counting
 # single addresses would let it escape every limit. Every node of a cluster needs the same value.
@@ -42,6 +43,10 @@ sites:
 # The site for requests that name none. Remove it to give such requests no decision.
 default_site: "default_site"
 
+# The nodes of a cluster tell one another about the temporary blocks and challenges they
+# install, so a client blocked on one node is blocked on all of them.
+enable_gossip: false
+# The other nodes of the cluster.
 peers:
   - name: "Node-B"
     address: "http://10.0.0.2:25555"

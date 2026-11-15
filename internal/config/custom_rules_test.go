@@ -36,7 +36,7 @@ func TestCustomRulesSchema(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wrapper, err := decodeServerRules([]byte("CustomRules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
+			wrapper, err := decodeServerRules([]byte("custom_rules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
 			dest := &rules.CustomRules{}
 			if err == nil {
 				err = mapCustomRules(wrapper.CustomRules, dest, nil)
@@ -55,7 +55,7 @@ func TestCustomRulesSchema(t *testing.T) {
 }
 
 func TestCustomRulesDisabledRuleDropped(t *testing.T) {
-	wrapper, err := decodeServerRules([]byte(`CustomRules:
+	wrapper, err := decodeServerRules([]byte(`custom_rules:
   enabled: true
   rules:
     - {id: off, enabled: false, expression: 'true', action: block}
@@ -77,28 +77,29 @@ func TestCustomRulesDisabledRuleDropped(t *testing.T) {
 }
 
 func TestCustomRulesDependencies(t *testing.T) {
-	const validCaptcha = `Challenge:
+	const validCaptcha = `challenge:
   mode: hcaptcha
+  hcaptcha_secret: test-hcaptcha-secret
   enabled: false
-  clearance_ttl: 60
-  session_ttl: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   failure_limit: ["3/1m"]
-  failure_block_duration: 60
+  failure_block_duration: 60s
 `
-	const validExternal = `Challenge:
+	const validExternal = `challenge:
   mode: external
   enabled: false
   redirect_url: "https://example.com/migration"
   external_secret: "provider-secret-0123456789"
-  clearance_ttl: 60
+  clearance_ttl: 60s
   failure_limit: ["3/1m"]
-  failure_block_duration: 60
+  failure_block_duration: 60s
 `
 	for _, tc := range []struct {
 		name, action, extra string
 		invalid             bool
 	}{
-		{"challenge invalid", "challenge", "Challenge: { enabled: false }\n", true},
+		{"challenge invalid", "challenge", "challenge: { enabled: false }\n", true},
 		{"challenge with a CAPTCHA", "challenge", validCaptcha, false},
 		{"challenge with the external provider", "challenge", validExternal, false},
 		{"captcha is no longer an action", "captcha", validCaptcha, true},
@@ -107,7 +108,7 @@ func TestCustomRulesDependencies(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "Server.yml")
-			writeFile(t, file, "CustomRules:\n  enabled: false\n  rules:\n    - {id: a, expression: 'true', action: "+tc.action+"}\n"+tc.extra)
+			writeFile(t, file, "custom_rules:\n  enabled: false\n  rules:\n    - {id: a, expression: 'true', action: "+tc.action+"}\n"+tc.extra)
 			rs := NewRuleSet()
 			err := loadServerRules(file, rs)
 			if (err != nil) != tc.invalid {

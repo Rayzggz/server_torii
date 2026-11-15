@@ -70,10 +70,10 @@ func TestLoadSiteRulesIdentity(t *testing.T) {
 		return siteDir
 	}
 	plain := writeSite("plain", "")
-	tagged := writeSite("tagged", "AdaptiveTrafficAnalyzer:\n  enabled: true\n")
+	tagged := writeSite("tagged", "traffic_analyzer:\n  enabled: true\n")
 
 	// The site ID becomes the identity of the rule set.
-	rules, err := LoadSiteRules(&MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: tagged}, {ID: "blog", RulePath: plain}}, DefaultSite: "blog"})
+	rules, err := LoadSiteRules(&MainConfig{Sites: []Site{{ID: "shop", RulePath: tagged}, {ID: "blog", RulePath: plain}}, DefaultSite: "blog"})
 	if err != nil {
 		t.Fatalf("LoadSiteRules: %v", err)
 	}
@@ -87,10 +87,10 @@ func TestLoadSiteRulesIdentity(t *testing.T) {
 		cfg  MainConfig
 		want string
 	}{
-		"invalid id":      {MainConfig{Sites: []AllSiteRuleSet{{ID: "example.com", RulePath: plain}}}, "invalid id"},
-		"missing id":      {MainConfig{Sites: []AllSiteRuleSet{{RulePath: plain}}}, "invalid id"},
-		"duplicate id":    {MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: plain}, {ID: "shop", RulePath: plain}}}, "duplicate id"},
-		"unknown default": {MainConfig{Sites: []AllSiteRuleSet{{ID: "shop", RulePath: plain}}, DefaultSite: "blog"}, "default_site"},
+		"invalid id":      {MainConfig{Sites: []Site{{ID: "example.com", RulePath: plain}}}, "invalid id"},
+		"missing id":      {MainConfig{Sites: []Site{{RulePath: plain}}}, "invalid id"},
+		"duplicate id":    {MainConfig{Sites: []Site{{ID: "shop", RulePath: plain}, {ID: "shop", RulePath: plain}}}, "duplicate id"},
+		"unknown default": {MainConfig{Sites: []Site{{ID: "shop", RulePath: plain}}, DefaultSite: "blog"}, "default_site"},
 		"no sites":        {MainConfig{}, "no sites configured"},
 	} {
 		t.Run(name, func(t *testing.T) {

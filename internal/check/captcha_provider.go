@@ -165,7 +165,7 @@ func altchaSessionBinding(reqData request.UserRequest, ruleSet config.RuleSet) s
 }
 
 func GenAltchaChallenge(ruleSet config.RuleSet, reqData request.UserRequest) (altcha.Challenge, error) {
-	expiresAt := time.Now().Add(time.Duration(ruleSet.Challenge.SessionTTL) * time.Second)
+	expiresAt := time.Now().Add(ruleSet.Challenge.SessionTTL)
 	return altcha.CreateChallenge(altcha.CreateChallengeOptions{
 		Algorithm:           altchaAlgorithm,
 		DeriveKey:           altcha.DeriveKeyPBKDF2(),

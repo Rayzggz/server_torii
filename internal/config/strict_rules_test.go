@@ -7,12 +7,12 @@ import (
 	"testing"
 )
 
-const strictHTTPFlood = `HTTPFlood:
+const strictHTTPFlood = `http_flood:
   enabled: false
-  HTTPFloodSpeedLimit: ["5/10s"]
-  HTTPFloodSameURILimit: ["3/10s"]
-  HTTPFloodFailureLimit: ["3/30s"]
-  failure_block_duration: 300
+  speed_limit: ["5/10s"]
+  same_uri_limit: ["3/10s"]
+  failure_limit: ["3/30s"]
+  failure_block_duration: 300s
 `
 
 // Server.yml is rejected as a whole on any problem; nothing is skipped or replaced by a default.
@@ -23,29 +23,31 @@ func TestLoadRules_Strict(t *testing.T) {
 	}{
 		"every check off":           {"", ""},
 		"complete section":          {strictHTTPFlood, ""},
-		"analyzer defaults":         {"AdaptiveTrafficAnalyzer: {enabled: true}", ""},
+		"analyzer defaults":         {"traffic_analyzer: {enabled: true}", ""},
 		"unknown section":           {"HTTPFlod: {enabled: true}", `unknown field "HTTPFlod"`},
 		"unknown key":               {strings.Replace(strictHTTPFlood, "enabled", "enable", 1), `unknown field "enable"`},
-		"removed analyzer key":      {"AdaptiveTrafficAnalyzer: {enabled: true, tag: x}", `unknown field "tag"`},
-		"wrong type":                {strings.Replace(strictHTTPFlood, "300", "soon", 1), "cannot unmarshal"},
-		"incomplete, disabled":      {"HTTPFlood: {enabled: false}", "HTTPFlood.HTTPFloodSpeedLimit: list needs at least 1 entry"},
-		"empty limit list":          {strings.Replace(strictHTTPFlood, `["5/10s"]`, "[]", 1), "HTTPFlood.HTTPFloodSpeedLimit: list needs at least 1 entry"},
+		"removed analyzer key":      {"traffic_analyzer: {enabled: true, tag: x}", `unknown field "tag"`},
+		"wrong type":                {strings.Replace(strictHTTPFlood, "300s", "soon", 1), "`soon` is not a duration"},
+		"duration without a unit":   {strings.Replace(strictHTTPFlood, "300s", "300", 1), "`300` is not a duration: write it with a unit"},
+		"incomplete, disabled":      {"http_flood: {enabled: false}", "http_flood.speed_limit: list needs at least 1 entry"},
+		"empty limit list":          {strings.Replace(strictHTTPFlood, `["5/10s"]`, "[]", 1), "http_flood.speed_limit: list needs at least 1 entry"},
 		"bad rate":                  {strings.Replace(strictHTTPFlood, "5/10s", "fast", 1), "fast"},
-		"bad block duration":        {strings.Replace(strictHTTPFlood, "300", "0", 1), "HTTPFlood.failure_block_duration: field is required"},
-		"incomplete challenge":      {"Challenge: {enabled: false}", "Challenge.clearance_ttl: field is required"},
-		"external without secret":   {"Challenge: {mode: external, clearance_ttl: 5}", "Challenge.external_secret: field is required with this mode"},
-		"old cookie key of a site":  {"Challenge: {mode: hcaptcha, secret_key: 1234567890abcdef}", `unknown field "secret_key"`},
-		"challenge without mode":    {"Challenge: {enabled: false}", "Challenge.mode: field is required"},
-		"bad challenge mode":        {"Challenge: {mode: recaptcha}", "Challenge.mode: value must be one of: hcaptcha altcha external"},
-		"external without URL":      {"Challenge: {mode: external, clearance_ttl: 5}", "Challenge.redirect_url: field is required"},
-		"bad external URL":          {"Challenge: {mode: external, redirect_url: nowhere, clearance_ttl: 5}", "Challenge.redirect_url: value must be a valid URL"},
+		"bad block duration":        {strings.Replace(strictHTTPFlood, "300", "0", 1), "http_flood.failure_block_duration: field is required"},
+		"incomplete challenge":      {"challenge: {enabled: false}", "challenge.clearance_ttl: field is required"},
+		"hcaptcha without secret":   {"challenge: {mode: hcaptcha, clearance_ttl: 5s}", "challenge.hcaptcha_secret: field is required with this mode"},
+		"external without secret":   {"challenge: {mode: external, clearance_ttl: 5s}", "challenge.external_secret: field is required with this mode"},
+		"old cookie key of a site":  {"challenge: {mode: hcaptcha, secret_key: 1234567890abcdef}", `unknown field "secret_key"`},
+		"challenge without mode":    {"challenge: {enabled: false}", "challenge.mode: field is required"},
+		"bad challenge mode":        {"challenge: {mode: recaptcha}", "challenge.mode: value must be one of: hcaptcha altcha external"},
+		"external without URL":      {"challenge: {mode: external, clearance_ttl: 5s}", "challenge.redirect_url: field is required"},
+		"bad external URL":          {"challenge: {mode: external, redirect_url: nowhere, clearance_ttl: 5s}", "challenge.redirect_url: value must be a valid URL"},
 		"removed CAPTCHA section":   {"CAPTCHA: {enabled: false}", `unknown field "CAPTCHA"`},
 		"removed external section":  {"ExternalMigration: {enabled: false}", `unknown field "ExternalMigration"`},
-		"bad analyzer action":       {"AdaptiveTrafficAnalyzer: {ip_detection: {action: ban}}", "AdaptiveTrafficAnalyzer.ip_detection.action: value must be one of: observe challenge_unverified challenge block"},
-		"bad analyzer URI action":   {"AdaptiveTrafficAnalyzer: {uri_detection: {action: Block}}", "AdaptiveTrafficAnalyzer.uri_detection.action"},
-		"negative analyzer value":   {"AdaptiveTrafficAnalyzer: {window_buckets: -1}", "AdaptiveTrafficAnalyzer.window_buckets: value must be at least 0"},
-		"analyzer rate over 1":      {"AdaptiveTrafficAnalyzer: {ip_detection: {fail_rate_threshold: 1.5}}", "AdaptiveTrafficAnalyzer.ip_detection.fail_rate_threshold: value must be at most 1"},
-		"every problem is reported": {"Challenge: {mode: external, redirect_url: nowhere}", "Challenge.clearance_ttl"},
+		"bad analyzer action":       {"traffic_analyzer: {ip_detection: {action: ban}}", "traffic_analyzer.ip_detection.action: value must be one of: observe challenge_unverified challenge block"},
+		"bad analyzer URI action":   {"traffic_analyzer: {uri_detection: {action: Block}}", "traffic_analyzer.uri_detection.action"},
+		"negative analyzer value":   {"traffic_analyzer: {window_buckets: -1}", "traffic_analyzer.window_buckets: value must be at least 0"},
+		"analyzer rate over 1":      {"traffic_analyzer: {ip_detection: {fail_rate_threshold: 1.5}}", "traffic_analyzer.ip_detection.fail_rate_threshold: value must be at most 1"},
+		"every problem is reported": {"challenge: {mode: external, redirect_url: nowhere}", "challenge.clearance_ttl"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := LoadRules(siteDirectory(t, tt.settings))

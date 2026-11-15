@@ -99,7 +99,7 @@ func (s *Server) Run(ctx context.Context) error {
 		}()
 	}
 
-	listeners, err := listenAll(s.cfg.ListenAddrs(), s.cfg.SocketMode())
+	listeners, err := listenAll(s.cfg.Listen, s.cfg.SocketMode())
 	if err != nil {
 		return err
 	}

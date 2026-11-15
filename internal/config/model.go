@@ -4,21 +4,22 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"net"
 	"os"
 	"server_torii/internal/request"
 	"strconv"
+	"strings"
 )
 
 // MainConfig is the top-level configuration loaded from torii.yml.
 type MainConfig struct {
 	ConfigDir string `yaml:"-"`
-	Port      string `yaml:"port" validate:"required,port"`
 	// Listen lists the addresses the HTTP server accepts connections on: "host:port" for TCP or
-	// "unix:/path/to.sock" for a Unix domain socket. Empty means every interface on Port.
-	Listen []string `yaml:"listen" validate:"omitempty,dive,listen_addr"`
+	// "unix:/path/to.sock" for a Unix domain socket.
+	Listen []string `yaml:"listen" validate:"min=1,dive,listen_addr"`
 	// LogListen lists the addresses request reports from the connector are received on:
-	// "host:port" for UDP or "unix:/path/to.sock" for a Unix datagram socket. Empty means
-	// UDP on the loopback address and Port.
+	// "host:port" for UDP or "unix:/path/to.sock" for a Unix datagram socket. Empty means UDP
+	// on the loopback address, on the port of the first TCP address in Listen.
 	LogListen []string `yaml:"log_listen" validate:"omitempty,dive,listen_addr"`
 	// UnixSocketMode is the octal permission of the Unix sockets in Listen and LogListen; empty means 0666.
 	UnixSocketMode string `yaml:"unix_socket_mode" validate:"omitempty,socket_mode"`
@@ -28,10 +29,9 @@ type MainConfig struct {
 	// GlobalSecret is the one secret of a cluster: it signs gossip messages, and the key that
 	// signs the cookies of every site is derived from it. With gossip enabled it must not be
 	// the published example value.
-	GlobalSecret string           `yaml:"global_secret" validate:"required,min=32"`
-	NodeName     string           `yaml:"node_name" validate:"required"`
-	EnableGossip bool             `yaml:"enable_gossip"`
-	Sites        []AllSiteRuleSet `yaml:"sites" validate:"min=1,dive"`
+	GlobalSecret string `yaml:"global_secret" validate:"required,min=32"`
+	NodeName     string `yaml:"node_name" validate:"required"`
+	Sites        []Site `yaml:"sites" validate:"min=1,dive"`
 	// IPv6Prefix is the size, in bits, of the IPv6 network that counts as one client for rate
 	// limits, temporary rules and traffic analysis. Empty means 64. Every node of a cluster
 	// needs the same value: the rules the nodes share name clients by it.
@@ -39,24 +39,30 @@ type MainConfig struct {
 	// DefaultSite is the ID of the site used for requests whose connector names no site.
 	// Empty means such requests get no decision.
 	DefaultSite string `yaml:"default_site"`
-	Peers       []Peer `yaml:"peers" validate:"omitempty,dive"`
+	// EnableGossip makes the node share the temporary rules it installs with its peers.
+	EnableGossip bool `yaml:"enable_gossip"`
+	// Peers are the other nodes of the cluster.
+	Peers []Peer `yaml:"peers" validate:"omitempty,dive"`
 }
 
-// Peer represents a gossip peer node.
+// Peer is another node of the cluster.
 type Peer struct {
 	Name    string `yaml:"name" validate:"required"`
 	Address string `yaml:"address" validate:"required,url"`
 	Host    string `yaml:"host"`
 }
 
-// AllSiteRuleSet is one protected site: its ID and the directory holding its rules.
+// Site is one protected site: its ID and the directory holding its rules.
 //
 // The connector names the site of every request by this ID (torii_site in nginx). The ID is
 // also a directory name under the log path, so it is limited to letters, digits and
 // underscores, at most 32 characters.
-type AllSiteRuleSet struct {
+type Site struct {
 	ID       string `yaml:"id" validate:"site_id"`
 	RulePath string `yaml:"rule_path" validate:"required,dir"`
+	// ErrorPage is a directory with the pages of this site. A page it does not hold is taken
+	// from the error_page directory of the main configuration.
+	ErrorPage string `yaml:"error_page" validate:"omitempty,dir"`
 }
 
 // MaxSiteIDLength is the longest site ID.
@@ -84,21 +90,22 @@ const UnixListenPrefix = "unix:"
 // DefaultUnixSocketMode lets any local user connect, like a loopback TCP port does.
 const DefaultUnixSocketMode = 0o666
 
-// ListenAddrs returns the addresses to listen on, defaulting to every interface on Port.
-func (c *MainConfig) ListenAddrs() []string {
-	if len(c.Listen) > 0 {
-		return c.Listen
-	}
-	return []string{":" + c.Port}
-}
-
 // LogListenAddrs returns the addresses to receive request reports on. The default is reachable
-// from this machine only: a report is trusted, and nothing authenticates its sender.
+// from this machine only: a report is trusted, and nothing authenticates its sender. It is nil
+// when no address is configured and Listen has no TCP address to take the port from.
 func (c *MainConfig) LogListenAddrs() []string {
 	if len(c.LogListen) > 0 {
 		return c.LogListen
 	}
-	return []string{"127.0.0.1:" + c.Port}
+	for _, addr := range c.Listen {
+		if strings.HasPrefix(addr, UnixListenPrefix) {
+			continue
+		}
+		if _, port, err := net.SplitHostPort(addr); err == nil {
+			return []string{net.JoinHostPort("127.0.0.1", port)}
+		}
+	}
+	return nil
 }
 
 // IPv6PrefixBits returns the size of the IPv6 network that counts as one client.

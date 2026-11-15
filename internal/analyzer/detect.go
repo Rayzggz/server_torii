@@ -56,7 +56,7 @@ func (d *trafficDetector) Analyze(ctx *analysisContext) {
 		state:    ctx.State,
 		now:      ctx.Now,
 		window:   ctx.Interval * time.Duration(rule.WindowBuckets),
-		halfLife: time.Duration(rule.URIDetection.Baseline.HalfLife) * time.Second,
+		halfLife: rule.URIDetection.Baseline.HalfLife,
 		assets:   toSet(rule.BrowserEvidence.AssetExtensions),
 		enforce:  newEnforcer(ctx.Runtime, ctx.Rule.ID, rule.IPDetection.MaxBroadcastPerTick),
 	}
@@ -167,7 +167,7 @@ func (det *detection) browserLike(ip string) bool {
 }
 
 func (det *detection) updateEvidence(b *bucket, win map[string]*ipWindow) {
-	until := det.now.Add(time.Duration(det.rule.BrowserEvidence.TTL) * time.Second)
+	until := det.now.Add(det.rule.BrowserEvidence.TTL)
 	for ip, ib := range b.ips {
 		if ib.evidence {
 			det.ctx.Evidence.set(ip, until)
@@ -256,7 +256,7 @@ func (det *detection) detectHotURIs(uris map[string]*uriWindow, browserTotal int
 	age := det.now.Sub(det.state.created)
 	mode := modePaused
 	switch {
-	case age >= time.Duration(cfg.Warmup)*time.Second && browserTotal >= cfg.MinReferenceRequests:
+	case age >= cfg.Warmup && browserTotal >= cfg.MinReferenceRequests:
 		mode = modeBaseline
 	case age >= det.window:
 		// Browser evidence has had one window to accumulate; judge by share until the baseline is ready.
@@ -292,7 +292,7 @@ func (det *detection) sustained(candidates map[string]bool, uris map[string]*uri
 	if len(candidates) == 0 {
 		return hot
 	}
-	need := int(math.Ceil(float64(det.rule.URIDetection.Sustain) / det.ctx.Interval.Seconds()))
+	need := int(math.Ceil(det.rule.URIDetection.Sustain.Seconds() / det.ctx.Interval.Seconds()))
 	if need > len(det.state.buckets) {
 		return hot
 	}
@@ -381,7 +381,7 @@ func (det *detection) baselineCandidates(uris map[string]*uriWindow) map[string]
 
 func (det *detection) applyURIActions(hot map[string]bool, uris map[string]*uriWindow) {
 	cfg := det.rule.URIDetection
-	dur := time.Duration(cfg.BlockDuration) * time.Second
+	dur := cfg.BlockDuration
 	for _, u := range sortedKeys(hot) {
 		// Renew only once less than half of the previous duration remains.
 		if until, ok := det.state.uriRules[u]; ok && until.Sub(det.now) > dur/2 {
@@ -489,8 +489,8 @@ func (det *detection) scoreIPs(win map[string]*ipWindow, hot map[string]bool) {
 		return candidates[i].ip < candidates[j].ip
 	})
 
-	base := time.Duration(cfg.BlockDuration) * time.Second
-	maxDur := time.Duration(cfg.MaxBlockDuration) * time.Second
+	base := cfg.BlockDuration
+	maxDur := cfg.MaxBlockDuration
 	for i, c := range candidates {
 		off := det.state.offenders[c.ip]
 		if off == nil {

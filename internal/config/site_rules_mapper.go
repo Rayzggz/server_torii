@@ -6,22 +6,24 @@ import (
 	"server_torii/internal/feature"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
+	"slices"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
 const DefaultAltchaCost = 5000
 
-// ruleSetWrapper
+// ruleSetWrapper is a site's Server.yml as it is written.
 type ruleSetWrapper struct {
-	Lists                       *[]listWrapper               `yaml:"Lists"`
-	Challenge                   *challengeRuleWrapper        `yaml:"Challenge"`
-	VerifyBotRule               *VerifyBotRule               `yaml:"VerifyBot"`
-	HTTPFloodRule               *httpFloodRuleWrapper        `yaml:"HTTPFlood"`
-	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule `yaml:"AdaptiveTrafficAnalyzer"`
-	CountryRule                 *countryRuleWrapper          `yaml:"CountryRule"`
-	CustomRules                 *customRulesWrapper          `yaml:"CustomRules"`
+	Lists           *[]listWrapper               `yaml:"lists"`
+	CountryRule     *countryRuleWrapper          `yaml:"country_rule"`
+	Challenge       *challengeRuleWrapper        `yaml:"challenge"`
+	HTTPFlood       *httpFloodRuleWrapper        `yaml:"http_flood"`
+	VerifyBot       *verifyBotRuleWrapper        `yaml:"verify_bot"`
+	TrafficAnalyzer *AdaptiveTrafficAnalyzerRule `yaml:"traffic_analyzer"`
+	CustomRules     *customRulesWrapper          `yaml:"custom_rules"`
 }
 
 // missingSections returns the names of the sections the file leaves out, in the order of the
@@ -32,19 +34,41 @@ func (w *ruleSetWrapper) missingSections() []string {
 		name    string
 		present bool
 	}{
-		{"Lists", w.Lists != nil},
-		{"CountryRule", w.CountryRule != nil},
-		{"Challenge", w.Challenge != nil},
-		{"HTTPFlood", w.HTTPFloodRule != nil},
-		{"VerifyBot", w.VerifyBotRule != nil},
-		{"AdaptiveTrafficAnalyzer", w.AdaptiveTrafficAnalyzerRule != nil},
-		{"CustomRules", w.CustomRules != nil},
+		{"lists", w.Lists != nil},
+		{"country_rule", w.CountryRule != nil},
+		{"challenge", w.Challenge != nil},
+		{"http_flood", w.HTTPFlood != nil},
+		{"verify_bot", w.VerifyBot != nil},
+		{"traffic_analyzer", w.TrafficAnalyzer != nil},
+		{"custom_rules", w.CustomRules != nil},
 	} {
 		if !section.present {
 			missing = append(missing, section.name)
 		}
 	}
 	return missing
+}
+
+type verifyBotRuleWrapper struct {
+	Enabled bool     `yaml:"enabled"`
+	Bots    []string `yaml:"bots"`
+}
+
+// mapVerifyBotRule accepts the crawlers Torii can verify; an empty list verifies none.
+func mapVerifyBotRule(wrapper *verifyBotRuleWrapper, dest *VerifyBotRule) error {
+	dest.Enabled = wrapper.Enabled
+	dest.Bots = make(map[string]bool, len(wrapper.Bots))
+	for _, name := range wrapper.Bots {
+		bot := strings.ToLower(strings.TrimSpace(name))
+		if !slices.Contains(Bots, bot) {
+			return fmt.Errorf("verify_bot.bots: unknown crawler %q: expected one of %s", name, strings.Join(Bots, ", "))
+		}
+		if dest.Bots[bot] {
+			return fmt.Errorf("verify_bot.bots: %s is listed twice", bot)
+		}
+		dest.Bots[bot] = true
+	}
+	return nil
 }
 
 type customRulesWrapper struct {
@@ -62,25 +86,25 @@ type customRuleWrapper struct {
 }
 
 type httpFloodRuleWrapper struct {
-	Enabled               bool     `yaml:"enabled"`
-	HTTPFloodSpeedLimit   []string `yaml:"HTTPFloodSpeedLimit" validate:"min=1,dive"`
-	HTTPFloodSameURILimit []string `yaml:"HTTPFloodSameURILimit" validate:"min=1,dive"`
-	HTTPFloodFailureLimit []string `yaml:"HTTPFloodFailureLimit" validate:"min=1,dive"`
-	FailureBlockDuration  int64    `yaml:"failure_block_duration" validate:"required,min=1"`
+	Enabled              bool          `yaml:"enabled"`
+	SpeedLimit           []string      `yaml:"speed_limit" validate:"min=1,dive"`
+	SameURILimit         []string      `yaml:"same_uri_limit" validate:"min=1,dive"`
+	FailureLimit         []string      `yaml:"failure_limit" validate:"min=1,dive"`
+	FailureBlockDuration time.Duration `yaml:"failure_block_duration" validate:"required,min=1s"`
 }
 
 type challengeRuleWrapper struct {
 	Enabled              bool          `yaml:"enabled"`
 	Mode                 ChallengeMode `yaml:"mode" validate:"required,oneof=hcaptcha altcha external"`
 	ExternalSecret       string        `yaml:"external_secret" validate:"required_if=Mode external,omitempty,min=16"`
-	ClearanceTTL         int64         `yaml:"clearance_ttl" validate:"required,min=1,max=9223372036854775807"`
-	SessionTTL           int64         `yaml:"session_ttl" validate:"required_unless=Mode external,omitempty,min=1,max=9223372036854775807"`
-	HCaptchaSecret       string        `yaml:"hcaptcha_secret"`
+	ClearanceTTL         time.Duration `yaml:"clearance_ttl" validate:"required,min=1s"`
+	SessionTTL           time.Duration `yaml:"session_ttl" validate:"required_unless=Mode external,omitempty,min=1s"`
+	HCaptchaSecret       string        `yaml:"hcaptcha_secret" validate:"required_if=Mode hcaptcha"`
 	AltchaHMACSecret     string        `yaml:"altcha_hmac_secret"`
 	AltchaCost           int           `yaml:"altcha_cost"`
 	RedirectURL          string        `yaml:"redirect_url" validate:"required_if=Mode external,omitempty,url"`
 	FailureLimit         []string      `yaml:"failure_limit" validate:"min=1,dive"`
-	FailureBlockDuration int64         `yaml:"failure_block_duration" validate:"required,min=1"`
+	FailureBlockDuration time.Duration `yaml:"failure_block_duration" validate:"required,min=1s"`
 }
 
 type countryRuleWrapper struct {
@@ -109,23 +133,23 @@ func mapCountryRule(wrapper *countryRuleWrapper, dest *CountryRule) error {
 	var err error
 	dest.Enabled = wrapper.Enabled
 	if dest.DefaultAction, err = countryActionOrDefault(wrapper.DefaultAction); err != nil {
-		return fmt.Errorf("CountryRule default_action: %w", err)
+		return fmt.Errorf("country_rule.default_action: %w", err)
 	}
 	if dest.UnknownAction, err = countryActionOrDefault(wrapper.UnknownAction); err != nil {
-		return fmt.Errorf("CountryRule unknown_action: %w", err)
+		return fmt.Errorf("country_rule.unknown_action: %w", err)
 	}
 	dest.Countries = make(map[string]action.Action, len(wrapper.Countries))
 	for code, value := range wrapper.Countries {
 		normalized, err := normalizeCountryCode(code)
 		if err != nil {
-			return fmt.Errorf("CountryRule countries: %w", err)
+			return fmt.Errorf("country_rule.countries: %w", err)
 		}
 		if _, exists := dest.Countries[normalized]; exists {
-			return fmt.Errorf("CountryRule duplicate normalized country %q", normalized)
+			return fmt.Errorf("country_rule.countries: %s is listed twice", normalized)
 		}
 		act, err := parseCountryAction(value)
 		if err != nil {
-			return fmt.Errorf("CountryRule country %s: %w", normalized, err)
+			return fmt.Errorf("country_rule.countries.%s: %w", normalized, err)
 		}
 		dest.Countries[normalized] = act
 	}
@@ -143,7 +167,7 @@ func normalizeCountryCode(code string) (string, error) {
 }
 
 func mapChallengeRule(wrapper *challengeRuleWrapper, dest *ChallengeRule) error {
-	if err := validateStruct(wrapper, "Challenge"); err != nil {
+	if err := validateStruct(wrapper, "challenge"); err != nil {
 		return err
 	}
 	dest.Enabled = wrapper.Enabled
@@ -161,14 +185,16 @@ func mapChallengeRule(wrapper *challengeRuleWrapper, dest *ChallengeRule) error 
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 
 	var err error
-	dest.FailureLimit, err = ratelimit.ParseRateList(wrapper.FailureLimit)
-	return err
+	if dest.FailureLimit, err = ratelimit.ParseRates(wrapper.FailureLimit); err != nil {
+		return fmt.Errorf("challenge.failure_limit: %w", err)
+	}
+	return nil
 }
 
 // mapAdaptiveTrafficAnalyzerRule copies the section and fills the thresholds it leaves at zero
 // with their defaults.
 func mapAdaptiveTrafficAnalyzerRule(wrapper *AdaptiveTrafficAnalyzerRule, dest *AdaptiveTrafficAnalyzerRule) error {
-	if err := validateStruct(wrapper, "AdaptiveTrafficAnalyzer"); err != nil {
+	if err := validateStruct(wrapper, "traffic_analyzer"); err != nil {
 		return err
 	}
 	*dest = *wrapper
@@ -177,25 +203,27 @@ func mapAdaptiveTrafficAnalyzerRule(wrapper *AdaptiveTrafficAnalyzerRule, dest *
 }
 
 func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error {
-	if err := validateStruct(wrapper, "HTTPFlood"); err != nil {
+	if err := validateStruct(wrapper, "http_flood"); err != nil {
 		return err
 	}
 	dest.Enabled = wrapper.Enabled
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
-
-	var err error
-	dest.HTTPFloodSpeedLimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodSpeedLimit)
-	if err != nil {
-		return err
+	for _, list := range []struct {
+		key  string
+		in   []string
+		dest *ratelimit.Rates
+	}{
+		{"speed_limit", wrapper.SpeedLimit, &dest.SpeedLimit},
+		{"same_uri_limit", wrapper.SameURILimit, &dest.SameURILimit},
+		{"failure_limit", wrapper.FailureLimit, &dest.FailureLimit},
+	} {
+		rates, err := ratelimit.ParseRates(list.in)
+		if err != nil {
+			return fmt.Errorf("http_flood.%s: %w", list.key, err)
+		}
+		*list.dest = rates
 	}
-
-	dest.HTTPFloodSameURILimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodSameURILimit)
-	if err != nil {
-		return err
-	}
-
-	dest.HTTPFloodFailureLimit, err = ratelimit.ParseRateList(wrapper.HTTPFloodFailureLimit)
-	return err
+	return nil
 }
 
 // mapCustomRules compiles every enabled rule; any error rejects the whole file so a reload keeps the old rules.
@@ -204,9 +232,9 @@ func mapCustomRules(wrapper *customRulesWrapper, dest *rules.CustomRules, lists 
 	dest.Rules = make([]*rules.Rule, 0, len(wrapper.Rules))
 	seen := make(map[string]bool, len(wrapper.Rules))
 	for i, w := range wrapper.Rules {
-		label := fmt.Sprintf("CustomRules rule #%d", i+1)
+		label := fmt.Sprintf("custom_rules rule #%d", i+1)
 		if w.ID != "" {
-			label = fmt.Sprintf("CustomRules rule %q", w.ID)
+			label = fmt.Sprintf("custom_rules rule %q", w.ID)
 		}
 		if w.ID == "" {
 			return fmt.Errorf("%s: id is required", label)
