@@ -43,12 +43,18 @@ type Manager struct {
 	rng                 *rand.Rand
 	rngMu               sync.Mutex
 	log                 *slog.Logger // nil logs nothing
+	// outbox holds the rules of this node that wait to be sent to the peers.
+	outbox chan Message
+	// unshared counts the rules that found the outbox full since unsharedLog, when it was last logged.
+	unshared    int
+	unsharedLog time.Time
 }
 
 // NewManager creates the gossip of a node. It logs to logger; nil logs nothing.
 func NewManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine, logger *slog.Logger) *Manager {
 	return &Manager{
 		log:                 logger,
+		outbox:              make(chan Message, outboxSize),
 		cfg:                 cfg,
 		actionEngine:        actionEngine,
 		seenMessages:        make(map[string]time.Time),
@@ -70,7 +76,8 @@ func (gm *Manager) dropped(why string, attrs ...any) {
 	gm.logger().Warn("gossip dropped: "+why, attrs...)
 }
 
-func (gm *Manager) Start(gossipChan <-chan Message) {
+// Start sends the rules of this node to the peers until the process ends. It does not return.
+func (gm *Manager) Start() {
 	gm.logger().Info("gossip started", "peers", len(gm.cfg.Peers))
 
 	// Start anti-entropy ticker
@@ -79,23 +86,14 @@ func (gm *Manager) Start(gossipChan <-chan Message) {
 	// Start cleanup ticker for seen messages
 	go gm.cleanupSeenMessages()
 
-	for msg := range gossipChan {
-		if msg.OriginNode == gm.cfg.NodeName {
-			// Originated from this node, enrich and broadcast
-			if msg.ID == "" {
-				msg.ID = uuid.New().String()
-			}
-			msg.Version = ProtocolVersion
-			msg.Timestamp = time.Now().Unix()
-			msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
+	for msg := range gm.outbox {
+		msg.ID = uuid.New().String()
+		msg.Version = ProtocolVersion
+		msg.Timestamp = time.Now().Unix()
+		msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
 
-			gm.markSeen(msg.ID)
-			gm.epidemicBroadcast(msg)
-		} else {
-			// Should not happen if channel is only for local,
-			// but if we ever pipe remote msgs here:
-			gm.processRemoteMessage(msg)
-		}
+		gm.markSeen(msg.ID)
+		gm.epidemicBroadcast(msg)
 	}
 }
 
@@ -254,7 +252,7 @@ func (gm *Manager) startAntiEntropy() {
 			count++
 
 			if count >= maxSyncEntriesBatch {
-				gm.sendSyncBatch(peer, ActionRuleSyncPayload{Rules: batch})
+				gm.sendSyncBatch(peer, batch)
 				// Reset batch
 				batch = make([]ActionRulePayload, 0, maxSyncEntriesBatch)
 				count = 0
@@ -263,25 +261,19 @@ func (gm *Manager) startAntiEntropy() {
 
 		// Send remaining
 		if len(batch) > 0 {
-			gm.sendSyncBatch(peer, ActionRuleSyncPayload{Rules: batch})
+			gm.sendSyncBatch(peer, batch)
 		}
 	}
 }
 
-func (gm *Manager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) {
-	content, err := json.Marshal(batch)
-	if err != nil {
-		gm.logger().Error("gossip: sync batch not encoded", "error", err.Error())
-		return
-	}
-
+func (gm *Manager) sendSyncBatch(peer config.Peer, rules []ActionRulePayload) {
 	msg := Message{
 		Version:    ProtocolVersion,
 		Type:       TypeSync,
 		ID:         uuid.New().String(),
 		OriginNode: gm.cfg.NodeName,
 		Timestamp:  time.Now().Unix(),
-		Content:    string(content),
+		Rules:      rules,
 	}
 
 	go gm.sendGossip(peer, msg)
@@ -484,11 +476,11 @@ func (gm *Manager) processRemoteMessage(msg Message) {
 }
 
 func (gm *Manager) processActionRule(msg Message, now time.Time) {
-	var payload ActionRulePayload
-	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
-		gm.dropped("rule not decoded", "origin", msg.OriginNode, "error", err.Error())
+	if msg.Rule == nil {
+		gm.dropped("message has no rule", "origin", msg.OriginNode)
 		return
 	}
+	payload := *msg.Rule
 
 	if err := validateActionRule(payload, now); err != nil {
 		gm.dropped("invalid rule", "origin", msg.OriginNode, "error", err.Error())
@@ -509,19 +501,13 @@ func (gm *Manager) processActionRule(msg Message, now time.Time) {
 
 func (gm *Manager) processSync(msg Message, now time.Time) {
 
-	var syncPayload ActionRuleSyncPayload
-	if err := json.Unmarshal([]byte(msg.Content), &syncPayload); err != nil {
-		gm.dropped("sync not decoded", "origin", msg.OriginNode, "error", err.Error())
-		return
-	}
-
-	if len(syncPayload.Rules) > maxSyncEntriesBatch {
-		gm.dropped("sync has too many rules", "origin", msg.OriginNode, "rules", len(syncPayload.Rules), "rule_limit", maxSyncEntriesBatch)
+	if len(msg.Rules) > maxSyncEntriesBatch {
+		gm.dropped("sync has too many rules", "origin", msg.OriginNode, "rules", len(msg.Rules), "rule_limit", maxSyncEntriesBatch)
 		return
 	}
 
 	invalidCount := 0
-	for _, payload := range syncPayload.Rules {
+	for _, payload := range msg.Rules {
 		if err := validateActionRule(payload, now); err != nil {
 			invalidCount++
 			if invalidCount <= 5 {

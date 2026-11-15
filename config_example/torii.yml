@@ -20,8 +20,9 @@ error_page: "/www/server_torii/config/error_page"
 # `server_torii.log` is the node itself: start, reload, gossip. `<site id>/events.log` has one
 # line for every request of the site that was not let through, and for every block and
 # challenge installed:
-#   2026/11/14 21:31:07 [info] decision ip=203.0.113.9 verdict=block reason=Lists:office method=GET host=example.com uri=/admin ua="curl/8.5.0" SIGHUP opens the files again, so log rotation
-# renames them and then sends SIGHUP; the same signal reloads the site rules.
+#   2026/11/14 21:31:07 [info] decision ip=203.0.113.9 verdict=block reason=Lists:office method=GET host=example.com uri=/admin ua="curl/8.5.0"
+# SIGHUP opens the files again, so log rotation renames them and then sends SIGHUP; the same
+# signal reloads the site rules.
 log_path: "/www/server_torii/log/"
 # The least level that is logged; a level includes the ones above it.
 #   error  what needs attention: with nothing wrong, nothing is logged but the start and the stop

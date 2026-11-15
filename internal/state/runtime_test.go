@@ -3,8 +3,6 @@ package state
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/gossip"
-	"strings"
 	"testing"
 	"time"
 )
@@ -76,8 +74,8 @@ func TestSiteLimitersAreIsolated(t *testing.T) {
 func TestApplyRuleIsScopedToTheSite(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossipCh := make(chan gossip.Message, 4)
-	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossipCh}
+	shared := &sharedRules{}
+	rt := &Runtime{ActionRuleEngine: engine, Peers: shared}
 
 	rt.BlockIP("shop", "1.2.3.4", time.Minute)
 	if got := engine.Check("shop", "1.2.3.4", "/"); got != action.ActionBlock {
@@ -86,9 +84,8 @@ func TestApplyRuleIsScopedToTheSite(t *testing.T) {
 	if got := engine.Check("blog", "1.2.3.4", "/"); got != action.ActionNone {
 		t.Fatalf("rule leaked to another site: %s", got)
 	}
-	msg := <-gossipCh
-	if !strings.Contains(msg.Content, `"site":"shop"`) {
-		t.Fatalf("broadcast does not name the site: %s", msg.Content)
+	if len(*shared) != 1 || (*shared)[0] != "shop|IP|1.2.3.4|block" {
+		t.Fatalf("shared with the peers: %v", *shared)
 	}
 }
 
@@ -100,8 +97,8 @@ func TestApplyRule(t *testing.T) {
 
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossipCh := make(chan gossip.Message, 4)
-	rt := &Runtime{ActionRuleEngine: engine, NodeName: "node-a", GossipChan: gossipCh}
+	shared := &sharedRules{}
+	rt := &Runtime{ActionRuleEngine: engine, Peers: shared}
 
 	if !rt.BlockIP("", "1.2.3.4", time.Minute) {
 		t.Fatal("BlockIP reported no engine")
@@ -109,20 +106,15 @@ func TestApplyRule(t *testing.T) {
 	if got := engine.Check("", "1.2.3.4", "/"); got != action.ActionBlock {
 		t.Fatalf("IP rule = %s, want BLOCK", got)
 	}
-	select {
-	case msg := <-gossipCh:
-		if msg.OriginNode != "node-a" || msg.Type != gossip.TypeActionRule {
-			t.Fatalf("unexpected broadcast: %+v", msg)
-		}
-	default:
-		t.Fatal("block was not broadcast")
+	if len(*shared) != 1 || (*shared)[0] != "|IP|1.2.3.4|block" {
+		t.Fatalf("shared with the peers: %v", *shared)
 	}
 
 	rt.ApplyRule("", action.RuleURI, "/search", action.ActionChallenge, time.Minute, false)
 	if got := engine.Check("", "9.9.9.9", "/search"); got != action.ActionChallenge {
 		t.Fatalf("URI rule = %s, want CAPTCHA", got)
 	}
-	if len(gossipCh) != 0 {
+	if len(*shared) != 1 {
 		t.Fatal("local-only rule was broadcast")
 	}
 
@@ -131,4 +123,11 @@ func TestApplyRule(t *testing.T) {
 	if !local.BlockIP("", "5.6.7.8", time.Minute) || !engine.HasIPRule("", "5.6.7.8") {
 		t.Fatal("rule not applied without a gossip channel")
 	}
+}
+
+// sharedRules records the rules a Runtime shares with the peers.
+type sharedRules []string
+
+func (s *sharedRules) ShareRule(site string, kind action.RuleKind, value string, act action.Action, _ time.Duration) {
+	*s = append(*s, site+"|"+string(kind)+"|"+value+"|"+string(act))
 }

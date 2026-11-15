@@ -126,7 +126,7 @@ custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after
   #   http.request.uri.query, http.request.uri.path.extension, http.request.uri.args["k"], http.request.method,
   #   http.user_agent, http.referer, http.cookie, http.x_forwarded_for, http.request.headers["name"],
   #   http.request.cookies["name"], torii.browser_evidence
-  #   http.request.method needs Nginx to send the original method: proxy_set_header Torii-Original-Method $request_method;
+  #   http.request.method is the method of the client request, also when it has a body the check never sees
   # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (len() only)
   #   in $name tests a field against a list above: an IP field against an ip list, a string field against a url list
   # Logic: not !, and &&, xor ^^, or || (in this precedence order), parentheses

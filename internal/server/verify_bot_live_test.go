@@ -1,8 +1,10 @@
 package server
 
 import (
+	"log/slog"
 	"net"
 	"server_torii/internal/analyzer"
+	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
@@ -69,7 +71,7 @@ func botDecision(rs *config.RuleSet, sharedMem *state.Runtime, ip, ua, features 
 }
 
 func newVerifyBotEnv() (*state.Runtime, *analyzer.AdaptiveTrafficAnalyzer) {
-	sharedMem := &state.Runtime{}
+	sharedMem := &state.Runtime{Crawlers: check.NewCrawlerVerifier(slog.New(slog.DiscardHandler))}
 	// Captcha lets requests through when its counter is missing, which would hide a VerifyBot miss.
 	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
 	ata := analyzer.NewAdaptiveTrafficAnalyzer(sharedMem, nil)

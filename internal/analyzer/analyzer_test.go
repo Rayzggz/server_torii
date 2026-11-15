@@ -5,7 +5,6 @@ import (
 	"math"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/gossip"
 	"server_torii/internal/state"
 	"testing"
 	"time"
@@ -425,8 +424,8 @@ func TestDetectorEscalation(t *testing.T) {
 func TestEnforcerBroadcastLimit(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gossipCh := make(chan gossip.Message, 10)
-	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, GossipChan: gossipCh}, "", 2)
+	shared := &sharedRules{}
+	e := newEnforcer(&state.Runtime{ActionRuleEngine: engine, Peers: shared}, "", 2)
 	for i := 0; i < 5; i++ {
 		e.apply("IP", fmt.Sprintf("9.9.9.%d", i), action.ActionBlock, time.Minute, true)
 	}
@@ -434,8 +433,8 @@ func TestEnforcerBroadcastLimit(t *testing.T) {
 	if got := engine.Check("", "", "/search"); got != action.ActionChallengeUnverified {
 		t.Fatalf("URI rule %v, want CAPTCHA_UNVERIFIED", got)
 	}
-	if len(gossipCh) != 3 || e.suppressed != 3 {
-		t.Fatalf("broadcasts %d, suppressed %d; want 3 and 3", len(gossipCh), e.suppressed)
+	if len(*shared) != 3 || e.suppressed != 3 {
+		t.Fatalf("broadcasts %d, suppressed %d; want 3 and 3", len(*shared), e.suppressed)
 	}
 	for i := 0; i < 5; i++ {
 		if !engine.HasIPRule("", fmt.Sprintf("9.9.9.%d", i)) {
@@ -574,4 +573,11 @@ func TestDistinctPagesUseRawPaths(t *testing.T) {
 	if h.evidence.active("9.0.0.2", h.now) {
 		t.Error("redirects counted as browsing")
 	}
+}
+
+// sharedRules records the rules a Runtime shares with the peers.
+type sharedRules []string
+
+func (s *sharedRules) ShareRule(site string, kind action.RuleKind, value string, act action.Action, _ time.Duration) {
+	*s = append(*s, site+"|"+string(kind)+"|"+value+"|"+string(act))
 }

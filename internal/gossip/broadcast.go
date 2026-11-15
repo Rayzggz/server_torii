@@ -1,35 +1,47 @@
 package gossip
 
 import (
-	"encoding/json"
+	"server_torii/internal/action"
 	"time"
 )
 
-// BroadcastActionRule sends an action rule event to the gossip channel
-func BroadcastActionRule(nodeName string, site string, ruleType string, value string, action string, duration time.Duration, gossipChan chan Message) {
-	if gossipChan == nil {
-		return
-	}
+// outboxSize is how many rules of this node may wait to be sent to the peers.
+const outboxSize = 1000
 
-	payload := ActionRulePayload{
-		Site:      site,
-		RuleType:  ruleType,
-		Value:     value,
-		Action:    action,
-		ExpiresAt: time.Now().Add(duration).Unix(),
-	}
+// outboxFullLogInterval keeps a flood from writing a line for every rule that is not shared.
+const outboxFullLogInterval = 10 * time.Second
 
-	payloadBytes, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	select {
-	case gossipChan <- Message{
+// ShareRule queues a rule this node installed for the peers. It never blocks: when the queue is
+// full the rule stays local, and the next sync brings it to the peers anyway.
+func (gm *Manager) ShareRule(site string, kind action.RuleKind, value string, act action.Action, ttl time.Duration) {
+	msg := Message{
 		Type:       TypeActionRule,
-		OriginNode: nodeName,
-		Content:    string(payloadBytes),
-	}:
+		OriginNode: gm.cfg.NodeName,
+		Rule: &ActionRulePayload{
+			Site:      site,
+			RuleType:  string(kind),
+			Value:     value,
+			Action:    string(act),
+			ExpiresAt: time.Now().Add(ttl).Unix(),
+		},
+	}
+	select {
+	case gm.outbox <- msg:
 	default:
+		gm.noteOutboxFull()
+	}
+}
+
+func (gm *Manager) noteOutboxFull() {
+	gm.mu.Lock()
+	gm.unshared++
+	count, now := gm.unshared, time.Now()
+	report := now.Sub(gm.unsharedLog) >= outboxFullLogInterval
+	if report {
+		gm.unshared, gm.unsharedLog = 0, now
+	}
+	gm.mu.Unlock()
+	if report {
+		gm.logger().Warn("gossip: rules not shared at once: too many are waiting to be sent; the next sync carries them", "rules", count)
 	}
 }

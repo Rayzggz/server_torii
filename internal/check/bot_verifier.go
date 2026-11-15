@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"server_torii/internal/state"
 	"sync"
 	"time"
 )
@@ -123,10 +124,27 @@ type botVerifier struct {
 	slots    chan struct{} // one token per lookup in progress
 	refused  int64         // lookups refused at the cap since the last log line
 	busyLog  time.Time
+	log      *slog.Logger
+}
+
+// NewCrawlerVerifier returns the verifier a node shares between all its sites: what DNS said
+// about an address is remembered for every one of them. It logs to logger.
+func NewCrawlerVerifier(logger *slog.Logger) state.CrawlerVerifier {
+	v := newBotVerifier(net.DefaultResolver)
+	v.log = logger
+	return v
+}
+
+// Verify reports whether ip forward-confirms to a host under one of domains. err says why a
+// lookup made for this call failed; it is nil when the answer was remembered.
+func (v *botVerifier) Verify(ip netip.Addr, bot string, domains []string) (bool, error) {
+	verified, _, err := v.verify(ip, bot, domains)
+	return verified, err
 }
 
 func newBotVerifier(resolver botResolver) *botVerifier {
 	return &botVerifier{
+		log:      slog.New(slog.DiscardHandler),
 		resolver: resolver,
 		timeout:  botLookupTimeout,
 		now:      time.Now,
@@ -137,15 +155,13 @@ func newBotVerifier(resolver botResolver) *botVerifier {
 	}
 }
 
-var defaultBotVerifier = newBotVerifier(net.DefaultResolver)
-
 // verify reports whether ip forward-confirms to a host under one of domains.
 // fresh is true when this call performed the lookup; err is set only on fresh calls.
 //
 // When botMaxLookups lookups are already in progress the address is not looked up: it counts
 // as unverified for this request only. Nothing is cached, so it is checked again as soon as
 // there is room.
-func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string, logger *slog.Logger) (verified, fresh bool, err error) {
+func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string) (verified, fresh bool, err error) {
 	key := bot + "|" + ip.String()
 
 	v.mu.Lock()
@@ -166,7 +182,7 @@ func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string, logger
 	select {
 	case v.slots <- struct{}{}:
 	default:
-		v.noteRefusedLocked(now, logger)
+		v.noteRefusedLocked(now)
 		v.mu.Unlock()
 		return false, false, nil
 	}
@@ -205,12 +221,12 @@ func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string, logger
 
 // noteRefusedLocked counts a lookup refused at the cap and logs the count now and then, not once
 // per request: the cap is reached under a flood. The caller holds v.mu.
-func (v *botVerifier) noteRefusedLocked(now time.Time, logger *slog.Logger) {
+func (v *botVerifier) noteRefusedLocked(now time.Time) {
 	v.refused++
 	if now.Sub(v.busyLog) < botBusyLogInterval {
 		return
 	}
-	logger.Warn("crawler lookups refused: too many in progress; the clients are treated as unverified",
+	v.log.Warn("crawler lookups refused: too many in progress; the clients are treated as unverified",
 		"refused", v.refused, "in_progress", botMaxLookups)
 	v.refused = 0
 	v.busyLog = now

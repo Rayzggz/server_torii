@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"server_torii/internal/action"
+	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/geoip"
 	"server_torii/internal/gossip"
@@ -68,7 +69,7 @@ func run() int {
 	rt := &state.Runtime{
 		ActionRuleEngine: engine,
 		CountryResolver:  countryDatabase,
-		NodeName:         cfg.NodeName,
+		Crawlers:         check.NewCrawlerVerifier(logger),
 		Logs:             logs,
 	}
 
@@ -92,9 +93,9 @@ func run() int {
 
 	var gossipManager *gossip.Manager
 	if cfg.EnableGossip {
-		rt.GossipChan = make(chan gossip.Message, 1000)
 		gossipManager = gossip.NewManager(cfg, engine, logger)
-		go gossipManager.Start(rt.GossipChan)
+		rt.Peers = gossipManager
+		go gossipManager.Start()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())

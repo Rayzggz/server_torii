@@ -42,7 +42,11 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 		return
 	}
 
-	verified, _, err := defaultBotVerifier.verify(ip, bot, exptractRDNS, rt.Log())
+	// Without a verifier the claim can be neither confirmed nor refuted: the check does nothing.
+	if rt == nil || rt.Crawlers == nil {
+		return
+	}
+	verified, err := rt.Crawlers.Verify(ip, bot, exptractRDNS)
 	if verified {
 		rt.MarkNeutral(reqData.Site, reqData.ClientKey(), verifiedBotMarkTTL)
 		decision.Set(action.Done)

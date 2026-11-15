@@ -1,6 +1,7 @@
 package check
 
 import (
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
@@ -43,7 +44,7 @@ func TestVerifyBotSkipsWithoutDNS(t *testing.T) {
 			marker := &recordingMarker{}
 			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
 			decision := action.NewDecision()
-			VerifyBot(reqData, tt.ruleSet, decision, &state.Runtime{TrafficMarker: marker})
+			VerifyBot(reqData, tt.ruleSet, decision, &state.Runtime{TrafficMarker: marker, Crawlers: NewCrawlerVerifier(slog.New(slog.DiscardHandler))})
 			if decision.State != action.Continue {
 				t.Fatalf("state = %v, want Continue", decision.State)
 			}
@@ -68,7 +69,7 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 			marker := &recordingMarker{}
 			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: feature.VerifyBot.ControlMask()}
 			decision := action.NewDecision()
-			VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{TrafficMarker: marker})
+			VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{TrafficMarker: marker, Crawlers: NewCrawlerVerifier(slog.New(slog.DiscardHandler))})
 			if decision.State != action.Done || decision.Verdict != action.VerdictBlock {
 				t.Fatalf("decision = (%v, %q), want (Done, 403)", decision.State, decision.Verdict)
 			}
@@ -106,5 +107,15 @@ func TestHostInDomain(t *testing.T) {
 		if got := hostInDomain(tt.host, tt.domain); got != tt.want {
 			t.Errorf("hostInDomain(%q, %q) = %v, want %v", tt.host, tt.domain, got, tt.want)
 		}
+	}
+}
+
+// Without a verifier a crawler claim is neither believed nor punished.
+func TestVerifyBotWithoutAVerifierDoesNothing(t *testing.T) {
+	decision := action.NewDecision()
+	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Addr: request.ParseAddr("203.0.113.5"), UserAgent: "Googlebot/2.1"}
+	VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{})
+	if decision.State == action.Done || decision.Verdict != action.VerdictAllow {
+		t.Fatalf("decision = (%v, %v), want the request to continue", decision.State, decision.Verdict)
 	}
 }

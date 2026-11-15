@@ -5,7 +5,6 @@ import (
 	"context"
 	"log/slog"
 	"server_torii/internal/action"
-	"server_torii/internal/gossip"
 	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"time"
@@ -29,9 +28,12 @@ type Runtime struct {
 	TrafficMarker   TrafficMarker
 	BrowserEvidence BrowserEvidence
 
-	// NodeName and GossipChan are used to share action rules with peers; a nil channel keeps rules local.
-	NodeName   string
-	GossipChan chan gossip.Message
+	// Crawlers verifies the clients that claim to be crawlers; nil leaves the claims unchecked.
+	Crawlers CrawlerVerifier
+
+	// Peers shares the rules this node installs with the other nodes of the cluster; nil keeps
+	// them local.
+	Peers RuleSharer
 
 	// Logs are the log files of the node; nil logs nothing.
 	Logs *logx.Logs
@@ -109,8 +111,8 @@ func (rt *Runtime) ApplyRule(site string, kind action.RuleKind, value string, ac
 		return false
 	}
 	rt.ActionRuleEngine.AddRule(site, kind, value, act, ttl)
-	if broadcast {
-		gossip.BroadcastActionRule(rt.NodeName, site, string(kind), value, string(act), ttl, rt.GossipChan)
+	if broadcast && rt.Peers != nil {
+		rt.Peers.ShareRule(site, kind, value, act, ttl)
 	}
 	return true
 }

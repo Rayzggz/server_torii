@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
 gossip_payload() {
-    local ip=$1 expires=$2 id=$3 origin=$4 stamp=$5 site=${6-default_site} content
-    content=$(jq -cn --arg ip "$ip" --argjson expires "$expires" --arg site "$site" \
-        '{site:$site,rule_type:"IP",value:$ip,action:"block",expires_at:$expires}')
-    PAYLOAD=$(jq -cn --arg id "$id" --arg origin "$origin" --arg content "$content" --argjson stamp "$stamp" \
-        '{v:2,id:$id,type:"ACTION_RULE",content:$content,origin_node:$origin,timestamp:$stamp,seq:1}')
+    local ip=$1 expires=$2 id=$3 origin=$4 stamp=$5 site=${6-default_site}
+    PAYLOAD=$(jq -cn --arg id "$id" --arg origin "$origin" --arg ip "$ip" --argjson expires "$expires" --arg site "$site" --argjson stamp "$stamp" \
+        '{v:2,id:$id,type:"ACTION_RULE",rule:{site:$site,rule_type:"IP",value:$ip,action:"block",expires_at:$expires},origin_node:$origin,timestamp:$stamp,seq:1}')
     SIG=$(hmac "$PAYLOAD" "$SECRET")
 }
 post_gossip() {
@@ -12,7 +10,7 @@ post_gossip() {
 }
 ack() { assert_eq "$HTTP_CODE" 200; assert_eq "$HTTP_BODY" ACK; }
 test_gossip() {
-    local i ip stamp expiration id origin expected case_name count content deadline synced
+    local i ip stamp expiration id origin expected case_name count deadline synced
     # Genuine origin: generate the rule through HTTPFlood and check every node.
     for ((i=1; i<=10; i++)); do
         check 1 203.0.113.200 0000010000000000 "/gossip/$i"
@@ -77,13 +75,12 @@ test_gossip() {
     # SYNC exercises the snapshot receiver and both kinds of dynamic rule. A UA rule, which
     # protocol version 1 had, is dropped without affecting the rest of the snapshot.
     stamp=$(date +%s)
-    content=$(jq -cn --argjson expiry "$((stamp+120))" '{rules:[
+    PAYLOAD=$(jq -cn --arg id "$(uuid)" --argjson expiry "$((stamp+120))" --argjson stamp "$stamp" '{v:2,id:$id,type:"SYNC",rules:[
         {site:"default_site",rule_type:"IP",value:"203.0.113.220",action:"block",expires_at:$expiry},
         {site:"default_site",rule_type:"UA",value:"ToriiE2EUA/1.0",action:"block",expires_at:$expiry},
         {site:"default_site",rule_type:"URI",value:"/sync/limited",action:"challenge",expires_at:$expiry},
-        {site:"default_site",rule_type:"IP",value:"192.168.10.20",action:"block",expires_at:$expiry}]}')
-    PAYLOAD=$(jq -cn --arg id "$(uuid)" --arg content "$content" --argjson stamp "$stamp" \
-        '{v:2,id:$id,type:"SYNC",content:$content,origin_node:"Node_2",timestamp:$stamp,seq:1}')
+        {site:"default_site",rule_type:"IP",value:"192.168.10.20",action:"block",expires_at:$expiry}],
+        origin_node:"Node_2",timestamp:$stamp,seq:1}')
     SIG=$(hmac "$PAYLOAD" "$SECRET")
     post_gossip; ack
     expect block 1 203.0.113.220

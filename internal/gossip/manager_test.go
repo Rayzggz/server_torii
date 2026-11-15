@@ -60,13 +60,13 @@ func TestGossipManager_HandleGossip_OriginNodeValidation(t *testing.T) {
 
 	// Helper to create request
 	createReq := func(originNode string) *http.Request {
-		payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()})
+		payload := ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(1 * time.Hour).Unix()}
 		msg := Message{
 			Version:    ProtocolVersion,
 			ID:         msgID,
 			OriginNode: originNode,
 			Type:       TypeActionRule,
-			Content:    string(payload),
+			Rule:       &payload,
 			Timestamp:  time.Now().Unix(),
 		}
 		data, _ := json.Marshal(msg)
@@ -142,13 +142,13 @@ func TestProcessRemoteMessageIgnoresOtherVersions(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
 	gm := NewManager(&config.MainConfig{NodeName: "node-a"}, engine, nil)
-	payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(time.Hour).Unix()})
+	payload := ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(time.Hour).Unix()}
 
-	gm.processRemoteMessage(Message{Version: 1, ID: "old", Type: TypeActionRule, OriginNode: "node-b", Content: string(payload)})
+	gm.processRemoteMessage(Message{Version: 1, ID: "old", Type: TypeActionRule, OriginNode: "node-b", Rule: &payload})
 	if engine.HasIPRule("site_a", "1.2.3.4") {
 		t.Fatal("a version 1 message installed a rule")
 	}
-	gm.processRemoteMessage(Message{Version: ProtocolVersion, ID: "new", Type: TypeActionRule, OriginNode: "node-b", Content: string(payload)})
+	gm.processRemoteMessage(Message{Version: ProtocolVersion, ID: "new", Type: TypeActionRule, OriginNode: "node-b", Rule: &payload})
 	if !engine.HasIPRule("site_a", "1.2.3.4") {
 		t.Fatal("a current message installed no rule")
 	}

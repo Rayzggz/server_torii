@@ -181,12 +181,13 @@ func TestReportListenerUnderLoad(t *testing.T) {
 		}
 	}
 
-	stats := waitStats(t, l, func(s ReportStats) bool { return s.Received > 0 && s.Accepted+s.Dropped == s.Received })
+	// A report is buffered a moment before it is counted, so the two are compared once they agree
+	// and not at the first instant the counters add up.
+	stats := waitStats(t, l, func(s ReportStats) bool {
+		return s.Received > 0 && s.Accepted+s.Dropped == s.Received && uint64(bufferedSites(a)["shop"]) == s.Accepted
+	})
 	if stats.Accepted == 0 || stats.Malformed != 0 || stats.Unknown != 0 {
 		t.Fatalf("stats = %+v", stats)
-	}
-	if got := uint64(bufferedSites(a)["shop"]); got != stats.Accepted {
-		t.Fatalf("buffered %d entries, accepted %d", got, stats.Accepted)
 	}
 }
 
