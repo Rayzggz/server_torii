@@ -23,9 +23,6 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	speedCounter.Add(ipKey, 1)
 
-	uriKey := ipKey + "|" + reqData.Uri
-	sameURICounter.Add(uriKey, 1)
-
 	// Check failure limit
 	for _, rate := range ruleSet.HTTPFloodRule.FailureLimit {
 		window, limit := rate.Window, rate.Limit
@@ -49,6 +46,11 @@ func HTTPFlood(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 			return
 		}
 	}
+
+	// Counted only now: a request the speed limit turned away does not get a counter for its
+	// URI, so a client cannot make one for every request by varying the query string.
+	uriKey := ipKey + "|" + reqData.Uri
+	sameURICounter.Add(uriKey, 1)
 
 	for _, rate := range ruleSet.HTTPFloodRule.SameURILimit {
 		window, limit := rate.Window, rate.Limit

@@ -116,7 +116,7 @@ func TestHealthCheck(t *testing.T) {
 		t.Fatalf("Content-Type = %q", ct)
 	}
 	lines := strings.Split(rec.Body.String(), "\n")
-	if len(lines) != 11 || lines[0] != "ok" {
+	if len(lines) != 13 || lines[0] != "ok" {
 		t.Fatalf("body = %q", rec.Body.String())
 	}
 	fields := map[string]string{}

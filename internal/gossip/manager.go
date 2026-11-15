@@ -2,9 +2,9 @@ package gossip
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha512"
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -48,6 +48,15 @@ type Manager struct {
 	// unshared counts the rules that found the outbox full since unsharedLog, when it was last logged.
 	unshared    int
 	unsharedLog time.Time
+
+	// senders holds one sender per peer, made when the first message for the peer is sent.
+	sendersMu sync.Mutex
+	senders   map[string]*peerSender
+	// stopCh is closed by Stop; workers counts Start and the senders.
+	lifeOnce sync.Once
+	stopOnce sync.Once
+	stopCh   chan struct{}
+	workers  sync.WaitGroup
 }
 
 // NewManager creates the gossip of a node. It logs to logger; nil logs nothing.
@@ -76,24 +85,37 @@ func (gm *Manager) dropped(why string, attrs ...any) {
 	gm.logger().Warn("gossip dropped: "+why, attrs...)
 }
 
-// Start sends the rules of this node to the peers until the process ends. It does not return.
-func (gm *Manager) Start() {
+// Start sends the rules of this node to the peers until ctx is done or Stop is called. It
+// returns then; Stop also waits for the senders.
+func (gm *Manager) Start(ctx context.Context) {
+	done := gm.life()
+	if gm.stopped() {
+		return
+	}
 	gm.logger().Info("gossip started", "peers", len(gm.cfg.Peers))
 
-	// Start anti-entropy ticker
+	gm.workers.Add(3)
+	defer gm.workers.Done()
 	go gm.startAntiEntropy()
-
-	// Start cleanup ticker for seen messages
 	go gm.cleanupSeenMessages()
 
-	for msg := range gm.outbox {
-		msg.ID = uuid.New().String()
-		msg.Version = ProtocolVersion
-		msg.Timestamp = time.Now().Unix()
-		msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
+	for {
+		select {
+		case msg := <-gm.outbox:
+			msg.ID = uuid.New().String()
+			msg.Version = ProtocolVersion
+			msg.Timestamp = time.Now().Unix()
+			msg.Seq = atomic.AddInt64(&gm.localSeq, 1)
 
-		gm.markSeen(msg.ID)
-		gm.epidemicBroadcast(msg)
+			gm.markSeen(msg.ID)
+			gm.epidemicBroadcast(msg)
+		case <-ctx.Done():
+			// Stop waits for this goroutine too, so it is not called from here.
+			gm.stopOnce.Do(func() { close(gm.stopCh) })
+			return
+		case <-done:
+			return
+		}
 	}
 }
 
@@ -180,12 +202,19 @@ func (gm *Manager) pruneSeenMessagesLocked() {
 }
 
 func (gm *Manager) cleanupSeenMessages() {
+	defer gm.workers.Done()
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
-	for range ticker.C {
-		gm.mu.Lock()
-		gm.pruneSeenMessagesLocked()
-		gm.mu.Unlock()
+	done := gm.life()
+	for {
+		select {
+		case <-ticker.C:
+			gm.mu.Lock()
+			gm.pruneSeenMessagesLocked()
+			gm.mu.Unlock()
+		case <-done:
+			return
+		}
 	}
 }
 
@@ -209,16 +238,26 @@ func (gm *Manager) epidemicBroadcast(msg Message) {
 		if peers[i].Name == gm.cfg.NodeName {
 			continue
 		}
-		go gm.sendGossip(peers[i], msg)
+		gm.enqueue(peers[i], msg)
 		count++
 	}
 }
 
+// startAntiEntropy sends every rule of this node to one peer, chosen anew every interval. It
+// sends the batches itself, one after another: a snapshot is never queued whole, and a peer
+// that is slow delays the next sync, not the rules that are shared as they are made.
 func (gm *Manager) startAntiEntropy() {
+	defer gm.workers.Done()
 	ticker := time.NewTicker(gm.AntiEntropyInterval) // Run every interval
 	defer ticker.Stop()
+	done := gm.life()
 
-	for range ticker.C {
+	for {
+		select {
+		case <-ticker.C:
+		case <-done:
+			return
+		}
 		peers := gm.cfg.Peers
 		if len(peers) == 0 {
 			continue
@@ -276,10 +315,15 @@ func (gm *Manager) sendSyncBatch(peer config.Peer, rules []ActionRulePayload) {
 		Rules:      rules,
 	}
 
-	go gm.sendGossip(peer, msg)
+	if gm.stopped() {
+		return
+	}
+	gm.sendGossip(gm.sender(peer), msg)
 }
 
-func (gm *Manager) sendGossip(p config.Peer, msg Message) {
+// sendGossip sends one message to the peer of s and waits for the answer.
+func (gm *Manager) sendGossip(s *peerSender, msg Message) {
+	p := s.peer
 	url := p.Address + gm.cfg.WebPath + "/gossip"
 
 	data, err := json.Marshal(msg)
@@ -302,27 +346,20 @@ func (gm *Manager) sendGossip(p config.Peer, msg Message) {
 	signature := hex.EncodeToString(mac.Sum(nil))
 	req.Header.Set("X-Torii-Signature", signature)
 
-	client := &http.Client{Timeout: 5 * time.Second}
-
 	if p.Host != "" {
 		req.Host = p.Host
-
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		if transport.TLSClientConfig == nil {
-			transport.TLSClientConfig = &tls.Config{}
-		}
-		transport.TLSClientConfig.ServerName = p.Host
-		client.Transport = transport
-
-		defer transport.CloseIdleConnections()
 	}
 
-	resp, err := client.Do(req)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		gm.logger().Warn("gossip: message not sent", "peer", p.Address, "error", err.Error())
 		return
 	}
-	defer func() { _ = resp.Body.Close() }()
+	// The body is read to its end so the connection can be used again.
+	defer func() {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_ = resp.Body.Close()
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		gm.logger().Warn("gossip: peer refused the message", "peer", p.Address, "status", resp.StatusCode)

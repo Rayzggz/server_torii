@@ -3,7 +3,9 @@ package analyzer
 import (
 	"net"
 	"path/filepath"
+	"runtime"
 	"server_torii/internal/config"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +208,83 @@ func TestIsAssetContentType(t *testing.T) {
 		if got := isAssetContentType(contentType); got != want {
 			t.Errorf("isAssetContentType(%q) = %v, want %v", contentType, got, want)
 		}
+	}
+}
+
+// A flood of reports is not held in memory for a whole interval: what does not fit is counted
+// and left out, and the analysis runs on what was kept.
+func TestAnalyzerKeepsALimitedNumberOfReports(t *testing.T) {
+	a := NewAdaptiveTrafficAnalyzer(nil, reportConfigs())
+	a.reportsPerInterval = 100
+	a.buffer.limit = 250
+
+	entry := LogEntry{
+		Site: "shop", IP: "203.0.113.9", URI: "/", Status: 200, ContentType: "text/html",
+		UserAgent: strings.Repeat("u", 512), Referer: strings.Repeat("r", 512), Host: "shop.example",
+	}
+	for i := 0; i < 300; i++ {
+		a.AddLog(entry)
+	}
+	if got := a.Discarded(); got != 50 {
+		t.Fatalf("discarded at the buffer = %d, want 50", got)
+	}
+	// Nothing the analysis does not read is kept.
+	if kept := a.buffer.entries[0]; kept.UserAgent != "" || kept.Referer != "" || kept.Host != "" ||
+		kept.IP != entry.IP || kept.URI != entry.URI || kept.Status != 200 || kept.ContentType != "text/html" {
+		t.Fatalf("kept entry = %+v", kept)
+	}
+
+	a.processBatchAt(time.Now())
+	if got := len(a.windows["shop"].logs); got != 100 {
+		t.Fatalf("reports kept for the interval = %d, want the limit of 100", got)
+	}
+	if got := a.Discarded(); got != 50+150 {
+		t.Fatalf("discarded = %d, want 200", got)
+	}
+}
+
+// TestAnalyzerMemoryUnderAFlood feeds an interval's worth of flood, every report as large as a
+// report can be, and measures what the analyzer holds of it.
+func TestAnalyzerMemoryUnderAFlood(t *testing.T) {
+	if testing.Short() {
+		t.Skip("feeds two million reports")
+	}
+	heap := func() uint64 {
+		runtime.GC()
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		return m.HeapAlloc
+	}
+	a := NewAdaptiveTrafficAnalyzer(nil, reportConfigs())
+	ua, referer := strings.Repeat("u", 512), strings.Repeat("r", 512)
+	now := time.Now()
+	a.processBatchAt(now) // opens the interval of the site
+
+	before := heap()
+	const reports = 2_000_000
+	var raw uint64
+	for i := 0; i < reports; i++ {
+		// Every report has strings of its own, as reports read from the network do.
+		uri := "/search?q=" + strconv.Itoa(i) + strings.Repeat("x", 200)
+		entry := LogEntry{
+			Site: "shop", IP: "203.0.113." + strconv.Itoa(i%250), URI: uri, Status: 200, ContentType: "text/html",
+			UserAgent: ua + strconv.Itoa(i), Referer: referer + strconv.Itoa(i), Host: "shop.example", Method: "GET",
+		}
+		raw += uint64(len(entry.URI) + len(entry.UserAgent) + len(entry.Referer) + 200)
+		a.AddLog(entry)
+		if i%100_000 == 99_999 {
+			a.processBatchAt(now) // the tick of every second, within the interval
+		}
+	}
+	held := heap() - before
+	runtime.KeepAlive(a)
+	kept := len(a.windows["shop"].logs)
+	t.Logf("%d reports, about %d MB as received: the analyzer holds %d of them in %d MB and discarded %d",
+		reports, raw>>20, kept, held>>20, a.Discarded())
+	if kept != maxReportsPerInterval || a.Discarded() != reports-maxReportsPerInterval {
+		t.Fatalf("kept %d, discarded %d", kept, a.Discarded())
+	}
+	if held > raw/10 {
+		t.Fatalf("the analyzer holds %d MB of a %d MB flood", held>>20, raw>>20)
 	}
 }

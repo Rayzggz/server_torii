@@ -135,6 +135,8 @@ type ReportStats struct {
 	Malformed uint64 // not a valid report
 	Unknown   uint64 // for a site that does not exist or has traffic analysis switched off
 	Dropped   uint64 // discarded because the queue was full
+	// Discarded counts accepted reports the analyzer did not analyze: more were waiting than it keeps.
+	Discarded uint64
 }
 
 // ReportListener receives request reports on UDP and Unix datagram sockets.
@@ -182,6 +184,7 @@ func (l *ReportListener) Stats() ReportStats {
 		Malformed: l.malformed.Load(),
 		Unknown:   l.unknown.Load(),
 		Dropped:   l.dropped.Load(),
+		Discarded: l.analyzer.Discarded(),
 	}
 }
 

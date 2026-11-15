@@ -95,11 +95,15 @@ func run() int {
 	if cfg.EnableGossip {
 		gossipManager = gossip.NewManager(cfg, engine, logger)
 		rt.Peers = gossipManager
-		go gossipManager.Start()
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	if gossipManager != nil {
+		go gossipManager.Start(ctx)
+		defer gossipManager.Stop()
+	}
 
 	go rt.RunGC(ctx, time.Minute)
 

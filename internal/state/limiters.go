@@ -43,6 +43,17 @@ func (l *Limiters) Resize(w config.CounterWindows) {
 	resize(&l.ChallengeFailureLimitCounter, w.ChallengeFailure)
 }
 
+// Untracked returns how many events the counters did not count because they were full.
+func (l *Limiters) Untracked() uint64 {
+	var n uint64
+	for _, p := range l.all() {
+		if c := p.Load(); c != nil {
+			n += c.Untracked()
+		}
+	}
+	return n
+}
+
 // GC drops expired records from every counter.
 func (l *Limiters) GC() {
 	for _, p := range l.all() {
@@ -90,6 +101,18 @@ func (s *SiteLimiters) ResizeSites(windows map[string]config.CounterWindows) {
 		next[site] = l
 	}
 	s.sites.Store(&next)
+}
+
+// Untracked returns how many events the counters of every site did not count because they were
+// full. A counter that was replaced takes its count with it.
+func (s *SiteLimiters) Untracked() uint64 {
+	n := s.Limiters.Untracked()
+	if sites := s.sites.Load(); sites != nil {
+		for _, l := range *sites {
+			n += l.Untracked()
+		}
+	}
+	return n
 }
 
 // GC drops expired records from the counters of every site.

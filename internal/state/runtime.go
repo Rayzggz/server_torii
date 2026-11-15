@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/logx"
+	"server_torii/internal/ratelimit"
 	"server_torii/internal/request"
 	"time"
 )
@@ -120,4 +121,27 @@ func (rt *Runtime) ApplyRule(site string, kind action.RuleKind, value string, ac
 // BlockIP blocks ip on one site of this node and shares the block with peers.
 func (rt *Runtime) BlockIP(site, ip string, ttl time.Duration) bool {
 	return rt.ApplyRule(site, action.RuleIP, ip, action.ActionBlock, ttl, true)
+}
+
+// RunGC drops expired records from the rate counters every interval until ctx is done, and
+// logs when the counters were full since the last time.
+func (rt *Runtime) RunGC(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	var reported uint64
+	for {
+		select {
+		case <-ticker.C:
+			rt.GC()
+			if total := rt.Untracked(); total > reported {
+				rt.Log().Warn("rate counters full: requests of new clients were not counted and not limited",
+					"requests", total-reported, "keys_per_counter", ratelimit.DefaultMaxKeys)
+				reported = total
+			} else {
+				reported = total
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }

@@ -111,8 +111,14 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	builder.WriteString(s.cfg.NodeName)
 	// What became of the request reports of the connector; all zero means none arrive.
 	reports := s.reports.Load().Stats()
-	fmt.Fprintf(&builder, "\nreports_received=%d\nreports_accepted=%d\nreports_malformed=%d\nreports_unknown_site=%d\nreports_dropped=%d",
-		reports.Received, reports.Accepted, reports.Malformed, reports.Unknown, reports.Dropped)
+	fmt.Fprintf(&builder, "\nreports_received=%d\nreports_accepted=%d\nreports_malformed=%d\nreports_unknown_site=%d\nreports_dropped=%d\nreports_discarded=%d",
+		reports.Received, reports.Accepted, reports.Malformed, reports.Unknown, reports.Dropped, reports.Discarded)
+	// Requests the rate counters did not count because they were full; see ratelimit.Counter.
+	var untracked uint64
+	if s.rt != nil {
+		untracked = s.rt.Untracked()
+	}
+	fmt.Fprintf(&builder, "\ncounter_untracked=%d", untracked)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)

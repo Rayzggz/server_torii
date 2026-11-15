@@ -6,13 +6,15 @@ import (
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
 // LogEntry is one served request as the connector reported it.
 //
-// Site, IP, URI, Status, Decision and ContentType drive the analysis. The remaining fields are
-// kept for detections that do not exist yet; nothing reads them so far.
+// Site, IP, URI, Status, Decision and ContentType drive the analysis, and they are all that
+// is kept of a report until its interval is analyzed. The remaining fields are for detections
+// that do not exist yet; nothing reads them so far.
 type LogEntry struct {
 	Site   string // ID of the site, resolved: never empty once the entry is in the buffer
 	IP     string
@@ -50,22 +52,40 @@ func (e *LogEntry) answeredByTorii() bool {
 	return e.Decision != "" && e.Decision != action.VerdictAllow.String()
 }
 
-// LogBuffer is a thread-safe buffer for LogEntries
+// What the analyzer holds of the reports that wait to be analyzed. Reports arrive as fast as
+// requests are served, so without a limit a flood is held in memory for a whole interval.
+const (
+	// maxBufferedReports is how many reports wait for the next tick, a second away.
+	maxBufferedReports = 1_000_000
+	// maxReportsPerInterval is how many reports of one site are kept for one analysis. The
+	// detections count requests and clients in the hundreds; a site that sends more than this
+	// in an interval is judged on the first of them.
+	maxReportsPerInterval = 200_000
+)
+
+// LogBuffer is a thread-safe buffer for LogEntries. It holds a limited number of them.
 type LogBuffer struct {
 	mu      sync.Mutex
 	entries []LogEntry
+	limit   int
 }
 
 func NewLogBuffer() *LogBuffer {
 	return &LogBuffer{
 		entries: make([]LogEntry, 0, 1000),
+		limit:   maxBufferedReports,
 	}
 }
 
-func (lb *LogBuffer) Add(entry LogEntry) {
+// Add reports whether the entry was taken; it is not when the buffer is full.
+func (lb *LogBuffer) Add(entry LogEntry) bool {
 	lb.mu.Lock()
 	defer lb.mu.Unlock()
+	if len(lb.entries) >= lb.limit {
+		return false
+	}
 	lb.entries = append(lb.entries, entry)
+	return true
 }
 
 func (lb *LogBuffer) Swap() []LogEntry {
@@ -112,6 +132,18 @@ type AdaptiveTrafficAnalyzer struct {
 	// default. Set it before Start.
 	IPv6PrefixBits int
 	lastSweep      time.Time
+	// discarded counts the reports that were not analyzed because too many were waiting.
+	discarded atomic.Uint64
+	// reportsPerInterval is maxReportsPerInterval, lower in tests.
+	reportsPerInterval int
+}
+
+// Discarded returns how many reports were not analyzed because too many were waiting.
+func (ata *AdaptiveTrafficAnalyzer) Discarded() uint64 {
+	if ata == nil {
+		return 0
+	}
+	return ata.discarded.Load()
 }
 
 // ingestSettings is the part of a rule needed to record browser evidence as logs arrive.
@@ -121,11 +153,13 @@ type ingestSettings struct {
 }
 
 type analysisWindow struct {
-	interval time.Duration
-	start    time.Time
-	next     time.Time
-	logs     []LogEntry
-	state    *siteState
+	// discarded counts the reports of this interval that did not fit in logs.
+	discarded int
+	interval  time.Duration
+	start     time.Time
+	next      time.Time
+	logs      []LogEntry
+	state     *siteState
 }
 
 // NewAdaptiveTrafficAnalyzer builds an analyzer that reads site rules from configs and enforces through rt.
@@ -210,7 +244,15 @@ func analyzed(rules *config.RuleSet) bool {
 
 func (ata *AdaptiveTrafficAnalyzer) AddLog(entry LogEntry) {
 	ata.recordEvidence(entry, time.Now())
-	ata.buffer.Add(entry)
+	// Only what the analysis reads is kept: a report can carry kilobytes of URI, user agent
+	// and referer, and it waits here for up to an interval.
+	kept := LogEntry{
+		Site: entry.Site, IP: entry.IP, URI: entry.URI, Status: entry.Status,
+		Decision: entry.Decision, ContentType: entry.ContentType,
+	}
+	if !ata.buffer.Add(kept) {
+		ata.discarded.Add(1)
+	}
 }
 
 // recordEvidence marks browser evidence as soon as a log arrives, so a page view followed
@@ -323,9 +365,24 @@ func (ata *AdaptiveTrafficAnalyzer) processBatchAt(now time.Time) {
 			window.interval = interval
 			window.next = window.start.Add(interval)
 		}
-		window.logs = append(window.logs, logsBySite[site]...)
+		arrived := logsBySite[site]
+		limit := ata.reportsPerInterval
+		if limit <= 0 {
+			limit = maxReportsPerInterval
+		}
+		if room := limit - len(window.logs); len(arrived) > room {
+			window.discarded += len(arrived) - room
+			ata.discarded.Add(uint64(len(arrived) - room))
+			arrived = arrived[:room]
+		}
+		window.logs = append(window.logs, arrived...)
 		if now.Before(window.next) {
 			continue
+		}
+		if window.discarded > 0 {
+			ata.rt.SiteLog(site).Warn("request reports discarded: more than the analyzer keeps for one interval; the interval is judged on the first of them",
+				"source", "traffic_analyzer", "discarded", window.discarded, "kept", len(window.logs))
+			window.discarded = 0
 		}
 		if len(window.logs) > 0 {
 			ctx := &analysisContext{
