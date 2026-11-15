@@ -63,6 +63,7 @@ global_secret: "integration-secret-0123456789abcdef"
 sites:
   - id: "default_site"
     rule_path: "`+filepath.ToSlash(ruleDir)+`"
+default_site: "default_site"
 `)
 
 	cfg, err := LoadMainConfig(tempDir)

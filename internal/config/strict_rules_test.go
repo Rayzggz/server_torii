@@ -34,6 +34,7 @@ func TestLoadRules_Strict(t *testing.T) {
 		"bad rate":                  {strings.Replace(strictHTTPFlood, "5/10s", "fast", 1), "fast"},
 		"bad block duration":        {strings.Replace(strictHTTPFlood, "300", "0", 1), "http_flood.failure_block_duration: field is required"},
 		"incomplete challenge":      {"challenge: {enabled: false}", "challenge.clearance_ttl: field is required"},
+		"second document":           {"lists: []\n---\nlists: []", "more than one YAML document"},
 		"hcaptcha without secret":   {"challenge: {mode: hcaptcha, clearance_ttl: 5s}", "challenge.hcaptcha_secret: field is required with this mode"},
 		"external without secret":   {"challenge: {mode: external, clearance_ttl: 5s}", "challenge.external_secret: field is required with this mode"},
 		"old cookie key of a site":  {"challenge: {mode: hcaptcha, secret_key: 1234567890abcdef}", `unknown field "secret_key"`},

@@ -30,8 +30,8 @@ type MainConfig struct {
 	// setting of this file that SIGHUP reads again.
 	LogLevel string `yaml:"log_level" validate:"oneof=debug info warn error"`
 	// GlobalSecret is the one secret of a cluster: it signs gossip messages, and the key that
-	// signs the cookies of every site is derived from it. With gossip enabled it must not be
-	// the published example value.
+	// signs the cookies of every site is derived from it. It must not be the published example
+	// value.
 	GlobalSecret string `yaml:"global_secret" validate:"required,min=32"`
 	NodeName     string `yaml:"node_name" validate:"required"`
 	Sites        []Site `yaml:"sites" validate:"min=1,dive"`

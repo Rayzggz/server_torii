@@ -40,12 +40,20 @@ var bareDurationError = regexp.MustCompile("cannot unmarshal \\S+ `([^`]*)` into
 
 // decodeStrict decodes YAML into out and rejects keys out has no field for, so a misspelled
 // key is an error instead of a setting that silently keeps its default. An empty document
-// leaves out unchanged.
+// leaves out unchanged. A file holds one document: what follows a `---` would otherwise be
+// settings that are silently not applied.
 func decodeStrict(data []byte, out any) error {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	dec.KnownFields(true)
 	err := dec.Decode(out)
-	if err == nil || errors.Is(err, io.EOF) {
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	if err == nil {
+		var extra yaml.Node
+		if err := dec.Decode(&extra); !errors.Is(err, io.EOF) {
+			return errors.New("the file holds more than one YAML document: remove the `---` and what follows it, or merge it into the first document")
+		}
 		return nil
 	}
 	// The Go type names mean nothing to whoever edits the file.

@@ -70,8 +70,8 @@ watch:
 | — | `unix_socket_mode`, `ipv6_prefix`, `log_level` |
 | — | `sites: - error_page:` gives a site pages of its own |
 
-The example `global_secret` is public. It is refused when gossip is enabled, and you should
-replace it in any case: whoever knows it can issue clearance cookies.
+The example `global_secret` is public, and whoever knows it can issue clearance cookies: 2.0
+refuses to start with it. Generate your own, for example with `openssl rand -hex 16`.
 
 IPv6 clients are now counted per network, a `/64` unless `ipv6_prefix` says otherwise: rate
 limits, temporary blocks and traffic analysis treat the whole network as one client.

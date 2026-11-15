@@ -69,6 +69,7 @@ func TestLoadMainConfig_Rejects(t *testing.T) {
 		"duplicate site id":    {"sites:\n  - id: a\n    rule_path: .\n  - id: a\n    rule_path: .", `sites[1].id: duplicate id "a"`},
 		"no sites":             {"sites: []", "sites: list needs at least 1 entry"},
 		"unknown default site": {"default_site: nowhere", `default_site: "nowhere" is not one of the configured sites`},
+		"second document":      {"web_path: /torii\n---\nweb_path: /other", "more than one YAML document"},
 		"bad log level":        {"log_level: verbose", "log_level: value must be one of: debug info warn error"},
 		"bad peer address":     {"peers:\n  - name: b\n    address: not-a-url", "peers[0].address: value must be a valid URL"},
 	} {
@@ -110,7 +111,7 @@ func TestLoadMainConfig_PartialConfigKeepsDefaults(t *testing.T) {
 	if cfg.ConfigDir != dir {
 		t.Fatalf("ConfigDir = %q, want %q", cfg.ConfigDir, dir)
 	}
-	if cfg.ErrorPage != DefaultErrorPage || cfg.LogPath != DefaultLogPath || cfg.DefaultSite != DefaultSiteID || cfg.LogLevel != "info" {
+	if cfg.ErrorPage != DefaultErrorPage || cfg.LogPath != DefaultLogPath || cfg.DefaultSite != "" || cfg.LogLevel != "info" {
 		t.Fatalf("defaults lost: %+v", cfg)
 	}
 	if cfg.EnableGossip || len(cfg.Peers) != 0 {
@@ -145,7 +146,8 @@ func TestLoadMainConfig_FullConfig(t *testing.T) {
 	}
 }
 
-// The shipped example must stay loadable; only its paths are specific to an installation.
+// The shipped example must stay loadable once it has a secret of its own; only that and its
+// paths are specific to an installation. As shipped it is refused, for the secret alone.
 func TestLoadMainConfig_Example(t *testing.T) {
 	example, err := os.ReadFile(filepath.Join("..", "..", "config_example", "torii.yml"))
 	if err != nil {
@@ -155,7 +157,12 @@ func TestLoadMainConfig_Example(t *testing.T) {
 	text := strings.ReplaceAll(string(example), "/www/server_torii/config/rules/default", filepath.ToSlash(dir))
 	text = strings.ReplaceAll(text, "/www/server_torii/config/rules/example.com", filepath.ToSlash(dir))
 	writeFile(t, filepath.Join(dir, "torii.yml"), text)
+	_, err = LoadMainConfig(dir)
+	if err == nil || strings.Count(err.Error(), "\n") != 1 || !strings.Contains(err.Error(), "global_secret: this is the public value") {
+		t.Fatalf("the example as shipped: error = %v, want the public secret refused and nothing else", err)
+	}
 
+	writeFile(t, filepath.Join(dir, "torii.yml"), strings.ReplaceAll(text, DefaultGlobalSecret, testGlobalSecret))
 	if _, err := LoadMainConfig(dir); err != nil {
 		t.Fatalf("the example configuration does not load: %v", err)
 	}

@@ -101,7 +101,7 @@ type challengeRuleWrapper struct {
 	SessionTTL           time.Duration `yaml:"session_ttl" validate:"required_unless=Mode external,omitempty,min=1s"`
 	HCaptchaSecret       string        `yaml:"hcaptcha_secret" validate:"required_if=Mode hcaptcha"`
 	AltchaHMACSecret     string        `yaml:"altcha_hmac_secret"`
-	AltchaCost           int           `yaml:"altcha_cost"`
+	AltchaCost           int           `yaml:"altcha_cost" validate:"min=0"` // 0 means DefaultAltchaCost
 	RedirectURL          string        `yaml:"redirect_url" validate:"required_if=Mode external,omitempty,url"`
 	FailureLimit         []string      `yaml:"failure_limit" validate:"min=1,dive"`
 	FailureBlockDuration time.Duration `yaml:"failure_block_duration" validate:"required,min=1s"`

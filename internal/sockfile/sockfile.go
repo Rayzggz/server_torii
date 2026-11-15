@@ -2,6 +2,7 @@
 package sockfile
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -9,8 +10,12 @@ import (
 )
 
 // RemoveStale deletes the socket file a crashed process left at path, which would otherwise make
-// the bind fail. network is "unix" or "unixgram". It refuses to touch a socket that still has a
-// listener, and a path that is not a socket.
+// the bind fail. network is "unix" or "unixgram".
+//
+// It deletes nothing but a socket that refuses connections, which is what a socket without a
+// process behind it does. Any other file at path, a socket that answers, and a socket that
+// cannot be tried (no permission, a socket of the other kind) are left alone and reported: a
+// mistyped path must not cost a file.
 func RemoveStale(network, path string) error {
 	info, err := os.Lstat(path)
 	if os.IsNotExist(err) {
@@ -19,14 +24,16 @@ func RemoveStale(network, path string) error {
 	if err != nil {
 		return err
 	}
-	// A socket file is empty; anything with content, and any directory, is something else.
-	if info.IsDir() || (info.Mode().IsRegular() && info.Size() > 0) {
+	if info.Mode()&os.ModeSocket == 0 {
 		return fmt.Errorf("%s exists and is not a socket", path)
 	}
-	// Connecting succeeds only while a process is bound to the socket, for datagram sockets too.
-	if conn, err := net.DialTimeout(network, path, time.Second); err == nil {
+	conn, err := net.DialTimeout(network, path, time.Second)
+	if err == nil {
 		_ = conn.Close()
 		return fmt.Errorf("socket %s is in use by another process", path)
+	}
+	if !errors.Is(err, errConnRefused) {
+		return fmt.Errorf("socket %s exists and cannot be checked for a listener: %w", path, err)
 	}
 	return os.Remove(path)
 }

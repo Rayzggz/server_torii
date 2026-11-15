@@ -14,7 +14,8 @@ func TestDefaultMainConfig(t *testing.T) {
 	if cfg.GlobalSecret != "" {
 		t.Errorf("GlobalSecret = %q, want none: a secret must be configured, not defaulted", cfg.GlobalSecret)
 	}
-	if len(cfg.Sites) != 1 || cfg.DefaultSite != cfg.Sites[0].ID {
+	// No site is the default unless the configuration names one.
+	if len(cfg.Sites) != 1 || cfg.DefaultSite != "" {
 		t.Errorf("Sites = %v, DefaultSite = %q", cfg.Sites, cfg.DefaultSite)
 	}
 }

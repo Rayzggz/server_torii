@@ -142,9 +142,10 @@ func getValidationErrorMessage(fe validator.FieldError) string {
 // validateMainConfig returns every problem in the main configuration.
 func validateMainConfig(cfg *MainConfig) error {
 	problems := []error{validateStruct(cfg, "")}
-	if cfg.EnableGossip && cfg.GlobalSecret == DefaultGlobalSecret {
+	// The secret signs the cookies of every site, with gossip or without.
+	if cfg.GlobalSecret == DefaultGlobalSecret {
 		problems = append(problems, errors.New("global_secret: this is the public value from the example configuration, "+
-			"so anyone could forge gossip messages; set a random one, e.g. the output of `openssl rand -hex 16`"))
+			"so anyone could issue clearance cookies and forge gossip messages; set a random one, e.g. the output of `openssl rand -hex 16`"))
 	}
 	if len(cfg.Listen) > 0 && len(cfg.LogListenAddrs()) == 0 {
 		problems = append(problems, errors.New("log_listen: field is required when listen has no TCP address to take the port from"))

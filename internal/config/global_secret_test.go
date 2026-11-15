@@ -16,7 +16,7 @@ func TestLoadMainConfig_GlobalSecret(t *testing.T) {
 		"no secret":                 {"", "global_secret: field is required"},
 		"empty secret":              {"global_secret: \"\"", "global_secret: field is required"},
 		"own secret":                {"global_secret: 9f86d081884c7d659a2feaa0c55ad015", ""},
-		"no gossip, public secret":  {"global_secret: " + DefaultGlobalSecret, ""},
+		"no gossip, public secret":  {"global_secret: " + DefaultGlobalSecret, "public value from the example configuration"},
 		"gossip, own secret":        {"enable_gossip: true\nglobal_secret: 9f86d081884c7d659a2feaa0c55ad015", ""},
 		"gossip, no secret":         {"enable_gossip: true", "global_secret: field is required"},
 		"gossip, short secret":      {"enable_gossip: true\nglobal_secret: short", "global_secret: value must be at least 32 characters long"},

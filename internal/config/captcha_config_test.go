@@ -77,6 +77,7 @@ func TestMapChallengeRuleRejects(t *testing.T) {
 		"unknown mode":                {func(w *challengeRuleWrapper) { w.Mode = "recaptcha" }, "challenge.mode"},
 		"external without url":        {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "challenge.redirect_url"},
 		"external with bad url":       {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal; w.RedirectURL = "provider" }, "challenge.redirect_url"},
+		"negative altcha cost":        {func(w *challengeRuleWrapper) { w.AltchaCost = -1 }, "challenge.altcha_cost: value must be at least 0"},
 		"hcaptcha without secret":     {func(w *challengeRuleWrapper) { w.HCaptchaSecret = "" }, "challenge.hcaptcha_secret: field is required with this mode"},
 		"external without secret":     {func(w *challengeRuleWrapper) { w.Mode = ChallengeExternal }, "challenge.external_secret: field is required with this mode"},
 		"short external secret":       {func(w *challengeRuleWrapper) { w.ExternalSecret = "short" }, "challenge.external_secret: value must be at least 16 characters long"},
