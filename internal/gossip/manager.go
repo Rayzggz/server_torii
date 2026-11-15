@@ -10,7 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"math/rand"
 	"net"
 	"net/http"
@@ -42,10 +42,13 @@ type Manager struct {
 	maxSeenEntries      int
 	rng                 *rand.Rand
 	rngMu               sync.Mutex
+	log                 *slog.Logger // nil logs nothing
 }
 
-func NewManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine) *Manager {
+// NewManager creates the gossip of a node. It logs to logger; nil logs nothing.
+func NewManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine, logger *slog.Logger) *Manager {
 	return &Manager{
+		log:                 logger,
 		cfg:                 cfg,
 		actionEngine:        actionEngine,
 		seenMessages:        make(map[string]time.Time),
@@ -55,8 +58,20 @@ func NewManager(cfg *config.MainConfig, actionEngine *action.ActionRuleEngine) *
 	}
 }
 
+func (gm *Manager) logger() *slog.Logger {
+	if gm.log == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	return gm.log
+}
+
+// dropped logs a message, or a part of one, that was received and not applied.
+func (gm *Manager) dropped(why string, attrs ...any) {
+	gm.logger().Warn("gossip dropped: "+why, attrs...)
+}
+
 func (gm *Manager) Start(gossipChan <-chan Message) {
-	log.Printf("GossipManager started, listening for events...")
+	gm.logger().Info("gossip started", "peers", len(gm.cfg.Peers))
 
 	// Start anti-entropy ticker
 	go gm.startAntiEntropy()
@@ -162,7 +177,7 @@ func (gm *Manager) pruneSeenMessagesLocked() {
 			delete(gm.seenMessages, id)
 			removedCount++
 		}
-		log.Printf("[GOSSIP-W] Pruned %d messages from seen cache (size was %d)", removedCount, len(gm.seenMessages)+removedCount)
+		gm.logger().Warn("gossip: seen-message cache full, oldest entries dropped", "dropped", removedCount, "size_before", len(gm.seenMessages)+removedCount)
 	}
 }
 
@@ -256,7 +271,7 @@ func (gm *Manager) startAntiEntropy() {
 func (gm *Manager) sendSyncBatch(peer config.Peer, batch ActionRuleSyncPayload) {
 	content, err := json.Marshal(batch)
 	if err != nil {
-		log.Printf("[ERROR] Failed to marshal snapshot batch for anti-entropy: %v", err)
+		gm.logger().Error("gossip: sync batch not encoded", "error", err.Error())
 		return
 	}
 
@@ -277,13 +292,13 @@ func (gm *Manager) sendGossip(p config.Peer, msg Message) {
 
 	data, err := json.Marshal(msg)
 	if err != nil {
-		log.Printf("[ERROR] Failed to marshal gossip message: %v", err)
+		gm.logger().Error("gossip: message not encoded", "error", err.Error())
 		return
 	}
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(data))
 	if err != nil {
-		log.Printf("[ERROR] Failed to create request for peer %s: %v", p.Address, err)
+		gm.logger().Error("gossip: request not created", "peer", p.Address, "error", err.Error())
 		return
 	}
 
@@ -312,18 +327,16 @@ func (gm *Manager) sendGossip(p config.Peer, msg Message) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Printf("[WARNING] Failed to send gossip to peer %s: %v", p.Address, err)
+		gm.logger().Warn("gossip: message not sent", "peer", p.Address, "error", err.Error())
 		return
 	}
-	defer func() {
-		if err := resp.Body.Close(); err != nil {
-			log.Printf("[WARNING] Failed to close response body from %s: %v", p.Address, err)
-		}
-	}()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[WARNING] Peer %s returned status %d", p.Address, resp.StatusCode)
+		gm.logger().Warn("gossip: peer refused the message", "peer", p.Address, "status", resp.StatusCode)
+		return
 	}
+	gm.logger().Debug("gossip: message sent", "id", msg.ID, "type", string(msg.Type), "peer", p.Address)
 }
 
 func (gm *Manager) HandleGossip(w http.ResponseWriter, r *http.Request) {
@@ -345,25 +358,25 @@ func (gm *Manager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 
 	// Check msg.ID constraints (UUID v4)
 	if msg.ID == "" {
-		log.Printf("[SECURITY] Dropped gossip with empty ID from %s", r.RemoteAddr)
+		gm.dropped("empty message ID", "from", r.RemoteAddr)
 		http.Error(w, "Forbidden: Empty Message ID", http.StatusForbidden)
 		return
 	}
 	u, err := uuid.Parse(msg.ID)
 	if err != nil {
-		log.Printf("[SECURITY] Dropped gossip with invalid UUID from %s: %s", r.RemoteAddr, msg.ID)
+		gm.dropped("message ID is not a UUID", "from", r.RemoteAddr, "id", msg.ID)
 		http.Error(w, "Forbidden: Invalid Message ID", http.StatusForbidden)
 		return
 	}
 	if u.Version() != 4 {
-		log.Printf("[SECURITY] Dropped gossip with non-v4 UUID from %s: %s (v%d)", r.RemoteAddr, msg.ID, u.Version())
+		gm.dropped("message ID is not a version 4 UUID", "from", r.RemoteAddr, "id", msg.ID)
 		http.Error(w, "Forbidden: UUID v4 required", http.StatusForbidden)
 		return
 	}
 
 	// Verify OriginNode is in Peers list
 	if !gm.isKnownPeer(msg.OriginNode) {
-		log.Printf("[SECURITY] Received gossip from unknown node: %s", msg.OriginNode)
+		gm.dropped("origin is not a peer", "from", r.RemoteAddr, "origin", msg.OriginNode)
 		http.Error(w, "Forbidden: Unknown OriginNode", http.StatusForbidden)
 		return
 	}
@@ -373,9 +386,9 @@ func (gm *Manager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 	msgTime := time.Unix(msg.Timestamp, 0)
 
 	if now.Sub(msgTime) > MaxAge {
-		log.Printf("[SECURITY] Dropped old gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
+		gm.dropped("message too old", "origin", msg.OriginNode, "timestamp", msg.Timestamp)
 	} else if msgTime.Sub(now) > MaxSkew {
-		log.Printf("[SECURITY] Dropped future gossip from %s: ts=%d", msg.OriginNode, msg.Timestamp)
+		gm.dropped("message from the future", "origin", msg.OriginNode, "timestamp", msg.Timestamp)
 	} else {
 		// Processing
 		gm.processRemoteMessage(msg)
@@ -383,14 +396,14 @@ func (gm *Manager) HandleGossip(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 	if _, err := w.Write([]byte("ACK")); err != nil {
-		log.Printf("[ERROR] Failed to write ACK response: %v", err)
+		gm.logger().Warn("gossip: acknowledgement not written", "error", err.Error())
 	}
 }
 
 func (gm *Manager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	// Check Content-Length if provided
 	if r.ContentLength > maxGossipBodySize {
-		log.Printf("[SECURITY] Rejected oversized gossip request from %s (Content-Length: %d)", r.RemoteAddr, r.ContentLength)
+		gm.dropped("request too large", "from", r.RemoteAddr, "content_length", r.ContentLength)
 		http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
 		return nil, false
 	}
@@ -398,21 +411,21 @@ func (gm *Manager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]
 	// Verify HMAC-SHA512 Signature Header EARLY (before reading body)
 	signatureHeader := r.Header.Get("X-Torii-Signature")
 	if signatureHeader == "" {
-		log.Printf("[SECURITY] Missing signature from %s", r.RemoteAddr)
+		gm.dropped("no signature", "from", r.RemoteAddr)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return nil, false
 	}
 
 	// SHA-512 is 64 bytes -> 128 hex characters
 	if len(signatureHeader) != 128 {
-		log.Printf("[SECURITY] Invalid signature length from %s (%d chars)", r.RemoteAddr, len(signatureHeader))
+		gm.dropped("signature has the wrong length", "from", r.RemoteAddr, "length", len(signatureHeader))
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return nil, false
 	}
 
 	sigBytes, err := hex.DecodeString(signatureHeader)
 	if err != nil {
-		log.Printf("[SECURITY] Invalid signature format from %s", r.RemoteAddr)
+		gm.dropped("signature is not hex", "from", r.RemoteAddr)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return nil, false
 	}
@@ -425,26 +438,22 @@ func (gm *Manager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]
 	if err != nil {
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			log.Printf("[SECURITY] Dropped oversized gossip request from %s", r.RemoteAddr)
+			gm.dropped("request too large", "from", r.RemoteAddr)
 			http.Error(w, "Request Entity Too Large", http.StatusRequestEntityTooLarge)
 		} else {
-			log.Printf("[ERROR] Failed to read gossip body: %v", err)
+			gm.logger().Warn("gossip: request not read", "from", r.RemoteAddr, "error", err.Error())
 			http.Error(w, "Failed to read body", http.StatusInternalServerError)
 		}
 		return nil, false
 	}
-	defer func() {
-		if err := r.Body.Close(); err != nil {
-			log.Printf("[WARNING] readAndVerifyBody: Failed to close request body: %v", err)
-		}
-	}()
+	defer func() { _ = r.Body.Close() }()
 
 	mac := hmac.New(sha512.New, []byte(gm.cfg.GlobalSecret))
 	mac.Write(body)
 	expectedMAC := mac.Sum(nil)
 
 	if !hmac.Equal(sigBytes, expectedMAC) {
-		log.Printf("[SECURITY] Invalid signature from %s", r.RemoteAddr)
+		gm.dropped("wrong signature", "from", r.RemoteAddr)
 		http.Error(w, "Forbidden", http.StatusForbidden)
 		return nil, false
 	}
@@ -455,11 +464,13 @@ func (gm *Manager) readAndVerifyBody(w http.ResponseWriter, r *http.Request) ([]
 func (gm *Manager) processRemoteMessage(msg Message) {
 	// Deduplication
 	if gm.checkAndMarkSeen(msg.ID) {
+		gm.logger().Debug("gossip: message seen before", "id", msg.ID, "origin", msg.OriginNode)
 		return
 	}
+	gm.logger().Debug("gossip: message received", "id", msg.ID, "type", string(msg.Type), "origin", msg.OriginNode)
 	if msg.Version != ProtocolVersion {
-		log.Printf("[GOSSIP] Ignored a message from %s: it speaks protocol version %d, this node speaks %d. Upgrade every node of the cluster to the same release.",
-			msg.OriginNode, msg.Version, ProtocolVersion)
+		gm.dropped("protocol version differs: upgrade every node of the cluster to the same release",
+			"origin", msg.OriginNode, "version", msg.Version, "own_version", ProtocolVersion)
 		return
 	}
 	now := time.Now()
@@ -475,12 +486,12 @@ func (gm *Manager) processRemoteMessage(msg Message) {
 func (gm *Manager) processActionRule(msg Message, now time.Time) {
 	var payload ActionRulePayload
 	if err := json.Unmarshal([]byte(msg.Content), &payload); err != nil {
-		log.Printf("[ERROR] Failed to unmarshal action rule gossip: %v", err)
+		gm.dropped("rule not decoded", "origin", msg.OriginNode, "error", err.Error())
 		return
 	}
 
 	if err := validateActionRule(payload, now); err != nil {
-		log.Printf("[SECURITY] Dropped gossip ActionRule from %s: err=%v", msg.OriginNode, err)
+		gm.dropped("invalid rule", "origin", msg.OriginNode, "error", err.Error())
 		return
 	}
 
@@ -489,22 +500,23 @@ func (gm *Manager) processActionRule(msg Message, now time.Time) {
 	if ttl > 0 {
 		gm.actionEngine.AddRule(payload.Site, action.RuleKind(payload.RuleType), payload.Value, action.Action(payload.Action), ttl)
 	}
-	log.Printf("[GOSSIP] Received ActionRule for %s:%s on site %s from %s (Exp: %d)", payload.RuleType, payload.Value, payload.Site, msg.OriginNode, payload.ExpiresAt)
+	gm.logger().Info("gossip: rule received", "site", payload.Site, "kind", payload.RuleType, "value", payload.Value,
+		"action", payload.Action, "expires", payload.ExpiresAt, "origin", msg.OriginNode)
 
 	// Epidemic: Re-broadcast to infect others
 	gm.epidemicBroadcast(msg)
 }
 
 func (gm *Manager) processSync(msg Message, now time.Time) {
-	log.Printf("[GOSSIP] Received SYNC from %s", msg.OriginNode)
+
 	var syncPayload ActionRuleSyncPayload
 	if err := json.Unmarshal([]byte(msg.Content), &syncPayload); err != nil {
-		log.Printf("[ERROR] Failed to unmarshal sync snapshot: %v", err)
+		gm.dropped("sync not decoded", "origin", msg.OriginNode, "error", err.Error())
 		return
 	}
 
 	if len(syncPayload.Rules) > maxSyncEntriesBatch {
-		log.Printf("[SECURITY] Dropped oversized SYNC from %s: %d entries (limit %d)", msg.OriginNode, len(syncPayload.Rules), maxSyncEntriesBatch)
+		gm.dropped("sync has too many rules", "origin", msg.OriginNode, "rules", len(syncPayload.Rules), "rule_limit", maxSyncEntriesBatch)
 		return
 	}
 
@@ -513,7 +525,7 @@ func (gm *Manager) processSync(msg Message, now time.Time) {
 		if err := validateActionRule(payload, now); err != nil {
 			invalidCount++
 			if invalidCount <= 5 {
-				log.Printf("[SECURITY] Dropped gossip SYNC entry from %s: value=%q exp=%d err=%v", msg.OriginNode, payload.Value, payload.ExpiresAt, err)
+				gm.dropped("invalid rule in a sync", "origin", msg.OriginNode, "value", payload.Value, "expires", payload.ExpiresAt, "error", err.Error())
 			}
 			continue
 		}
@@ -525,11 +537,8 @@ func (gm *Manager) processSync(msg Message, now time.Time) {
 	}
 
 	if invalidCount > 0 {
-		if invalidCount > 5 {
-			log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s (only first 5 shown)", invalidCount, msg.OriginNode)
-		} else {
-			log.Printf("[SECURITY] Dropped %d invalid SYNC entries from %s", invalidCount, msg.OriginNode)
-		}
+		// Only the first 5 got a line of their own.
+		gm.dropped("invalid rules in a sync", "origin", msg.OriginNode, "rules", invalidCount)
 	}
 }
 

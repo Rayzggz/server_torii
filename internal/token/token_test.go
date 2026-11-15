@@ -76,3 +76,30 @@ func TestFieldsDoNotRunTogether(t *testing.T) {
 		t.Error("labels sign alike")
 	}
 }
+
+// Check says why a token is refused. A forged token is never called expired: its age means nothing.
+func TestCheckSaysWhy(t *testing.T) {
+	signer := Signer{Key: "0123456789abcdef", Label: "CAPTCHA-CLEARANCE@shop"}
+	at := time.Unix(1700000000, 0)
+	valid := signer.Sign("example.com", "UA-X", at)
+	forged := "v2.1600000000." + strings.Split(valid, ".")[2]
+	for _, tt := range []struct {
+		name, value, host string
+		now               time.Time
+		want              error
+	}{
+		{"valid", valid, "example.com", at.Add(time.Minute), nil},
+		{"expired", valid, "example.com", at.Add(time.Hour), ErrExpired},
+		{"other host", valid, "other.example", at.Add(time.Minute), ErrSignature},
+		{"old and forged", forged, "example.com", at.Add(time.Minute), ErrSignature},
+		{"malformed", "v1.1700000000.x", "example.com", at, ErrMalformed},
+		{"bad timestamp", "v2.01700000000.x", "example.com", at, ErrMalformed},
+	} {
+		if err := signer.Check(tt.value, tt.host, "UA-X", 600, tt.now); err != tt.want {
+			t.Errorf("%s: Check = %v, want %v", tt.name, err, tt.want)
+		}
+		if got := signer.Verify(tt.value, tt.host, "UA-X", 600, tt.now); got != (tt.want == nil) {
+			t.Errorf("%s: Verify = %v", tt.name, got)
+		}
+	}
+}

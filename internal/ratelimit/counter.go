@@ -2,7 +2,6 @@ package ratelimit
 
 import (
 	"cmp"
-	"log"
 	"slices"
 	"sync"
 	"time"
@@ -44,7 +43,6 @@ func (c *counterElement) counterElementQuery(lastN int64, now int64) int64 {
 	var sum int64
 	if lastN > c.segSize {
 		lastN = c.segSize
-		log.Printf("Error: lastN exceeds segment size, resetting to segment size")
 	}
 	for i := int64(0); i < lastN; i++ {
 		sec := now - lastN + 1 + i
@@ -72,10 +70,6 @@ func (c *counterElement) counterElementQueryBatch(lastN []int64, now int64) []in
 		order[i] = i
 	}
 	slices.SortFunc(order, func(a, b int) int { return cmp.Compare(lastN[a], lastN[b]) })
-
-	if lastN[order[len(order)-1]] > c.segSize {
-		log.Printf("Error: lastN exceeds segment size, resetting to segment size")
-	}
 
 	var sum, covered int64
 	for _, qi := range order {

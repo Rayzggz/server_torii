@@ -5,13 +5,14 @@ import (
 	"crypto/hmac"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"server_torii/internal/version"
 	"strconv"
 	"strings"
@@ -29,7 +30,7 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request, req
 	case reqData.Uri == webPath+"/health_check":
 		s.handleHealthCheck(w, reqData)
 	case captcha && reqData.Uri == webPath+"/captcha/challenge":
-		handleCaptchaChallenge(w, r, reqData, ruleSet)
+		s.handleCaptchaChallenge(w, r, reqData, ruleSet)
 	case captcha && reqData.Uri == webPath+"/captcha":
 		s.handleCaptchaSubmission(w, r, reqData, ruleSet, pages)
 	case external && strings.HasPrefix(reqData.Uri, webPath+"/external_migration"):
@@ -43,6 +44,7 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request, req
 // handleCaptchaSubmission answers the script of the CAPTCHA page, which acts on the response body.
 func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	outcome := check.CheckCaptcha(r, reqData, ruleSet, s.rt)
+	s.rt.Event(reqData, slog.LevelDebug, "CAPTCHA answer", slog.String("outcome", outcome.String()))
 	status := http.StatusOK
 	switch outcome {
 	case check.SubmissionRejected:
@@ -57,11 +59,11 @@ func (s *Server) handleCaptchaSubmission(w http.ResponseWriter, r *http.Request,
 	}
 	w.WriteHeader(status)
 	if _, err := w.Write([]byte(outcome.String())); err != nil {
-		logx.Error(reqData, "Error writing response: "+err.Error(), "handleCaptchaSubmission")
+		s.rt.Event(reqData, slog.LevelDebug, "response not written", slog.String("error", err.Error()))
 	}
 }
 
-func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet) {
+func (s *Server) handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -77,7 +79,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData requ
 
 	challenge, err := check.GenAltchaChallenge(*ruleSet, reqData)
 	if err != nil {
-		logx.Error(reqData, fmt.Sprintf("Error generating ALTCHA challenge: %v", err), "handleCaptchaChallenge")
+		s.rt.Error(reqData, "ALTCHA challenge not generated", slog.String("error", err.Error()))
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}
@@ -85,7 +87,7 @@ func handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, reqData requ
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(challenge); err != nil {
-		logx.Error(reqData, fmt.Sprintf("Error writing ALTCHA challenge: %v", err), "handleCaptchaChallenge")
+		s.rt.Event(reqData, slog.LevelDebug, "response not written", slog.String("error", err.Error()))
 	}
 }
 
@@ -116,7 +118,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(builder.String()))
 	if err != nil {
-		logx.Error(reqData, "Error writing response: "+err.Error(), "handleHealthCheck")
+		s.rt.Log().Debug("health check response not written", "error", err.Error())
 		return
 	}
 }
@@ -124,7 +126,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request, reqData request.UserRequest, ruleSet *config.RuleSet, pages *config.ErrorPages) {
 	originalURI, err := validateInternalRedirectPath(r.URL.Query().Get("original_uri"))
 	if err != nil {
-		logx.Info(reqData, fmt.Sprintf("Invalid external migration redirect target: %v", err), "handleExternalMigration")
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", "invalid original_uri: "+err.Error()))
 		s.showExternalMigrationError(w, reqData, pages, "Invalid Original URI")
 		return
 	}
@@ -133,34 +135,34 @@ func (s *Server) handleExternalMigration(w http.ResponseWriter, r *http.Request,
 	hmacParam := r.URL.Query().Get("hmac")
 
 	if timestampStr == "" || hmacParam == "" {
-		logx.Info(reqData, "Missing required parameters for external migration", "handleExternalMigration")
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", "timestamp or hmac missing"))
 		s.showExternalMigrationError(w, reqData, pages, "Missing required parameters")
 		return
 	}
 
 	timestamp, err := strconv.ParseInt(timestampStr, 10, 64)
 	if err != nil {
-		logx.Info(reqData, "Invalid timestamp format", fmt.Sprintf("handleExternalMigration: %v", err))
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", "timestamp is not a number"))
 		s.showExternalMigrationError(w, reqData, pages, "Invalid timestamp format")
 		return
 	}
 
 	currentTime := time.Now().Unix()
 	if currentTime-timestamp > 30 {
-		logx.Info(reqData, fmt.Sprintf("Migration link expired - age: %ds, timeout: 30s", currentTime-timestamp), "handleExternalMigration")
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", fmt.Sprintf("link expired: %ds old, 30s allowed", currentTime-timestamp)))
 		s.showExternalMigrationError(w, reqData, pages, "Migration link has expired")
 		return
 	}
 
 	if !check.VerifySessionIDCookie(reqData, *ruleSet) {
-		logx.Info(reqData, "Session verification failed for external migration", "handleExternalMigration")
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", "invalid session"))
 		s.showExternalMigrationError(w, reqData, pages, "Invalid session")
 		return
 	}
 
 	expectedHMAC := check.CalculateExternalMigrationHMAC(reqData.ToriiSessionID, timestampStr, originalURI, ruleSet.Challenge.ExternalSecret)
 	if !hmac.Equal([]byte(expectedHMAC), []byte(hmacParam)) {
-		logx.Info(reqData, "HMAC verification failed for external migration", "handleExternalMigration")
+		s.rt.Event(reqData, slog.LevelInfo, "external challenge return rejected", slog.String("note", "invalid signature"))
 		s.showExternalMigrationError(w, reqData, pages, "Invalid migration signature")
 		return
 	}
@@ -177,7 +179,7 @@ func (s *Server) showExternalMigrationError(w http.ResponseWriter, reqData reque
 		ErrorMessage string
 	}{s.pageData(reqData), "400", "Migration Error", errorMsg}
 	if body, ok := s.renderPage(w, reqData, pages, config.PageError, data); ok {
-		writeHTML(w, reqData, http.StatusBadRequest, body)
+		writeHTML(w, s.rt, reqData, http.StatusBadRequest, body)
 	}
 }
 
@@ -199,7 +201,7 @@ func (s *Server) pageData(reqData request.UserRequest) pageData {
 // serveErrorPage answers with one of the configured error pages.
 func (s *Server) serveErrorPage(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, page config.Page, status int) {
 	if body, ok := s.renderPage(w, reqData, pages, page, s.pageData(reqData)); ok {
-		writeHTML(w, reqData, status, body)
+		writeHTML(w, s.rt, reqData, status, body)
 	}
 }
 
@@ -209,25 +211,25 @@ func (s *Server) serveErrorPage(w http.ResponseWriter, reqData request.UserReque
 func (s *Server) renderPage(w http.ResponseWriter, reqData request.UserRequest, pages *config.ErrorPages, page config.Page, data any) ([]byte, bool) {
 	tpl := pages.Get(page)
 	if tpl == nil {
-		logx.Error(reqData, "Error page "+page.String()+" is not loaded", "renderPage")
+		s.rt.Error(reqData, "error page not loaded", slog.String("page", page.String()))
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return nil, false
 	}
 	var buf bytes.Buffer
 	if err := tpl.Execute(&buf, data); err != nil {
-		logx.Error(reqData, fmt.Sprintf("Error executing template %s: %v", page, err), "renderPage")
+		s.rt.Error(reqData, "error page not rendered", slog.String("page", page.String()), slog.String("error", err.Error()))
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return nil, false
 	}
 	return buf.Bytes(), true
 }
 
-func writeHTML(w http.ResponseWriter, reqData request.UserRequest, status int, body []byte) {
+func writeHTML(w http.ResponseWriter, rt *state.Runtime, reqData request.UserRequest, status int, body []byte) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 	w.WriteHeader(status)
 	if _, err := w.Write(body); err != nil {
-		logx.Error(reqData, "Error writing response: "+err.Error(), "writeHTML")
+		rt.Event(reqData, slog.LevelDebug, "response not written", slog.String("error", err.Error()))
 	}
 }
 
@@ -295,7 +297,7 @@ func (s *Server) serveVerdict(w http.ResponseWriter, reqData request.UserRequest
 			return
 		}
 		setToriiCookie(w, "__torii_session_id", string(check.GenSessionID(reqData, *ruleSet)), 0)
-		writeHTML(w, reqData, http.StatusServiceUnavailable, body)
+		writeHTML(w, s.rt, reqData, http.StatusServiceUnavailable, body)
 
 	case action.VerdictRateLimit:
 		s.serveErrorPage(w, reqData, pages, config.PageTooManyRequests, http.StatusTooManyRequests)
@@ -313,7 +315,7 @@ func (s *Server) redirectToExternalMigration(w http.ResponseWriter, reqData requ
 	// The redirect is signed with the time the session was issued at.
 	timestamp, ok := check.ExternalSessionTimestamp(sessionID)
 	if !ok {
-		logx.Error(reqData, "Invalid session ID format", "redirectToExternalMigration")
+		s.rt.Error(reqData, "external session has no timestamp")
 		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
 		return
 	}

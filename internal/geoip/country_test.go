@@ -3,7 +3,7 @@ package geoip
 import (
 	"bytes"
 	"errors"
-	"log"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -174,16 +174,13 @@ func TestCountryDatabaseUnresolvedWithoutReader(t *testing.T) {
 
 func TestNewCountryDatabaseLogsUnknownPolicyWarning(t *testing.T) {
 	var output bytes.Buffer
-	restoreLog := captureLogOutput(&output)
-	defer restoreLog()
-
 	path := filepath.Join(t.TempDir(), "missing.mmdb")
-	db := NewCountryDatabase(path)
+	db := NewCountryDatabase(path, slog.New(slog.NewJSONHandler(&output, nil)))
 	defer func() { _ = db.Close() }()
 
 	message := output.String()
-	if !strings.Contains(message, "[WARNING]") ||
-		!strings.Contains(message, path) ||
+	if !strings.Contains(message, `"level":"WARN"`) ||
+		!strings.Contains(message, "missing.mmdb") ||
 		!strings.Contains(message, "unknown_action") {
 		t.Fatalf("warning log = %q, want path and unknown-policy warning", message)
 	}
@@ -205,13 +202,12 @@ func TestCountryDatabaseReloadOrWarnLogsRetention(t *testing.T) {
 	defer func() { _ = db.Close() }()
 
 	var output bytes.Buffer
-	restoreLog := captureLogOutput(&output)
-	defer restoreLog()
+	db.log = slog.New(slog.NewJSONHandler(&output, nil))
 
 	db.ReloadOrWarn()
 
 	message := output.String()
-	if !strings.Contains(message, "[WARNING]") ||
+	if !strings.Contains(message, `"level":"WARN"`) ||
 		!strings.Contains(message, "retaining the previous reader") {
 		t.Fatalf("warning log = %q, want reader-retention warning", message)
 	}
@@ -251,14 +247,13 @@ func TestCountryDatabaseCloseOrWarnLogsError(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	restoreLog := captureLogOutput(&output)
-	defer restoreLog()
+	db.log = slog.New(slog.NewJSONHandler(&output, nil))
 
 	db.CloseOrWarn()
 
 	message := output.String()
-	if !strings.Contains(message, "[WARNING]") ||
-		!strings.Contains(message, "Failed to close MaxMind country database") ||
+	if !strings.Contains(message, `"level":"WARN"`) ||
+		!strings.Contains(message, "country database not closed") ||
 		!strings.Contains(message, "close failed") {
 		t.Fatalf("warning log = %q, want close-error warning", message)
 	}
@@ -300,16 +295,5 @@ func TestGeoLite2CountryDatabaseLookup(t *testing.T) {
 				t.Fatalf("Country(%s) = %q, want %q", tt.address, got, tt.country)
 			}
 		})
-	}
-}
-
-func captureLogOutput(output *bytes.Buffer) func() {
-	previousWriter := log.Writer()
-	previousFlags := log.Flags()
-	log.SetOutput(output)
-	log.SetFlags(0)
-	return func() {
-		log.SetOutput(previousWriter)
-		log.SetFlags(previousFlags)
 	}
 }

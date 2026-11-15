@@ -40,6 +40,20 @@ func verifyClearanceCookie(reqData request.UserRequest, ruleSet config.RuleSet) 
 	return verifyToken(reqData, challengeSigner(ruleSet, "CLEARANCE"), reqData.ToriiClearance, ruleSet.Challenge.ClearanceTTL)
 }
 
+// clearanceProblem says why the clearance the client sent is refused. It is empty when the
+// client sent none, the usual case, or a valid one.
+func clearanceProblem(reqData request.UserRequest, ruleSet config.RuleSet) string {
+	if reqData.ToriiClearance == "" {
+		return ""
+	}
+	err := challengeSigner(ruleSet, "CLEARANCE").Check(reqData.ToriiClearance, reqData.Host,
+		GetClearanceUserAgent(reqData.UserAgent), int64(ruleSet.Challenge.ClearanceTTL/time.Second), time.Now())
+	if err == nil {
+		return ""
+	}
+	return "clearance " + err.Error()
+}
+
 // GenSessionID issues the challenge session cookie. A CAPTCHA session the client already holds
 // is kept while it is valid. A client sent to the external provider always gets a new one, in
 // the form the provider expects: its timestamp is part of the link that brings the client back.

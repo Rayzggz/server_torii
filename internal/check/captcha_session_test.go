@@ -1,8 +1,10 @@
 package check
 
 import (
+	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
@@ -76,4 +78,43 @@ func testCaptchaSessionRequestData() request.UserRequest {
 
 func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
 	return challengeSigner(ruleSet, "SESSION").Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(timestamp, 0))
+}
+
+// A challenge says why a clearance the client did send was refused; a client without one, the
+// usual case, gets no note.
+func TestChallengeNotesWhyAClearanceWasRefused(t *testing.T) {
+	ruleSet := testCaptchaSessionRuleSet(config.ChallengeAltcha)
+	reqData := testCaptchaSessionRequestData()
+	valid := string(GenClearance(reqData, *ruleSet))
+	elsewhere := reqData
+	elsewhere.Host = "other.example"
+
+	for _, tt := range []struct {
+		name      string
+		req       request.UserRequest
+		clearance string
+		verdict   action.Verdict
+		note      string
+	}{
+		{"valid", reqData, valid, action.VerdictAllow, ""},
+		{"none", reqData, "", action.VerdictChallenge, ""},
+		{"malformed", reqData, "nonsense", action.VerdictChallenge, "clearance malformed"},
+		{"of another host", elsewhere, valid, action.VerdictChallenge, "clearance not signed for this site, host and browser"},
+	} {
+		tt.req.ToriiClearance = tt.clearance
+		decision := action.NewDecision()
+		Challenge(tt.req, ruleSet, decision, &state.Runtime{})
+		if decision.Verdict != tt.verdict || decision.Note != tt.note {
+			t.Errorf("%s: verdict %v note %q, want %v %q", tt.name, decision.Verdict, decision.Note, tt.verdict, tt.note)
+		}
+	}
+
+	// The note of the check that asked for the challenge is kept.
+	reqData.ToriiClearance = "nonsense"
+	decision := action.NewDecision()
+	decision.Note = "country=US"
+	Challenge(reqData, ruleSet, decision, &state.Runtime{})
+	if decision.Note != "country=US" {
+		t.Errorf("note = %q, want the one of the earlier check", decision.Note)
+	}
 }

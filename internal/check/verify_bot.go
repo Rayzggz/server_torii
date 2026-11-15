@@ -1,10 +1,8 @@
 package check
 
 import (
-	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
@@ -39,23 +37,20 @@ func VerifyBot(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 
 	ip := reqData.ClientAddr()
 	if !ip.IsValid() {
-		logx.Info(reqData, "", fmt.Sprintf("VerifyBot: invalid remote IP %q", reqData.RemoteIP))
+		decision.Note = bot + ": the client address is not an IP address"
 		decision.SetVerdict(action.Done, action.VerdictBlock)
 		return
 	}
 
-	verified, fresh, err := defaultBotVerifier.verify(ip, bot, exptractRDNS)
+	verified, _, err := defaultBotVerifier.verify(ip, bot, exptractRDNS, rt.Log())
 	if verified {
 		rt.MarkNeutral(reqData.Site, reqData.ClientKey(), verifiedBotMarkTTL)
 		decision.Set(action.Done)
 		return
 	}
-	if fresh {
-		if err != nil {
-			logx.Info(reqData, "", fmt.Sprintf("VerifyBot: %s verification failed: %v", bot, err))
-		} else {
-			logx.Info(reqData, "", fmt.Sprintf("VerifyBot: %s not confirmed by DNS", bot))
-		}
+	decision.Note = bot + ": not confirmed by DNS"
+	if err != nil {
+		decision.Note = bot + ": " + err.Error()
 	}
 	decision.SetVerdict(action.Done, action.VerdictBlock)
 }

@@ -2,8 +2,12 @@
 package state
 
 import (
+	"context"
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/gossip"
+	"server_torii/internal/logx"
+	"server_torii/internal/request"
 	"time"
 )
 
@@ -28,6 +32,49 @@ type Runtime struct {
 	// NodeName and GossipChan are used to share action rules with peers; a nil channel keeps rules local.
 	NodeName   string
 	GossipChan chan gossip.Message
+
+	// Logs are the log files of the node; nil logs nothing.
+	Logs *logx.Logs
+}
+
+// Log returns the logger of the node itself. It is never nil.
+func (rt *Runtime) Log() *slog.Logger {
+	if rt == nil {
+		return (*logx.Logs)(nil).Node()
+	}
+	return rt.Logs.Node()
+}
+
+// SiteLog returns the event logger of one site. It is never nil.
+func (rt *Runtime) SiteLog(site string) *slog.Logger {
+	if rt == nil {
+		return (*logx.Logs)(nil).Site(site)
+	}
+	return rt.Logs.Site(site)
+}
+
+// Event writes one line about a request to the events of its site: the client, then attrs,
+// then what the client asked for. The user agent is last: it is the longest and the least read.
+func (rt *Runtime) Event(req request.UserRequest, level slog.Level, msg string, attrs ...slog.Attr) {
+	logger := rt.SiteLog(req.Site)
+	ctx := context.Background()
+	if !logger.Enabled(ctx, level) {
+		return
+	}
+	all := make([]slog.Attr, 0, 6+len(attrs))
+	all = append(all, slog.String("ip", req.RemoteIP))
+	if req.Country != "" {
+		all = append(all, slog.String("country", req.Country))
+	}
+	all = append(all, attrs...)
+	all = append(all, slog.String("method", req.Method), slog.String("host", req.Host),
+		slog.String("uri", req.Uri), slog.String("ua", req.UserAgent))
+	logger.LogAttrs(ctx, level, msg, all...)
+}
+
+// Error writes an error met while serving a request to the events of its site.
+func (rt *Runtime) Error(req request.UserRequest, msg string, attrs ...slog.Attr) {
+	rt.Event(req, slog.LevelError, msg, attrs...)
 }
 
 // SetAnalyzer registers the running traffic analyzer.

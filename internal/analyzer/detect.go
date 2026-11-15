@@ -2,7 +2,7 @@ package analyzer
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
@@ -67,10 +67,11 @@ func (det *detection) run() {
 	st := det.state
 	b := det.buildBucket()
 	if b.dropped > 0 {
-		det.logf("dropped %d log entries: more than %d IPs in one interval", b.dropped, maxIPsPerBucket)
+		det.log().Warn("request reports dropped: too many clients in one interval", "dropped", b.dropped, "client_limit", maxIPsPerBucket)
 	}
 	st.push(b, det.window, det.rule.WindowBuckets)
 	win := st.aggregate(det.rule.IPDetection.ScanPathsThreshold + 1)
+	det.log().Debug("interval analyzed", "requests", len(det.ctx.Logs), "clients", len(b.ips), "clients_in_window", len(win))
 	det.updateEvidence(b, win)
 	det.updateBaseline(b)
 	uris, browserTotal := det.classifyURIs(win)
@@ -266,12 +267,12 @@ func (det *detection) detectHotURIs(uris map[string]*uriWindow, browserTotal int
 		det.state.mode = mode
 		switch mode {
 		case modeBaseline:
-			det.logf("hot URI detection using reference baseline")
+			det.log().Info("hot URI detection uses the reference baseline")
 		case modeFallback:
-			det.logf("hot URI detection using non-browser share >= %.0f%% until the baseline is ready (browser-like requests in window: %d, need %d)",
-				det.rule.URIDetection.FallbackShare*100, browserTotal, cfg.MinReferenceRequests)
+			det.log().Info("hot URI detection uses the non-browser share until the baseline is ready",
+				"share", det.rule.URIDetection.FallbackShare, "browser_requests", browserTotal, "browser_requests_needed", cfg.MinReferenceRequests)
 		default:
-			det.logf("hot URI detection paused while browser evidence accumulates")
+			det.log().Info("hot URI detection paused while browser evidence accumulates")
 		}
 	}
 
@@ -390,8 +391,9 @@ func (det *detection) applyURIActions(hot map[string]bool, uris map[string]*uriW
 		det.state.uriRules[u] = det.now.Add(dur)
 		uw := uris[u]
 		det.enforce.apply("URI", u, cfg.Action, dur, false)
-		det.logf("%s hot URI %s for %v (non-browser %d from %d IPs, browser %d, baseline %.1f, mode %s)",
-			actionVerb(cfg.Action), u, dur, uw.nonBrowser, len(uw.nonIPs), uw.browser, det.expectedBrowser(u), det.state.mode)
+		det.log().Info("hot URI", "action", string(cfg.Action), "uri", u, "duration", dur.String(),
+			"non_browser_requests", uw.nonBrowser, "non_browser_clients", len(uw.nonIPs), "browser_requests", uw.browser,
+			"baseline", det.expectedBrowser(u), "mode", fmt.Sprint(det.state.mode))
 	}
 }
 
@@ -508,15 +510,16 @@ func (det *detection) scoreIPs(win map[string]*ipWindow, hot map[string]bool) {
 		off.until = det.now.Add(dur)
 		det.enforce.apply("IP", c.ip, cfg.Action, dur, true)
 		if i < maxDetailedLogLines {
-			det.logf("%s IP %s for %v (score %d: %s)", actionVerb(cfg.Action), c.ip, dur, c.score, strings.Join(c.reasons, ", "))
+			det.log().Info("suspicious client", "action", string(cfg.Action), "client", c.ip, "duration", dur.String(),
+				"score", c.score, "reasons", strings.Join(c.reasons, ", "))
 		}
 	}
 	if len(candidates) > maxDetailedLogLines {
-		det.logf("%s %d more IPs this interval", actionVerb(cfg.Action), len(candidates)-maxDetailedLogLines)
+		det.log().Info("more suspicious clients this interval", "action", string(cfg.Action), "clients", len(candidates)-maxDetailedLogLines)
 	}
 	if det.enforce.suppressed > 0 {
-		det.logf("applied %d IP rules locally only: gossip broadcast limit %d per interval reached",
-			det.enforce.suppressed, cfg.MaxBroadcastPerTick)
+		det.log().Warn("rules not shared with the peers: broadcast limit of the interval reached",
+			"rules", det.enforce.suppressed, "broadcast_limit", cfg.MaxBroadcastPerTick)
 	}
 }
 
@@ -529,8 +532,9 @@ func escalate(base, maxDur time.Duration, prior int) time.Duration {
 	return min(dur, maxDur)
 }
 
-func (det *detection) logf(format string, args ...any) {
-	log.Printf("[AdaptiveTrafficAnalyzer] [%s] %s", det.ctx.Rule.ID, fmt.Sprintf(format, args...))
+// log returns the events of the site, marked as coming from the analyzer.
+func (det *detection) log() *slog.Logger {
+	return det.ctx.Runtime.SiteLog(det.ctx.Rule.ID).With("source", "traffic_analyzer")
 }
 
 // enforcer turns detections into action rules and gossip broadcasts.
@@ -579,19 +583,6 @@ func (e *enforcer) apply(kind action.RuleKind, value string, act action.Action, 
 		}
 	}
 	e.rt.ApplyRule(e.site, kind, value, act, dur, broadcast)
-}
-
-func actionVerb(act action.Action) string {
-	switch act {
-	case action.ActionChallengeUnverified:
-		return "CHALLENGE (clients without browser evidence)"
-	case action.ActionChallenge:
-		return "CHALLENGE (every visitor)"
-	case action.ActionBlock:
-		return "BLOCK"
-	default:
-		return "[observe] would act on"
-	}
 }
 
 func toSet(items []string) map[string]struct{} {

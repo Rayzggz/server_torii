@@ -1,10 +1,8 @@
 package check
 
 import (
-	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 )
@@ -17,20 +15,17 @@ func Challenge(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	rule := ruleSet.Challenge
 	failureCounter := rt.LimitersFor(reqData.Site).ChallengeFailureLimitCounter.Load()
 	if failureCounter == nil {
-		logx.Error(reqData, "", "Challenge failure counter is not initialized, skipping the failure limit")
+		rt.Error(reqData, "Challenge failure counter is not initialized; the failure limit is skipped")
 	}
 	ipKey := reqData.ClientKey()
 
 	if failureCounter != nil && rule.FailureBlockDuration > 0 {
 		for _, rate := range rule.FailureLimit {
-			window, limit := rate.Window, rate.Limit
-			if failureCounter.Query(ipKey, window) <= limit {
+			if failureCounter.Query(ipKey, rate.Window) <= rate.Limit {
 				continue
 			}
-			if !rt.BlockIP(reqData.Site, ipKey, rule.FailureBlockDuration) {
-				logx.Error(reqData, "", "ActionRuleEngine is not running, skipping block and broadcast")
-			}
-			logx.Info(reqData, "", fmt.Sprintf("Challenge failure limit exceeded and blocked: IP %s window %d limit %d", ipKey, window, limit))
+			blockClient(reqData, rt, "Challenge failure limit", rate, rule.FailureBlockDuration)
+			decision.Note = "failure_limit " + rate.String()
 			failureCounter.Reset(ipKey)
 			decision.SetVerdict(action.Done, action.VerdictBlock)
 			return
@@ -42,6 +37,10 @@ func Challenge(reqData request.UserRequest, ruleSet *config.RuleSet, decision *a
 	}
 	if failureCounter != nil {
 		failureCounter.Add(ipKey, 1)
+	}
+	// What an earlier check noted about why it asked for the challenge stays.
+	if decision.Note == "" {
+		decision.Note = clearanceProblem(reqData, *ruleSet)
 	}
 	decision.SetVerdict(action.Done, action.VerdictChallenge)
 }

@@ -69,6 +69,7 @@ func TestLoadMainConfig_Rejects(t *testing.T) {
 		"duplicate site id":    {"sites:\n  - id: a\n    rule_path: .\n  - id: a\n    rule_path: .", `sites[1].id: duplicate id "a"`},
 		"no sites":             {"sites: []", "sites: list needs at least 1 entry"},
 		"unknown default site": {"default_site: nowhere", `default_site: "nowhere" is not one of the configured sites`},
+		"bad log level":        {"log_level: verbose", "log_level: value must be one of: debug info warn error"},
 		"bad peer address":     {"peers:\n  - name: b\n    address: not-a-url", "peers[0].address: value must be a valid URL"},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -109,7 +110,7 @@ func TestLoadMainConfig_PartialConfigKeepsDefaults(t *testing.T) {
 	if cfg.ConfigDir != dir {
 		t.Fatalf("ConfigDir = %q, want %q", cfg.ConfigDir, dir)
 	}
-	if cfg.ErrorPage != DefaultErrorPage || cfg.LogPath != DefaultLogPath || cfg.DefaultSite != DefaultSiteID {
+	if cfg.ErrorPage != DefaultErrorPage || cfg.LogPath != DefaultLogPath || cfg.DefaultSite != DefaultSiteID || cfg.LogLevel != "info" {
 		t.Fatalf("defaults lost: %+v", cfg)
 	}
 	if cfg.EnableGossip || len(cfg.Peers) != 0 {

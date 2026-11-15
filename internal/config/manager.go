@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"log"
 	"sync/atomic"
 )
 
@@ -16,6 +15,8 @@ type SiteConfigSnapshot struct {
 	Pages *ErrorPages
 	// SitePages holds the pages of the sites that configure an error_page directory.
 	SitePages map[string]*ErrorPages
+	// Warnings are what is wrong with the configuration without making it invalid.
+	Warnings []string
 }
 
 // PagesFor returns the error pages of a site: its own, or the common ones.
@@ -110,15 +111,17 @@ func LoadSnapshot(cfg *MainConfig) (*SiteConfigSnapshot, error) {
 			return nil, fmt.Errorf("failed to reload error pages of site %s: %w", site.ID, err)
 		}
 	}
-	return &SiteConfigSnapshot{SiteRules: siteRules, DefaultSite: cfg.DefaultSite, Pages: pages, SitePages: sitePages}, nil
+	var warnings []string
+	for _, name := range pages.Missing() {
+		warnings = append(warnings, fmt.Sprintf("error page %s not found in %s; requests for it are answered 500", name, cfg.ErrorPage))
+	}
+	return &SiteConfigSnapshot{SiteRules: siteRules, DefaultSite: cfg.DefaultSite, Pages: pages, SitePages: sitePages, Warnings: warnings}, nil
 }
 
 // Reload re-reads all site rules and swaps the snapshot without interrupting current requests.
 // A failed load leaves the current snapshot in place. Each beforeSwap hook runs once the new
 // snapshot is loaded and before requests can see it, so state derived from it is ready in time.
 func (m *Manager) Reload(cfg *MainConfig, beforeSwap ...func(*SiteConfigSnapshot)) error {
-	log.Println("[INFO] Reloading site configurations...")
-
 	snap, err := LoadSnapshot(cfg)
 	if err != nil {
 		return err
@@ -128,6 +131,5 @@ func (m *Manager) Reload(cfg *MainConfig, beforeSwap ...func(*SiteConfigSnapshot
 	}
 
 	m.snapshot.Store(snap)
-	log.Println("[INFO] Successfully applied new site configuration snapshot.")
 	return nil
 }

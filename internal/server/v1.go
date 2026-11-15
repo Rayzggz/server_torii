@@ -1,13 +1,11 @@
 package server
 
 import (
-	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"strings"
 )
@@ -115,7 +113,7 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 	site := r.Header.Get(headerSite)
 	ruleSet := snap.Site(site)
 	if ruleSet == nil {
-		log.Printf("[ERROR] No site %q for host %q (default_site: %q)", site, reqData.Host, snap.DefaultSite)
+		s.rt.Log().Error("request for an unknown site", "site", site, "host", reqData.Host, "default_site", snap.DefaultSite)
 		http.Error(w, "500 - Unknown site", http.StatusInternalServerError)
 		return reqData, nil, nil, false
 	}
@@ -131,7 +129,7 @@ func (s *Server) v1Request(w http.ResponseWriter, r *http.Request) (request.User
 	bits, unknown := applyFeatureOverrides(configFeatureBits(ruleSet), r.Header.Get(headerFeatures))
 	reqData.ListOverrides, unknown = listOverrides(ruleSet.Lists, unknown)
 	if len(unknown) > 0 {
-		logx.Error(reqData, fmt.Sprintf("Ignoring unknown %s entries: %s", headerFeatures, strings.Join(unknown, " ")), "v1Request")
+		s.rt.Event(reqData, slog.LevelWarn, "unknown "+headerFeatures+" entries ignored", slog.String("entries", strings.Join(unknown, " ")))
 	}
 	reqData.FeatureControl = bits
 	return reqData, ruleSet, snap.PagesFor(ruleSet.ID), true

@@ -47,6 +47,9 @@ type Decision struct {
 	// Reason is the check behind the decision, with its Detail: "Lists:office", "HTTPFlood". The
 	// pipeline sets it when it ends.
 	Reason string
+	// Note is what the decision log says beyond Reason: the limit that was exceeded, why a
+	// crawler was not believed. The connector never sees it.
+	Note string
 }
 
 func NewDecision() *Decision {

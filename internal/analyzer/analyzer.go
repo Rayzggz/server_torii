@@ -1,7 +1,6 @@
 package analyzer
 
 import (
-	"log"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/request"
@@ -168,7 +167,7 @@ func (ata *AdaptiveTrafficAnalyzer) Start() {
 				}
 			}
 		}()
-		log.Print("AdaptiveTrafficAnalyzer started with per-site intervals")
+		ata.rt.Log().Info("traffic analyzer started")
 	})
 }
 

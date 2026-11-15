@@ -4,11 +4,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net"
 	"os"
 	"server_torii/internal/config"
 	"server_torii/internal/sockfile"
+	"server_torii/internal/state"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -163,6 +164,13 @@ func NewReportListener(addrs []string, socketMode os.FileMode, analyzer *Adaptiv
 	}
 }
 
+func (l *ReportListener) log() *slog.Logger {
+	if l.analyzer == nil {
+		return (*state.Runtime)(nil).Log()
+	}
+	return l.analyzer.rt.Log()
+}
+
 // Stats returns how many datagrams were received and what became of them.
 func (l *ReportListener) Stats() ReportStats {
 	if l == nil {
@@ -209,7 +217,7 @@ func (l *ReportListener) Start() error {
 			return fmt.Errorf("listen for request reports on %s: %w", addr, err)
 		}
 		l.conns = append(l.conns, conn)
-		log.Printf("Request report listener started on %s", conn.LocalAddr())
+		l.log().Info("request report listener started", "address", conn.LocalAddr().String())
 	}
 
 	for i := 0; i < reportWorkers; i++ {
@@ -220,7 +228,7 @@ func (l *ReportListener) Start() error {
 				func() {
 					defer func() {
 						if r := recover(); r != nil {
-							log.Printf("[Recovered] Request report worker panic: %v", r)
+							l.log().Error("request report worker panic", "panic", fmt.Sprint(r))
 						}
 					}()
 					l.handle(data)
@@ -246,7 +254,7 @@ func (l *ReportListener) read(conn net.PacketConn) {
 			case <-l.stopChan:
 				return
 			default:
-				log.Printf("Error reading request report: %v", err)
+				l.log().Warn("request report not read", "error", err.Error())
 				continue
 			}
 		}

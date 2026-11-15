@@ -26,4 +26,13 @@ test_flood() {
     expect pass 1 203.0.113.124
     expect block 1 203.0.113.124 "$ZERO" /neutral expiry.test
     wait_decision pass 8 1 203.0.113.124 "$ZERO" /neutral expiry.test
+    # Every request that was not let through is one line in the events of its site.
+    local events="$RUN/node1/log/default_site/events.log"
+    log_line "$events" '[info] decision ip=203.0.113.120 verdict=rate_limit reason=HTTPFlood note="speed_limit 5/10s" method=GET ' ' uri=/speed/6 '
+    log_line "$events" '[info] decision ip=203.0.113.121 verdict=rate_limit reason=HTTPFlood note="same_uri_limit 3/10s" '
+    log_line "$events" '[info] client blocked ip=203.0.113.123 client=203.0.113.123 cause="HTTPFlood failure limit" limit=3/30s duration=5m0s '
+    log_line "$events" '[info] decision ip=203.0.113.123 verdict=block reason=HTTPFlood note="failure_limit 3/30s" ' ' uri=/block/10 '
+    log_line "$RUN/node1/log/expiry/events.log" '[info] decision ip=203.0.113.124 ' ' host=expiry.test '
+    if grep -Fq '203.0.113.124' "$events"; then fail 'An event of one site is in the log of another'; fi
+    ASSERTIONS=$((ASSERTIONS+1))
 }

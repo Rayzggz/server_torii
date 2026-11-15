@@ -37,7 +37,7 @@ test_gossip() {
     for ((i=0; i<5; i++)); do post_gossip; ack; done
     # This injected message claims Node_2 as origin, so only require the other nodes.
     cluster_decision block 203.0.113.202 2
-    count=$(grep -Fc '[GOSSIP] Received ActionRule for IP:203.0.113.202 on site default_site from ' "$RUN/node1/log/server_torii.log" || true)
+    count=$(grep -Fc '[info] gossip: rule received site=default_site kind=IP value=203.0.113.202 ' "$RUN/node1/log/server_torii.log" || true)
     assert_eq "$count" 1 'duplicate application'
     i=203
     for case_name in signature origin empty_id invalid_id non_v4 old future private no_site bad_site; do

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -140,5 +141,31 @@ func TestSiteErrorPages(t *testing.T) {
 	writeFile(t, filepath.Join(own, "429.html"), "{{.Broken")
 	if _, err := LoadSnapshot(cfg); err == nil {
 		t.Fatal("broken page of a site accepted")
+	}
+}
+
+// The pages that were not found are named, so the node can warn about them once per load
+// instead of failing every request for them in silence.
+func TestMissingErrorPagesAreNamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "403.html"), "403")
+	pages, err := LoadErrorPages(dir)
+	if err != nil {
+		t.Fatalf("LoadErrorPages: %v", err)
+	}
+	missing := pages.Missing()
+	if len(missing) != len(pageFiles)-1 || slices.Contains(missing, "403.html") || !slices.Contains(missing, "429.html") || !slices.IsSorted(missing) {
+		t.Fatalf("missing = %v", missing)
+	}
+	// A site takes what it does not have from the common pages: nothing is missing of its own.
+	site, err := LoadSiteErrorPages(t.TempDir(), pages)
+	if err != nil {
+		t.Fatalf("LoadSiteErrorPages: %v", err)
+	}
+	if len(site.Missing()) != 0 {
+		t.Fatalf("site missing = %v", site.Missing())
+	}
+	if (*ErrorPages)(nil).Missing() != nil {
+		t.Fatal("nil pages miss something")
 	}
 }

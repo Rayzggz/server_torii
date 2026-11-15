@@ -3,7 +3,6 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 )
@@ -18,9 +17,6 @@ func Lists(reqData request.UserRequest, ruleSet *config.RuleSet, decision *actio
 			continue
 		}
 		decision.Detail = list.Name
-		if list.Action != action.ActionAllow {
-			logx.Info(reqData, "", "List "+list.Name+" "+string(list.Action))
-		}
 		applyAction(reqData, decision, rt, list.Action)
 		return
 	}

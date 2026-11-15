@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"html/template"
 	"io/fs"
-	"log"
 	"path/filepath"
+	"slices"
 )
 
 // Page identifies one error page template.
@@ -41,6 +41,16 @@ func (p Page) String() string {
 // every request; html/template is safe for concurrent Execute.
 type ErrorPages struct {
 	tpl [pageCount]*template.Template
+	// missing names the files that were not found, here or in the fallback.
+	missing []string
+}
+
+// Missing returns the files of pages that were not found. A request for one is answered 500.
+func (e *ErrorPages) Missing() []string {
+	if e == nil {
+		return nil
+	}
+	return e.missing
 }
 
 // Get returns the parsed template, or nil when the file was absent or pages is nil.
@@ -75,12 +85,13 @@ func loadErrorPages(dir string, fallback *ErrorPages) (*ErrorPages, error) {
 					pages.tpl[p] = fallback.tpl[p]
 					continue
 				}
-				log.Printf("[WARN] Error page %s not found in %s; requests for it will return 500", name, dir)
+				pages.missing = append(pages.missing, name)
 				continue
 			}
 			return nil, fmt.Errorf("failed to parse error page %s: %w", name, err)
 		}
 		pages.tpl[p] = tpl
 	}
+	slices.Sort(pages.missing)
 	return pages, nil
 }

@@ -1,9 +1,9 @@
 package check
 
 import (
+	"log/slog"
 	"net/http"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
 )
@@ -50,7 +50,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 		if failureCounter := rt.LimitersFor(reqData.Site).ChallengeFailureLimitCounter.Load(); failureCounter != nil {
 			failureCounter.Add(reqData.ClientKey(), 1)
 		} else {
-			logx.Error(reqData, "", "Captcha failure counter is not initialized, skipping captcha failure increment")
+			rt.Error(reqData, "Challenge failure counter is not initialized; the failed answer is not counted")
 		}
 		return outcome
 	}
@@ -64,7 +64,7 @@ func CheckCaptcha(r *http.Request, reqData request.UserRequest, ruleSet *config.
 
 	verificationResult, err := verifyCaptchaResponse(r, reqData, ruleSet)
 	if err != nil {
-		logx.Error(reqData, "", err.Error())
+		rt.Error(reqData, "CAPTCHA answer not verified", slog.String("error", err.Error()))
 		return SubmissionUnavailable
 	}
 	switch verificationResult {

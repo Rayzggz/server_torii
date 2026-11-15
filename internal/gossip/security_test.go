@@ -31,7 +31,7 @@ func TestGossipSecurityFixes(t *testing.T) {
 		}
 		bl := action.NewActionRuleEngine(time.Minute)
 		t.Cleanup(bl.Stop)
-		gm := NewManager(cfg, bl)
+		gm := NewManager(cfg, bl, nil)
 		return gm, bl, cfg
 	}
 

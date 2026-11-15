@@ -26,6 +26,9 @@ type MainConfig struct {
 	WebPath        string `yaml:"web_path" validate:"required,startswith=/"`
 	ErrorPage      string `yaml:"error_page" validate:"required"`
 	LogPath        string `yaml:"log_path" validate:"required"`
+	// LogLevel is the least level that is logged: debug, info, warn or error. It is the one
+	// setting of this file that SIGHUP reads again.
+	LogLevel string `yaml:"log_level" validate:"oneof=debug info warn error"`
 	// GlobalSecret is the one secret of a cluster: it signs gossip messages, and the key that
 	// signs the cookies of every site is derived from it. With gossip enabled it must not be
 	// the published example value.

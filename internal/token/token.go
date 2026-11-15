@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -36,15 +37,36 @@ func (s Signer) Sign(host, userAgent string, at time.Time) string {
 // Verify reports whether value was signed with the key for the same host and user agent.
 // A positive maxAge also rejects a token issued more than maxAge seconds before now.
 func (s Signer) Verify(value, host, userAgent string, maxAge int64, now time.Time) bool {
+	return s.Check(value, host, userAgent, maxAge, now) == nil
+}
+
+// Why Check refuses a token.
+var (
+	ErrMalformed = errors.New("malformed")
+	ErrExpired   = errors.New("expired")
+	// ErrSignature is also what a token of another site, host or browser gets: they are all
+	// signed, and telling them apart would tell a forger what to change.
+	ErrSignature = errors.New("not signed for this site, host and browser")
+)
+
+// Check is Verify that says why: nil for a valid token, or one of the errors above.
+func (s Signer) Check(value, host, userAgent string, maxAge int64, now time.Time) error {
 	parts := strings.Split(value, ".")
 	if len(parts) != 3 || parts[0] != version {
-		return false
+		return ErrMalformed
 	}
 	ts, ok := parseTimestamp(parts[1])
-	if !ok || (maxAge > 0 && now.Unix()-ts > maxAge) {
-		return false
+	if !ok {
+		return ErrMalformed
 	}
-	return hmac.Equal([]byte(s.mac(parts[1], host, userAgent)), []byte(parts[2]))
+	// The signature first: the age of a forged token means nothing.
+	if !hmac.Equal([]byte(s.mac(parts[1], host, userAgent)), []byte(parts[2])) {
+		return ErrSignature
+	}
+	if maxAge > 0 && now.Unix()-ts > maxAge {
+		return ErrExpired
+	}
+	return nil
 }
 
 // parseTimestamp accepts only the form Sign writes, so a token has a single spelling.

@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -66,7 +67,7 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 		t.Fatalf("Stat GeoLite2 database: %v", err)
 	}
 
-	database := geoip.NewCountryDatabase(databasePath)
+	database := geoip.NewCountryDatabase(databasePath, slog.New(slog.DiscardHandler))
 	defer database.CloseOrWarn()
 
 	ruleSet := featureControlRuleSet()

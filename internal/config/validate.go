@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net"
 	"os"
 	"reflect"
@@ -30,19 +29,19 @@ func init() {
 	// Register custom validation for directory paths
 	err := validate.RegisterValidation("dir", validateDir)
 	if err != nil {
-		log.Fatalf("failed to register \"dir\" validator: %v", err)
+		panic(fmt.Sprintf("failed to register \"dir\" validator: %v", err))
 	}
 
 	if err = validate.RegisterValidation("listen_addr", validateListenAddr); err != nil {
-		log.Fatalf("failed to register \"listen_addr\" validator: %v", err)
+		panic(fmt.Sprintf("failed to register \"listen_addr\" validator: %v", err))
 	}
 	if err = validate.RegisterValidation("socket_mode", validateSocketMode); err != nil {
-		log.Fatalf("failed to register \"socket_mode\" validator: %v", err)
+		panic(fmt.Sprintf("failed to register \"socket_mode\" validator: %v", err))
 	}
 	if err = validate.RegisterValidation("site_id", func(fl validator.FieldLevel) bool {
 		return ValidSiteID(fl.Field().String())
 	}); err != nil {
-		log.Fatalf("failed to register \"site_id\" validator: %v", err)
+		panic(fmt.Sprintf("failed to register \"site_id\" validator: %v", err))
 	}
 }
 

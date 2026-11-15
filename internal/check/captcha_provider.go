@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"net/url"
 	"server_torii/internal/config"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"time"
 
@@ -75,12 +74,7 @@ func verifyHCaptchaResponse(r *http.Request, reqData request.UserRequest, ruleSe
 	if err != nil {
 		return false, fmt.Errorf("error sending request to hCaptcha: %v", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-			logx.Error(reqData, "", fmt.Sprintf("Error closing response body: %v", err))
-		}
-	}(resp.Body)
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return false, fmt.Errorf("hCaptcha siteverify returned HTTP %d", resp.StatusCode)

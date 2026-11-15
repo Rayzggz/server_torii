@@ -1,10 +1,10 @@
 package check
 
 import (
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
-	"server_torii/internal/logx"
 	"server_torii/internal/request"
 	"server_torii/internal/rules"
 	"server_torii/internal/state"
@@ -21,7 +21,6 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 		if !rule.Program.Eval(ctx) {
 			continue
 		}
-		logx.Info(reqData, "", "CustomRule "+rule.String())
 		decision.Detail = rule.ID
 		switch rule.Action {
 		case action.ActionAllow, action.ActionBlock, action.ActionChallenge:
@@ -31,6 +30,9 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 		case action.ActionContinue:
 			decision.Detail = ""
 			return
+		case action.ActionLog:
+			// The one action that decides nothing: the line is all it does.
+			rt.Event(reqData, slog.LevelInfo, "custom rule matched", slog.String("rule", rule.ID))
 		case action.ActionSkip:
 			decision.SkipMask |= rule.SkipMask
 			if decision.SkipMask&feature.CustomRules.SkipMask() != 0 {
@@ -38,7 +40,7 @@ func CustomRules(reqData request.UserRequest, ruleSet *config.RuleSet, decision 
 				return
 			}
 		}
-		// ActionLog and non-terminal skips fall through to the next rule.
+		// A log rule and a skip that does not skip the custom rules go on to the next rule.
 		decision.Detail = ""
 	}
 }

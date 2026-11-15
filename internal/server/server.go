@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"server_torii/internal/analyzer"
 	"server_torii/internal/config"
@@ -31,8 +31,9 @@ const (
 	shutdownTimeout = 10 * time.Second
 )
 
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
+func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelWarn),
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: httpReadHeaderTimeout,
@@ -90,7 +91,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// Request reports from the connector feed the traffic analyzer.
 	reports := analyzer.NewReportListener(s.cfg.LogListenAddrs(), s.cfg.SocketMode(), ata)
 	if err := reports.Start(); err != nil {
-		log.Printf("[ERROR] Failed to start the request report listener: %v", err)
+		s.rt.Log().Error("request report listener not started; the traffic analyzer sees no requests", "error", err.Error())
 	} else {
 		s.reports.Store(reports)
 		defer func() {
@@ -104,10 +105,10 @@ func (s *Server) Run(ctx context.Context) error {
 		return err
 	}
 
-	srv := newHTTPServer("", s)
+	srv := newHTTPServer("", s, s.rt.Log())
 	serveErr := make(chan error, len(listeners))
 	for _, ln := range listeners {
-		log.Printf("HTTP Server listening on %s ...", ln.Addr())
+		s.rt.Log().Info("listening", "address", ln.Addr().String())
 		go func() { serveErr <- srv.Serve(ln) }()
 	}
 
@@ -119,11 +120,11 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 	}
 
-	log.Println("Shutting down HTTP server...")
+	s.rt.Log().Info("stopping the HTTP server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("[WARNING] Graceful shutdown did not complete: %v; forcing close", err)
+		s.rt.Log().Warn("requests still running at the shutdown timeout; connections closed", "error", err.Error())
 		_ = srv.Close()
 	}
 	var firstErr error

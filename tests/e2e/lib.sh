@@ -257,9 +257,22 @@ cluster_decision() {
 }
 hmac() { printf '%s' "$1" | openssl dgst -sha512 -hmac "$2" | awk '{print $NF}'; }
 uuid() { cat /proc/sys/kernel/random/uuid; }
+# log_line FILE PART...: one line of the log holds every part.
+log_line() {
+    local file=$1 part lines deadline=$((SECONDS+10)); shift
+    while :; do
+        lines=$(cat "$file" 2>/dev/null || true)
+        for part in "$@"; do lines=$(grep -F -- "$part" <<<"$lines" || true); done
+        [[ -n $lines ]] && break
+        alive
+        (( SECONDS < deadline )) || fail "Missing log line in $file: $*"
+        sleep 0.2
+    done
+    ASSERTIONS=$((ASSERTIONS+1))
+}
 wait_log() {
     local file=$1 pattern=$2 deadline=$((SECONDS+10))
-    until grep -Fq "$pattern" "$file"; do
+    until grep -Fq "$pattern" "$file" 2>/dev/null; do
         alive
         (( SECONDS < deadline )) || fail "Missing log: $pattern"
         sleep 0.2

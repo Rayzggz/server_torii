@@ -52,6 +52,11 @@ type Rate struct {
 	Window int64
 }
 
+// String writes the rate the way the configuration does, with the window in seconds.
+func (r Rate) String() string {
+	return strconv.FormatInt(r.Limit, 10) + "/" + strconv.FormatInt(r.Window, 10) + "s"
+}
+
 // Rates are the limits of one counter, in the order they were configured: the first one a
 // client exceeds is the one that is reported.
 type Rates []Rate

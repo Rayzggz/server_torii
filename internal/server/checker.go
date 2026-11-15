@@ -1,12 +1,15 @@
 package server
 
 import (
+	"context"
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
 	"server_torii/internal/request"
 	"server_torii/internal/state"
+	"strings"
 )
 
 type CheckFunc func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
@@ -32,14 +35,28 @@ var checkFuncs = [feature.Count]CheckFunc{
 func (s *Server) runChecks(userRequestData request.UserRequest, ruleSet *config.RuleSet) (*action.Decision, feature.Check) {
 	decision := action.NewDecision()
 	requiredBy, requiredReason := feature.Count, ""
+	// At the debug level the line of the request says what every check did.
+	var trace []string
+	debug := s.rt.SiteLog(userRequestData.Site).Enabled(context.Background(), slog.LevelDebug)
 	for _, c := range feature.Pipeline() {
 		// A challenge an earlier check asked for is not optional: neither the switch of the
 		// Challenge check nor a skip rule takes it back.
 		required := c == feature.Challenge && decision.RequireChallenge
 		if !required && (!c.Enabled(userRequestData.FeatureControl) || decision.SkipMask&c.SkipMask() != 0) {
+			if debug {
+				outcome := "off"
+				if c.Enabled(userRequestData.FeatureControl) {
+					outcome = "skipped"
+				}
+				trace = append(trace, c.String()+":"+outcome)
+			}
 			continue
 		}
+		before := *decision
 		checkFuncs[c](userRequestData, ruleSet, decision, s.rt)
+		if debug {
+			trace = append(trace, c.String()+":"+outcome(&before, decision))
+		}
 
 		reason := c.String()
 		if decision.Detail != "" {
@@ -54,8 +71,44 @@ func (s *Server) runChecks(userRequestData request.UserRequest, ruleSet *config.
 				c, reason = requiredBy, requiredReason
 			}
 			decision.Reason = reason
+			s.logDecision(userRequestData, decision, trace)
 			return decision, c
 		}
 	}
+	s.logDecision(userRequestData, decision, trace)
 	return decision, feature.Count
+}
+
+// outcome names what one check did to the decision, for the debug line of the request.
+func outcome(before, after *action.Decision) string {
+	switch {
+	case after.State == action.Done:
+		return after.Verdict.String()
+	case after.RequireChallenge && !before.RequireChallenge:
+		return "challenge"
+	case after.SkipMask != before.SkipMask:
+		return "skip"
+	}
+	return "continue"
+}
+
+// logDecision writes the request to the events of its site: at the info level when it was not
+// let through, at the debug level when it was. It is the one place decisions are logged: the
+// checks only decide. trace is what every check did; it is nil unless the debug level is on.
+func (s *Server) logDecision(req request.UserRequest, decision *action.Decision, trace []string) {
+	level := slog.LevelInfo
+	if decision.Verdict == action.VerdictAllow {
+		level = slog.LevelDebug
+	}
+	attrs := []slog.Attr{slog.String("verdict", decision.Verdict.String())}
+	if decision.Reason != "" {
+		attrs = append(attrs, slog.String("reason", decision.Reason))
+	}
+	if decision.Note != "" {
+		attrs = append(attrs, slog.String("note", decision.Note))
+	}
+	if len(trace) > 0 {
+		attrs = append(attrs, slog.String("checks", strings.Join(trace, " ")))
+	}
+	s.rt.Event(req, level, "decision", attrs...)
 }

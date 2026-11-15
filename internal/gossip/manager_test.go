@@ -141,7 +141,7 @@ func TestValidateActionRuleVocabulary(t *testing.T) {
 func TestProcessRemoteMessageIgnoresOtherVersions(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	gm := NewManager(&config.MainConfig{NodeName: "node-a"}, engine)
+	gm := NewManager(&config.MainConfig{NodeName: "node-a"}, engine, nil)
 	payload, _ := json.Marshal(ActionRulePayload{Site: "site_a", RuleType: "IP", Value: "1.2.3.4", Action: "block", ExpiresAt: time.Now().Add(time.Hour).Unix()})
 
 	gm.processRemoteMessage(Message{Version: 1, ID: "old", Type: TypeActionRule, OriginNode: "node-b", Content: string(payload)})

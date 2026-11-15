@@ -85,7 +85,7 @@ func TestGossipManager_HandleGossip_ReplayProtection(t *testing.T) {
 			}
 			engine := action.NewActionRuleEngine(time.Minute)
 			t.Cleanup(engine.Stop)
-			gm := NewManager(&localCfg, engine)
+			gm := NewManager(&localCfg, engine, nil)
 			// Override start time/random dependencies if needed, but here simple logic suffices.
 
 			id := uuid.New().String()

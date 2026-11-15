@@ -6,6 +6,7 @@ const (
 	DefaultWebPath   = "/torii"
 	DefaultErrorPage = "/www/server_torii/config/error_page"
 	DefaultLogPath   = "/www/server_torii/log/"
+	DefaultLogLevel  = "info"
 	// DefaultGlobalSecret is the value in config_example/torii.yml. It is public, so gossip refuses it.
 	DefaultGlobalSecret = "0378b0f84c4310279918d71a5647ba5d"
 	DefaultNodeName     = "Server Torii"
@@ -27,6 +28,7 @@ func DefaultMainConfig() *MainConfig {
 		WebPath:     DefaultWebPath,
 		ErrorPage:   DefaultErrorPage,
 		LogPath:     DefaultLogPath,
+		LogLevel:    DefaultLogLevel,
 		NodeName:    DefaultNodeName,
 		Sites:       append([]Site{}, DefaultSites...),
 		DefaultSite: DefaultSiteID,

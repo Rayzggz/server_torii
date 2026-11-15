@@ -57,13 +57,13 @@ BASE_PORT=27000 KEEP_ARTIFACTS=1 bash tests/e2e/test.sh
 | `access` | IPv4, IPv6 and IPv4-mapped allow/block/challenge lists, exact and `regex:` URL entries, the order of the lists and nonmatches |
 | `custom_rules` | Feature-bit gating, Referer/User-Agent/method/IP conditions, block/challenge/allow/log actions, skip HTTPFlood, disabled rules, list precedence |
 | `country` | Pinned US/AU/GB database records, default and unknown policies, missing database, rule precedence |
-| `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry |
+| `flood` | Speed and same-URI boundaries, client isolation, recovery, repeated-failure block and ten-node propagation/expiry, the decision lines in the events log of the site |
 | `captcha` | ALTCHA challenge and shell solution, clearance, list integration, tampering, malformed proof, session binding/expiry, challenge/clearance expiry, failure block |
 | `external` | A site in the external challenge mode: redirect signature, callback/clearance, invalid signatures/sessions, old timestamps, unsafe redirect, custom pages |
 | `syslog` | Request reports over UDP, unknown sites, malformed and legacy-format messages, report counters, below-threshold/healthy controls, non-200 IP blocks, canonicalized URI challenges and propagation/expiry |
 | `gossip` | Real-origin propagation, injected-message origin distinction, TTL, deduplication, signature/origin/ID/time validation, private IP, malformed/oversized input, IP/URI snapshots, a dropped UA rule and periodic anti-entropy |
 | `crawler` | Official Google range discovery plus forward/reverse DNS, real Googlebot acceptance, spoof rejection, disabled verification, ordinary traffic |
-| `reload` | SIGHUP rule reload, node isolation, malformed configuration rejection, recovery, retention of an existing GeoIP reader on failed reload |
+| `reload` | SIGHUP rule reload, log files opened again after a rotation, node isolation, malformed configuration rejection, recovery, retention of an existing GeoIP reader on failed reload |
 
 `NUM_NODES` defaults to `10` (allowed: 3–32). `BASE_PORT` defaults to `25000`;
 nodes use TCP **and UDP** ports `BASE_PORT+1` through `BASE_PORT+NUM_NODES`.
