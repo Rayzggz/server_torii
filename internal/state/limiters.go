@@ -1,12 +1,10 @@
 package state
 
 import (
-	"context"
 	"runtime"
 	"server_torii/internal/config"
 	"server_torii/internal/ratelimit"
 	"sync/atomic"
-	"time"
 )
 
 // Limiters are the rate counters of one site. Each is nil until the first Resize.
@@ -121,20 +119,6 @@ func (s *SiteLimiters) GC() {
 	if sites := s.sites.Load(); sites != nil {
 		for _, l := range *sites {
 			l.GC()
-		}
-	}
-}
-
-// RunGC calls GC every interval until ctx is done.
-func (s *SiteLimiters) RunGC(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ticker.C:
-			s.GC()
-		case <-ctx.Done():
-			return
 		}
 	}
 }

@@ -67,7 +67,9 @@ func (s *Server) runChecks(userRequestData request.UserRequest, ruleSet *config.
 			requiredBy, requiredReason = c, reason
 		}
 		if decision.State == action.Done {
-			if c == feature.Challenge && requiredBy != feature.Count {
+			// Only the challenge belongs to the check that asked for it: a block for failing
+			// it too often is the doing of the Challenge check.
+			if c == feature.Challenge && decision.Verdict == action.VerdictChallenge && requiredBy != feature.Count {
 				c, reason = requiredBy, requiredReason
 			}
 			decision.Reason = reason

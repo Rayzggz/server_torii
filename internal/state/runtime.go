@@ -133,13 +133,13 @@ func (rt *Runtime) RunGC(ctx context.Context, interval time.Duration) {
 		select {
 		case <-ticker.C:
 			rt.GC()
-			if total := rt.Untracked(); total > reported {
+			total := rt.Untracked()
+			if total > reported {
 				rt.Log().Warn("rate counters full: requests of new clients were not counted and not limited",
 					"requests", total-reported, "keys_per_counter", ratelimit.DefaultMaxKeys)
-				reported = total
-			} else {
-				reported = total
 			}
+			// Also when it fell: a counter that was replaced took its count with it.
+			reported = total
 		case <-ctx.Done():
 			return
 		}

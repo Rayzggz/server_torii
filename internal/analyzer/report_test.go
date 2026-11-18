@@ -4,7 +4,9 @@ import (
 	"net"
 	"path/filepath"
 	"runtime"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -63,6 +65,29 @@ func reportConfigs() *config.Manager {
 		DefaultSite: "blog",
 	})
 	return configs
+}
+
+// A client on an allow list is exempt by its own address. Its key is the network it is in,
+// which a list entry for one address does not hold.
+func TestSubmitLeavesOutAllowListedClients(t *testing.T) {
+	configs := reportConfigs()
+	configs.Get().Site("shop").Lists = config.NewListSet(
+		config.MustNewList("ip_allow", config.ListIP, action.ActionAllow, "2001:db8:1:2:aaaa::5", "192.0.2.7"),
+	)
+	a := NewAdaptiveTrafficAnalyzer(nil, configs)
+	for _, ip := range []string{"2001:db8:1:2:aaaa::5", "192.0.2.7", "2001:db8:1:2:aaaa::6", "192.0.2.8"} {
+		if !a.submit(LogEntry{Site: "shop", IP: ip, URI: "/", Status: 200}) {
+			t.Fatalf("report of %s refused", ip)
+		}
+	}
+	var kept []string
+	for _, entry := range a.buffer.entries {
+		kept = append(kept, entry.IP)
+	}
+	// The neighbour in the same /64 is analyzed, under the key of the network.
+	if want := []string{"2001:db8:1:2::", "192.0.2.8"}; !slices.Equal(kept, want) {
+		t.Fatalf("analyzed clients = %v, want %v", kept, want)
+	}
 }
 
 func bufferedSites(a *AdaptiveTrafficAnalyzer) map[string]int {

@@ -1,4 +1,4 @@
-.PHONY: all build tidy clean install uninstall reinstall test-e2e upgrade
+.PHONY: all build tidy clean install uninstall reinstall test-e2e test-e2e-nginx upgrade
 
 all: build
 
@@ -18,6 +18,10 @@ build:
 
 test-e2e:
 	bash tests/e2e/test.sh
+
+# The same scenarios through nginx built with the ngx_torii module; NGX_TORII_SRC names its checkout.
+test-e2e-nginx:
+	bash tests/e2e/nginx.sh
 
 clean:
 	rm -f server_torii

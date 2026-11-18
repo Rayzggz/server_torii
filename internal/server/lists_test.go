@@ -112,6 +112,29 @@ func TestListsChallengeFollowsThePipeline(t *testing.T) {
 	}
 }
 
+// A challenge is reported under the list that asked for it. The block of a client that failed
+// the challenge too often is reported under the Challenge check, which decided it.
+func TestFailureLimitBlockIsNotBlamedOnTheList(t *testing.T) {
+	rs := listsRuleSet()
+	rs.Challenge.FailureLimit = ratelimit.Rates{{Limit: 2, Window: 60}}
+	rs.Challenge.FailureBlockDuration = time.Minute
+	rt := &state.Runtime{}
+	rt.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(60, 1))
+	s := NewServer(&config.MainConfig{}, nil, rt, nil)
+	req := request.UserRequest{Site: "shop", RemoteIP: "203.0.113.9", Uri: "/", Host: "example.com"}
+
+	for i := 0; i < 3; i++ {
+		decision, by := s.runChecks(req, rs)
+		if decision.Verdict != action.VerdictChallenge || decision.Reason != "Lists:ip_challenge" || by != feature.Lists {
+			t.Fatalf("request %d: %s, reason %q, by %s", i+1, decision.Verdict, decision.Reason, by)
+		}
+	}
+	decision, by := s.runChecks(req, rs)
+	if decision.Verdict != action.VerdictBlock || decision.Reason != "Challenge" || by != feature.Challenge {
+		t.Fatalf("over the failure limit: %s, reason %q, by %s", decision.Verdict, decision.Reason, by)
+	}
+}
+
 // Custom rules run after the lists and refer to them by name, also to the ones that are
 // switched off or have no action.
 func TestCustomRulesUseLists(t *testing.T) {

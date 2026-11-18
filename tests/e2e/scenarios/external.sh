@@ -45,7 +45,9 @@ test_external() {
     public 1 /torii/captcha/challenge 203.0.113.140 "$host"
     assert_eq "$HTTP_CODE" 403 'ALTCHA challenge on an external site'
     assert_contains "$HTTP_BODY" E2E-403
-    # Nothing but the connector protocol and the node's own endpoints is served.
+    # Nothing but the connector protocol and the node's own endpoints is served. Behind nginx
+    # these are URIs of the application.
+    [[ "$VIA" == direct ]] || return 0
     for uri in /unknown-endpoint /torii/checker /torii/checker_pages/403 /torii/captcha; do
         request 1 "$uri"
         assert_eq "$HTTP_CODE" 404 "$uri"

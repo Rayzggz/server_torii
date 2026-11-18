@@ -54,7 +54,7 @@ type Logs struct {
 	// level is the least level that is written, in every file. It starts at info.
 	level *slog.LevelVar
 
-	mu    sync.Mutex
+	mu    sync.RWMutex
 	sites map[string]*siteLog
 }
 
@@ -125,12 +125,20 @@ func (l *Logs) Site(id string) *slog.Logger {
 	if id == "" {
 		id = UnknownSite
 	}
+	// Every request asks for the logger of its site, and the site is nearly always known:
+	// readers do not wait for one another.
+	l.mu.RLock()
+	site, ok := l.sites[id]
+	l.mu.RUnlock()
+	if ok {
+		return site.logger
+	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if site, ok := l.sites[id]; ok {
 		return site.logger
 	}
-	site := l.openSite(id)
+	site = l.openSite(id)
 	l.sites[id] = site
 	return site.logger
 }

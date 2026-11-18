@@ -18,7 +18,7 @@ test_custom_rules() {
     expect block 1 198.18.0.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
     expect pass 1 198.18.1.2 "$custom" /item default_site -H 'Torii-Method: DELETE'
     expect challenge 1 198.18.0.3 "$custom" /neutral default_site -A 'Mozilla/5.0 BadBot/1.0'
-    assert_eq "$(header Torii-Reason)" CustomRules:challenge-badbot 'the reason names the rule'
+    assert_eq "$HTTP_REASON" CustomRules:challenge-badbot 'the reason names the rule'
     # Rules refer to the lists of the site by name, whether or not the list itself is switched on:
     # the mask switches every list off, and the rules still see their entries.
     expect block 1 198.51.100.60 "$custom" /e2e/list

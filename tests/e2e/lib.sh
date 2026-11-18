@@ -4,6 +4,9 @@
 NUM_NODES=${NUM_NODES:-10}
 BASE_PORT=${BASE_PORT:-25000}
 KEEP_ARTIFACTS=${KEEP_ARTIFACTS:-0}
+# How the requests of the scenarios reach Torii: "direct" speaks the connector protocol to the
+# nodes; "nginx" sends ordinary requests through nginx sites (nginx_lib.sh).
+VIA=${VIA:-direct}
 ZERO=0000000000000000
 SECRET=e2e-only-global-secret-never-use-in-production
 # The key of the site's Challenge section; it also signs the links exchanged with the external provider.
@@ -35,6 +38,7 @@ alive() {
 cleanup() {
     local status=$? pid deadline file
     trap - EXIT ERR INT TERM
+    if [[ "$VIA" == nginx ]]; then stop_nginx; fi
     for pid in "${NODE_PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
     deadline=$((SECONDS + 5))
     for pid in "${NODE_PIDS[@]}"; do
@@ -48,6 +52,9 @@ cleanup() {
             [[ -f "$file" ]] || continue
             log "$file"; tail -n 8 "$file" || true
         done
+        if [[ -f "$RUN/nginx/logs/error.log" ]]; then
+            log "$RUN/nginx/logs/error.log"; grep -v '\[info\]' "$RUN/nginx/logs/error.log" | tail -n 8 || true
+        fi
     fi
     if [[ "$KEEP_ARTIFACTS" == 1 ]]; then
         log "Artifacts: $RUN"
@@ -69,6 +76,14 @@ preflight() {
     for tool in go curl jq openssl dig ss awk sed grep head tail mktemp date base64 tr dd cp mv rm mkdir cat sleep uname; do
         command -v "$tool" >/dev/null || fail "Missing dependency: $tool (see tests/e2e/README.md)"
     done
+    if [[ "$VIA" == nginx ]]; then
+        for tool in make cc tar find nproc; do
+            command -v "$tool" >/dev/null || fail "Missing dependency: $tool (see tests/e2e/README.md)"
+        done
+        if [[ ! "$NGINX_BASE_PORT" =~ ^[1-9][0-9]{3,4}$ ]] || (( NGINX_BASE_PORT < 1024 || NGINX_BASE_PORT + NUM_NODES > 65535 )); then
+            fail 'Invalid NGINX_BASE_PORT'
+        fi
+    fi
     openssl version | grep -Eq '^OpenSSL [3-9]\.' || fail 'OpenSSL 3+ is required for PBKDF2'
     # Probe KDF support, including binary-safe hex passwords, before launching nodes.
     openssl kdf -keylen 32 -kdfopt digest:SHA512 -kdfopt hexpass:00000000 -kdfopt hexsalt:00 -kdfopt iter:1 PBKDF2 >/dev/null
@@ -78,6 +93,13 @@ preflight() {
             fail "TCP or UDP port $port already in use; choose BASE_PORT"
         fi
     done
+    if [[ "$VIA" == nginx ]]; then
+        for ((port=NGINX_BASE_PORT; port<=NGINX_BASE_PORT+NUM_NODES; port++)); do
+            if awk -v p="$port" '$5 ~ (":" p "$") {found=1} END {exit !found}' <<< "$listeners"; then
+                fail "TCP port $port already in use; choose NGINX_BASE_PORT"
+            fi
+        done
+    fi
     RUN=$(mktemp -d "${TMPDIR:-/tmp}/torii-e2e.XXXXXXXX")
     trap cleanup EXIT
     trap 'log "Unexpected failure at ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND" >&2' ERR
@@ -143,20 +165,29 @@ setup_cluster() {
     done
     alive
 }
+# request NODE ENDPOINT [curl args]: one request to the node, or with VIA=nginx to the nginx
+# sites in front of it. Sets HTTP_CODE, HTTP_BODY, HTTP_DECISION and HTTP_REASON.
 request() {
-    local node=$1 endpoint=$2
+    local node=$1 endpoint=$2 port=$((BASE_PORT+$1))
     shift 2
+    [[ "$VIA" != nginx ]] || port=$((NGINX_BASE_PORT+node))
     REQUESTS=$((REQUESTS+1))
     RESPONSE="$RUN/responses/$REQUESTS"
     printf '%q ' "node=$node" "$endpoint" "$@" > "$RESPONSE.request"
     printf '\n' >> "$RESPONSE.request"
     if ! HTTP_CODE=$(curl --silent --show-error --noproxy '*' --connect-timeout 2 --max-time 15 \
         -A "$UA" -D "$RESPONSE.headers" -o "$RESPONSE.body" -w '%{http_code}' \
-        "http://127.0.0.1:$((BASE_PORT+node))$endpoint" "$@"); then
+        "http://127.0.0.1:$port$endpoint" "$@"); then
         fail "Request $REQUESTS to node $node $endpoint failed (transport)"
     fi
     HTTP_BODY=$(cat "$RESPONSE.body")
-    HTTP_DECISION=$(header Torii-Decision)
+    # Behind nginx the headers of the protocol never reach the client; the sites of the suite
+    # show what the module decided in headers of their own.
+    if [[ "$VIA" == nginx ]]; then
+        HTTP_DECISION=$(header X-E2E-Decision); HTTP_REASON=$(header X-E2E-Reason)
+    else
+        HTTP_DECISION=$(header Torii-Decision); HTTP_REASON=$(header Torii-Reason)
+    fi
 }
 header() { awk -v key="$1:" 'tolower($1)==tolower(key) {$1=""; sub(/^ /, ""); sub(/\r$/, ""); print}' "$RESPONSE.headers"; }
 # The scenarios select checks with a 16-character mask, one character per check in this order:
@@ -189,9 +220,25 @@ site_for() {
     esac
 }
 # check NODE IP [MASK [URI [HOST [curl args]]]]: what the connector asks for every request.
+# With VIA=nginx it is the request itself: sent to the server block of the host, from a proxy
+# nginx trusts to name the client address, and checked by the module on its way to the application.
 check() {
     local node=$1 ip=$2 features=${3-$ZERO} uri=${4:-/neutral} host=${5:-default_site}
     shift "$(( $# < 5 ? $# : 5 ))"
+    if [[ "$VIA" == nginx ]]; then
+        local -a args=()
+        while (( $# > 0 )); do
+            # The scenarios name the method of the original request the way the connector does.
+            if [[ "$1" == -H && "${2-}" == 'Torii-Method: '* ]]; then
+                args+=(-X "${2#Torii-Method: }"); shift 2
+            else
+                args+=("$1"); shift
+            fi
+        done
+        request "$node" "$uri" -H "Host: $host" -H "X-Forwarded-For: $ip" \
+            -H "X-E2E-Features: $(features_header "$features")" "${args[@]}"
+        return
+    fi
     request "$node" /v1/check -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
         -H "Torii-Features: $(features_header "$features")" -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
 }
@@ -199,10 +246,15 @@ check() {
 public() {
     local node=$1 uri=$2 ip=$3 host=$4
     shift 4
+    if [[ "$VIA" == nginx ]]; then
+        request "$node" "$uri" -H "Host: $host" -H "X-Forwarded-For: $ip" "$@"
+        return
+    fi
     request "$node" "/v1/public${uri#/torii}" -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
         -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
 }
 # decision EXPECTED: the last check decided EXPECTED and answered with the matching response.
+# A request that passes gets no body from Torii; behind nginx it gets the application's answer.
 # A challenge is answered with the CAPTCHA page, or, on a site in the external mode, with a
 # redirect to the provider: expect "redirect" there. Both are the decision "challenge".
 decision() {
@@ -211,8 +263,13 @@ decision() {
     assert_eq "$HTTP_DECISION" "$wire" 'decision'
     case "$expected" in
         pass)
-            assert_eq "$HTTP_CODE" 204 'pass status'
-            assert_eq "$HTTP_BODY" '' 'pass body' ;;
+            if [[ "$VIA" == nginx ]]; then
+                assert_eq "$HTTP_CODE" 200 'pass status'
+                assert_contains "$HTTP_BODY" 'APP ' 'pass reaches the application'
+            else
+                assert_eq "$HTTP_CODE" 204 'pass status'
+                assert_eq "$HTTP_BODY" '' 'pass body'
+            fi ;;
         block)
             assert_eq "$HTTP_CODE" 403 'block status'
             assert_contains "$HTTP_BODY" E2E-403 'block page' ;;
@@ -266,6 +323,18 @@ log_line() {
         [[ -n $lines ]] && break
         alive
         (( SECONDS < deadline )) || fail "Missing log line in $file: $*"
+        sleep 0.2
+    done
+    ASSERTIONS=$((ASSERTIONS+1))
+}
+# wait_counter NAME VALUE: the health check of node 1 reports at least VALUE for the counter.
+wait_counter() {
+    local name=$1 want=$2 got deadline=$((SECONDS+10))
+    while :; do
+        request 1 /torii/health_check
+        got=$(sed -n "s/^$name=//p" <<< "$HTTP_BODY")
+        (( ${got:-0} >= want )) && break
+        (( SECONDS < deadline )) || fail "$name=$got, expected at least $want"
         sleep 0.2
     done
     ASSERTIONS=$((ASSERTIONS+1))

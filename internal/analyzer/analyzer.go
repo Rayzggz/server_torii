@@ -224,8 +224,15 @@ func (ata *AdaptiveTrafficAnalyzer) submit(entry LogEntry) bool {
 		return false
 	}
 	entry.Site = rules.ID
+	addr := request.ParseAddr(entry.IP)
+	// An allow list is asked about the address of the client, as the Lists check asks it: the
+	// key below is the network of the client, which an entry for one address does not hold.
+	// The traffic of such a client is not analyzed.
+	if rules.Lists.AllowsAddr(addr) {
+		return true
+	}
 	// The same key the checks count the client under, so a rule made here matches its requests.
-	entry.IP = request.Key(request.ParseAddr(entry.IP), entry.IP, ata.ipv6PrefixBits())
+	entry.IP = request.Key(addr, entry.IP, ata.ipv6PrefixBits())
 	ata.AddLog(entry)
 	return true
 }

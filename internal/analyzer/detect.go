@@ -156,6 +156,9 @@ func (det *detection) ignoredRequest(l LogEntry) bool {
 	return det.ctx.Rule.Lists.AllowsURL(l.URI)
 }
 
+// exemptIP reports whether the client under this key is left alone. The reports of a client on
+// an allow list were already left out when they arrived, by its address; the list is asked
+// again here for the key, which covers a list that changed since.
 func (det *detection) exemptIP(ip string) bool {
 	if det.ctx.Marks.active(ip, det.now) {
 		return true

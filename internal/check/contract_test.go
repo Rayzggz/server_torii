@@ -140,7 +140,13 @@ func TestCookieFormatContract(t *testing.T) {
 func TestExternalSessionContract(t *testing.T) {
 	req, rs := contractFixture(config.ChallengeExternal)
 	session := func(ts int64, host, ua, label string) string {
-		return fmt.Sprintf("%d:%s", ts, contractMAC(fmt.Sprintf("%d%s%s%s", ts, host, ua, label)))
+		// Every signed field follows its length as four big-endian bytes.
+		var message []byte
+		for _, field := range []string{label, strconv.FormatInt(ts, 10), host, ua} {
+			message = binary.BigEndian.AppendUint32(message, uint32(len(field)))
+			message = append(message, field...)
+		}
+		return fmt.Sprintf("%d:%s", ts, contractMAC(string(message)))
 	}
 	verify := func(rs config.RuleSet, v string) bool {
 		r := req
