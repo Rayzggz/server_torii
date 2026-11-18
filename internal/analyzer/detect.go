@@ -1,0 +1,606 @@
+package analyzer
+
+import (
+	"fmt"
+	"log/slog"
+	"math"
+	"server_torii/internal/action"
+	"server_torii/internal/config"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
+	"sort"
+	"strings"
+	"time"
+)
+
+// IP score weights.
+const (
+	scoreHotURIBot      = 50
+	scoreNoBrowser      = 10
+	scoreHighFail       = 50
+	scoreScanner        = 50
+	scoreRepeatOffense  = 20
+	scoreRepeatMax      = 40
+	scoreBrowserLike    = -40
+	hotURIFocusRatio    = 0.8
+	browserHitQuantile  = 0.95
+	minQuantileSamples  = 20
+	maxDetailedLogLines = 20
+)
+
+// trafficDetector separates browser-like clients from bots that hammer a few URIs.
+// Browser-like clients form the reference population, so a long-running attack does not
+// become the baseline, and no CAPTCHA pass is needed to count as a real user.
+type trafficDetector struct{}
+
+type detection struct {
+	ctx      *analysisContext
+	rule     config.AdaptiveTrafficAnalyzerRule
+	state    *siteState
+	now      time.Time
+	window   time.Duration
+	halfLife time.Duration
+	assets   map[string]struct{}
+	enforce  *enforcer
+}
+
+func (d *trafficDetector) Analyze(ctx *analysisContext) {
+	if ctx.State == nil || ctx.Rule == nil || ctx.Rule.AdaptiveTrafficAnalyzerRule == nil {
+		return
+	}
+	rule := *ctx.Rule.AdaptiveTrafficAnalyzerRule
+	config.NormalizeAdaptiveTrafficAnalyzerRule(&rule)
+	det := &detection{
+		ctx:      ctx,
+		rule:     rule,
+		state:    ctx.State,
+		now:      ctx.Now,
+		window:   ctx.Interval * time.Duration(rule.WindowBuckets),
+		halfLife: rule.URIDetection.Baseline.HalfLife,
+		assets:   toSet(rule.BrowserEvidence.AssetExtensions),
+		enforce:  newEnforcer(ctx.Runtime, ctx.Rule.ID, rule.IPDetection.MaxBroadcastPerTick),
+	}
+	det.run()
+}
+
+func (det *detection) run() {
+	st := det.state
+	b := det.buildBucket()
+	if b.dropped > 0 {
+		det.log().Warn("request reports dropped: too many clients in one interval", "dropped", b.dropped, "client_limit", maxIPsPerBucket)
+	}
+	st.push(b, det.window, det.rule.WindowBuckets)
+	win := st.aggregate(det.rule.IPDetection.ScanPathsThreshold + 1)
+	det.log().Debug("interval analyzed", "requests", len(det.ctx.Logs), "clients", len(b.ips), "clients_in_window", len(win))
+	det.updateEvidence(b, win)
+	det.updateBaseline(b)
+	uris, browserTotal := det.classifyURIs(win)
+	hot := det.detectHotURIs(uris, browserTotal)
+	det.applyURIActions(hot, uris)
+	if det.rule.IPDetection.Enabled {
+		det.scoreIPs(win, hot)
+	}
+	st.sweep(det.now)
+	st.pruneBaseline(det.now, det.halfLife)
+}
+
+// buildBucket aggregates this interval's logs, skipping exempt traffic entirely.
+func (det *detection) buildBucket() *bucket {
+	b := &bucket{at: det.now, ips: make(map[string]*ipBucket)}
+	exempt := make(map[string]bool)
+	scanCap := det.rule.IPDetection.ScanPathsThreshold + 1
+	for _, l := range det.ctx.Logs {
+		if l.IP == "" || l.URI == "" || det.ignoredRequest(l) {
+			continue
+		}
+		ex, ok := exempt[l.IP]
+		if !ok {
+			ex = det.exemptIP(l.IP)
+			exempt[l.IP] = ex
+		}
+		if ex {
+			continue
+		}
+		ib := b.ips[l.IP]
+		if ib == nil {
+			if len(b.ips) >= maxIPsPerBucket {
+				b.dropped++
+				continue
+			}
+			ib = &ipBucket{pages: make(map[string]pageHits), okPages: make(map[string]struct{}), errPaths: make(map[string]struct{})}
+			b.ips[l.IP] = ib
+		}
+		canonical := action.CanonicalizeURI(l.URI)
+		// A response Torii produced is not the site's verdict on the client. Counting its 403
+		// or 429 as a failure would make every block feed the score that caused it, and its
+		// redirect to a verification page is no sign of a browser.
+		torii := l.answeredByTorii()
+		if !torii {
+			ib.total++
+			if isClientError(l.Status) {
+				ib.clientErr++
+				if len(ib.errPaths) < scanCap {
+					ib.errPaths[canonical] = struct{}{}
+				}
+			}
+		}
+		if isAsset(canonical, det.assets) || isAssetContentType(l.ContentType) {
+			if l.Status < 400 && !torii {
+				ib.evidence = true
+			}
+			continue
+		}
+		// A conditional request answered 304 comes from a browser cache; bots rarely send one.
+		if l.Status == 304 {
+			ib.evidence = true
+		}
+		// Page hits keep counting challenged and blocked requests: hot URI detection has to
+		// see that an attack is still going on while Torii is answering it.
+		ib.pageTotal++
+		if cur, seen := ib.pages[canonical]; seen || len(ib.pages) < maxPagesPerIP {
+			cur.all++
+			if isServed(l.Status) {
+				cur.served++
+			}
+			ib.pages[canonical] = cur
+		}
+		// Raw paths, because grouping would merge page-1 and page-2 of a thread into one page.
+		if isServed(l.Status) && len(ib.okPages) < maxPagesPerIP {
+			ib.okPages[stripQuery(l.URI)] = struct{}{}
+		}
+	}
+	return b
+}
+
+func (det *detection) ignoredRequest(l LogEntry) bool {
+	return det.ctx.Rule.Lists.AllowsURL(l.URI)
+}
+
+// exemptIP reports whether the client under this key is left alone. The reports of a client on
+// an allow list were already left out when they arrived, by its address; the list is asked
+// again here for the key, which covers a list that changed since.
+func (det *detection) exemptIP(ip string) bool {
+	if det.ctx.Marks.active(ip, det.now) {
+		return true
+	}
+	return det.ctx.Rule.Lists.AllowsAddr(request.ParseAddr(ip))
+}
+
+func (det *detection) browserLike(ip string) bool {
+	return det.ctx.Evidence.active(ip, det.now)
+}
+
+func (det *detection) updateEvidence(b *bucket, win map[string]*ipWindow) {
+	until := det.now.Add(det.rule.BrowserEvidence.TTL)
+	for ip, ib := range b.ips {
+		if ib.evidence {
+			det.ctx.Evidence.set(ip, until)
+		}
+	}
+	for ip, w := range win {
+		// Only pages that exist count, so scanners probing many missing paths do not look like browsing.
+		if len(w.okPages) >= det.rule.BrowserEvidence.DistinctPages {
+			det.ctx.Evidence.set(ip, until)
+		}
+	}
+}
+
+// updateBaseline learns each page URI's request rate from browser-like clients only.
+func (det *detection) updateBaseline(b *bucket) {
+	hits := make(map[string]int64)
+	for ip, ib := range b.ips {
+		if !det.browserLike(ip) {
+			continue
+		}
+		for u, h := range ib.pages {
+			hits[u] += h.all
+		}
+	}
+	for u, h := range hits {
+		e := det.state.baseline[u]
+		if e == nil {
+			if len(det.state.baseline) >= maxBaselineURIs {
+				continue
+			}
+			e = &ewma{updated: det.now}
+			det.state.baseline[u] = e
+		}
+		e.observe(det.now, float64(h)/det.ctx.Interval.Seconds(), det.ctx.Interval, det.halfLife)
+	}
+}
+
+func (det *detection) classifyURIs(win map[string]*ipWindow) (map[string]*uriWindow, int64) {
+	uris := make(map[string]*uriWindow)
+	var browserTotal int64
+	for ip, w := range win {
+		browser := det.browserLike(ip)
+		if browser {
+			browserTotal += w.pageTotal
+		}
+		for u, ph := range w.pages {
+			h := ph.all
+			uw := uris[u]
+			if uw == nil {
+				if len(uris) >= maxWindowURIs {
+					continue
+				}
+				uw = &uriWindow{nonIPs: make(map[string]int64)}
+				uris[u] = uw
+			}
+			if browser {
+				uw.browser += h
+			} else {
+				uw.nonBrowser += h
+				uw.nonIPs[ip] += h
+			}
+		}
+	}
+	return uris, browserTotal
+}
+
+// expectedBrowser is the baseline number of browser-like requests to uri over the window.
+func (det *detection) expectedBrowser(uri string) float64 {
+	e := det.state.baseline[uri]
+	if e == nil {
+		return 0
+	}
+	return e.at(det.now, det.halfLife) * det.window.Seconds()
+}
+
+// Hot URI detection modes.
+const (
+	modePaused   = "paused"
+	modeFallback = "fallback"
+	modeBaseline = "baseline"
+)
+
+// detectHotURIs returns URIs that met the hot condition for the configured sustain period.
+func (det *detection) detectHotURIs(uris map[string]*uriWindow, browserTotal int64) map[string]bool {
+	cfg := det.rule.URIDetection.Baseline
+	age := det.now.Sub(det.state.created)
+	mode := modePaused
+	switch {
+	case age >= cfg.Warmup && browserTotal >= cfg.MinReferenceRequests:
+		mode = modeBaseline
+	case age >= det.window:
+		// Browser evidence has had one window to accumulate; judge by share until the baseline is ready.
+		mode = modeFallback
+	}
+	if mode != det.state.mode {
+		det.state.mode = mode
+		switch mode {
+		case modeBaseline:
+			det.log().Info("hot URI detection uses the reference baseline")
+		case modeFallback:
+			det.log().Info("hot URI detection uses the non-browser share until the baseline is ready",
+				"share", det.rule.URIDetection.FallbackShare, "browser_requests", browserTotal, "browser_requests_needed", cfg.MinReferenceRequests)
+		default:
+			det.log().Info("hot URI detection paused while browser evidence accumulates")
+		}
+	}
+
+	var candidates map[string]bool
+	switch mode {
+	case modeBaseline:
+		candidates = det.baselineCandidates(uris)
+	case modeFallback:
+		candidates = det.fallbackCandidates(uris)
+	}
+	return det.sustained(candidates, uris)
+}
+
+// sustained keeps candidates whose non-browser traffic kept arriving in every interval of the
+// sustain period. The window alone would keep a short burst looking hot until it ages out.
+func (det *detection) sustained(candidates map[string]bool, uris map[string]*uriWindow) map[string]bool {
+	hot := make(map[string]bool)
+	if len(candidates) == 0 {
+		return hot
+	}
+	need := int(math.Ceil(det.rule.URIDetection.Sustain.Seconds() / det.ctx.Interval.Seconds()))
+	if need > len(det.state.buckets) {
+		return hot
+	}
+	recent := det.state.buckets[len(det.state.buckets)-need:]
+	if det.now.Sub(recent[0].at) >= time.Duration(need)*det.ctx.Interval {
+		return hot // intervals without logs inside the sustain period
+	}
+	for u := range candidates {
+		// Each interval must carry at least a quarter of the URI's average non-browser rate.
+		perInterval := max(1, uris[u].nonBrowser/int64(det.rule.WindowBuckets)/4)
+		ok := true
+		for _, b := range recent {
+			var n int64
+			for ip, ib := range b.ips {
+				if h := ib.pages[u].all; h > 0 && !det.browserLike(ip) {
+					n += h
+				}
+			}
+			if n < perInterval {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			hot[u] = true
+		}
+	}
+	return hot
+}
+
+// fallbackCandidates judges URIs by how much of their traffic comes from non-browser clients.
+func (det *detection) fallbackCandidates(uris map[string]*uriWindow) map[string]bool {
+	hc := det.rule.URIDetection
+	candidates := make(map[string]bool)
+	for u, uw := range uris {
+		if uw.nonBrowser < hc.MinRequests || len(uw.nonIPs) < hc.MinDistinctIPs {
+			continue
+		}
+		if float64(uw.nonBrowser) >= hc.FallbackShare*float64(uw.nonBrowser+uw.browser) {
+			candidates[u] = true
+		}
+	}
+	return candidates
+}
+
+// minBaselineMix is the lowest non-browser:browser mix baseline detection assumes. At the
+// default ratio_threshold of 5, a URI then needs at least as much non-browser traffic as its
+// normal browser-like traffic to be hot.
+const minBaselineMix = 0.2
+
+// baselineCandidates finds URIs whose non-browser traffic far exceeds the site's normal mix.
+func (det *detection) baselineCandidates(uris map[string]*uriWindow) map[string]bool {
+
+	// The normal non-browser:browser mix, robust to attacks concentrated on a few URIs.
+	var ratios, weights []float64
+	for u := range det.state.baseline {
+		expected := det.expectedBrowser(u)
+		if expected < 1 {
+			continue
+		}
+		var non int64
+		if uw := uris[u]; uw != nil {
+			non = uw.nonBrowser
+		}
+		ratios = append(ratios, float64(non)/expected)
+		weights = append(weights, expected)
+	}
+	// Floor the mix: on sites where most pages see no non-browser traffic the median is 0,
+	// which would make every URI over min_requests and min_distinct_ips hot regardless of
+	// ratio_threshold.
+	mix := math.Max(weightedMedian(ratios, weights), minBaselineMix)
+
+	hc := det.rule.URIDetection
+	candidates := make(map[string]bool)
+	for u, uw := range uris {
+		if uw.nonBrowser < hc.MinRequests || len(uw.nonIPs) < hc.MinDistinctIPs {
+			continue
+		}
+		expected := mix * math.Max(det.expectedBrowser(u), 1)
+		if float64(uw.nonBrowser) >= hc.RatioThreshold*expected {
+			candidates[u] = true
+		}
+	}
+	return candidates
+}
+
+func (det *detection) applyURIActions(hot map[string]bool, uris map[string]*uriWindow) {
+	cfg := det.rule.URIDetection
+	dur := cfg.BlockDuration
+	for _, u := range sortedKeys(hot) {
+		// Renew only once less than half of the previous duration remains.
+		if until, ok := det.state.uriRules[u]; ok && until.Sub(det.now) > dur/2 {
+			continue
+		}
+		det.state.uriRules[u] = det.now.Add(dur)
+		uw := uris[u]
+		det.enforce.apply("URI", u, cfg.Action, dur, false)
+		det.log().Info("hot URI", "action", string(cfg.Action), "uri", u, "duration", dur.String(),
+			"non_browser_requests", uw.nonBrowser, "non_browser_clients", len(uw.nonIPs), "browser_requests", uw.browser,
+			"baseline", det.expectedBrowser(u), "mode", fmt.Sprint(det.state.mode))
+	}
+}
+
+type ipCandidate struct {
+	ip      string
+	score   int
+	reasons []string
+}
+
+// hotHitThresholds sets, per hot URI, how many served window hits mark a non-browser client:
+// more than browserHitQuantile of browser-like clients received, and at least HotURIMinHits.
+func (det *detection) hotHitThresholds(win map[string]*ipWindow, hot map[string]bool) map[string]int64 {
+	samples := make(map[string][]int64, len(hot))
+	for ip, w := range win {
+		if !det.browserLike(ip) {
+			continue
+		}
+		for u := range hot {
+			if h := w.pages[u].served; h > 0 {
+				samples[u] = append(samples[u], h)
+			}
+		}
+	}
+	thresholds := make(map[string]int64, len(hot))
+	for u := range hot {
+		threshold := det.rule.IPDetection.HotURIMinHits
+		if hits := samples[u]; len(hits) >= minQuantileSamples {
+			sort.Slice(hits, func(i, j int) bool { return hits[i] < hits[j] })
+			idx := int(math.Ceil(browserHitQuantile*float64(len(hits)))) - 1
+			threshold = max(threshold, hits[idx]+1)
+		}
+		thresholds[u] = threshold
+	}
+	return thresholds
+}
+
+func (det *detection) scoreIPs(win map[string]*ipWindow, hot map[string]bool) {
+	cfg := det.rule.IPDetection
+	thresholds := det.hotHitThresholds(win, hot)
+	var candidates []ipCandidate
+	for ip, w := range win {
+		if det.ctx.Marks.active(ip, det.now) || det.enforce.hasIPRule(ip) {
+			continue
+		}
+		off := det.state.offenders[ip]
+		if off != nil && det.now.Before(off.until) {
+			continue
+		}
+		score, reasons := 0, []string(nil)
+		add := func(points int, reason string) {
+			score += points
+			reasons = append(reasons, reason)
+		}
+		browser := det.browserLike(ip)
+		// Only served hits count: a request already answered by a challenge or redirect needs no
+		// further action, and real users retrying a challenge must not look like bots.
+		var hotHits int64
+		overURI, overHits, overThreshold := "", int64(0), int64(0)
+		for u, ph := range w.pages {
+			if !hot[u] {
+				continue
+			}
+			hotHits += ph.served
+			if ph.served >= thresholds[u] && ph.served > overHits {
+				overURI, overHits, overThreshold = u, ph.served, thresholds[u]
+			}
+		}
+		if !browser && overURI != "" && float64(hotHits) >= hotURIFocusRatio*float64(w.served) {
+			add(scoreHotURIBot, fmt.Sprintf("hot_uri_bot(%s %d served hits, threshold %d, %d/%d served pages)",
+				overURI, overHits, overThreshold, hotHits, w.served))
+		}
+		if !browser && w.pageTotal >= cfg.HotURIMinHits {
+			add(scoreNoBrowser, "no_browser")
+		}
+		if w.clientErr >= cfg.MinFailures && wilsonLower(w.clientErr, w.total) >= cfg.FailRateThreshold {
+			add(scoreHighFail, fmt.Sprintf("high_fail(%d/%d)", w.clientErr, w.total))
+		}
+		if len(w.errPaths) >= cfg.ScanPathsThreshold {
+			add(scoreScanner, fmt.Sprintf("scanner(%d paths)", len(w.errPaths)))
+		}
+		if n := off.recent(det.now); n > 0 {
+			add(min(n*scoreRepeatOffense, scoreRepeatMax), fmt.Sprintf("repeat_offender(%d)", n))
+		}
+		if browser {
+			add(scoreBrowserLike, "browser_like")
+		}
+		if score >= cfg.ScoreThreshold {
+			candidates = append(candidates, ipCandidate{ip, score, reasons})
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score != candidates[j].score {
+			return candidates[i].score > candidates[j].score
+		}
+		return candidates[i].ip < candidates[j].ip
+	})
+
+	base := cfg.BlockDuration
+	maxDur := cfg.MaxBlockDuration
+	for i, c := range candidates {
+		off := det.state.offenders[c.ip]
+		if off == nil {
+			off = &offender{}
+			det.state.offenders[c.ip] = off
+		}
+		dur := escalate(base, maxDur, off.recent(det.now))
+		kept := off.times[:0]
+		for _, t := range off.times {
+			if det.now.Sub(t) < offenseMemory {
+				kept = append(kept, t)
+			}
+		}
+		off.times = append(kept, det.now)
+		off.until = det.now.Add(dur)
+		det.enforce.apply("IP", c.ip, cfg.Action, dur, true)
+		if i < maxDetailedLogLines {
+			det.log().Info("suspicious client", "action", string(cfg.Action), "client", c.ip, "duration", dur.String(),
+				"score", c.score, "reasons", strings.Join(c.reasons, ", "))
+		}
+	}
+	if len(candidates) > maxDetailedLogLines {
+		det.log().Info("more suspicious clients this interval", "action", string(cfg.Action), "clients", len(candidates)-maxDetailedLogLines)
+	}
+	if det.enforce.suppressed > 0 {
+		det.log().Warn("rules not shared with the peers: broadcast limit of the interval reached",
+			"rules", det.enforce.suppressed, "broadcast_limit", cfg.MaxBroadcastPerTick)
+	}
+}
+
+// escalate doubles the base duration for each recent prior offense, up to maxDur.
+func escalate(base, maxDur time.Duration, prior int) time.Duration {
+	dur := base
+	for i := 0; i < prior && dur < maxDur; i++ {
+		dur *= 2
+	}
+	return min(dur, maxDur)
+}
+
+// log returns the events of the site, marked as coming from the analyzer.
+func (det *detection) log() *slog.Logger {
+	return det.ctx.Runtime.SiteLog(det.ctx.Rule.ID).With("source", "traffic_analyzer")
+}
+
+// enforcer turns detections into action rules and gossip broadcasts.
+type enforcer struct {
+	rt           *state.Runtime
+	site         string
+	maxBroadcast int
+	broadcasts   int
+	suppressed   int
+}
+
+func newEnforcer(rt *state.Runtime, site string, maxBroadcast int) *enforcer {
+	return &enforcer{rt: rt, site: site, maxBroadcast: maxBroadcast}
+}
+
+func (e *enforcer) engine() *action.ActionRuleEngine {
+	if e.rt == nil {
+		return nil
+	}
+	return e.rt.ActionRuleEngine
+}
+
+func (e *enforcer) hasIPRule(ip string) bool {
+	engine := e.engine()
+	return engine != nil && engine.HasIPRule(e.site, ip)
+}
+
+// apply records the rule. limited broadcasts count toward maxBroadcast; the rest stay local.
+// An action that installs no rule, such as observe, does nothing.
+func (e *enforcer) apply(kind action.RuleKind, value string, act action.Action, dur time.Duration, limited bool) {
+	switch act {
+	case action.ActionChallengeUnverified, action.ActionChallenge, action.ActionBlock:
+	default:
+		return
+	}
+	if e.engine() == nil {
+		return
+	}
+	broadcast := true
+	if limited {
+		if e.broadcasts >= e.maxBroadcast {
+			e.suppressed++
+			broadcast = false
+		} else {
+			e.broadcasts++
+		}
+	}
+	e.rt.ApplyRule(e.site, kind, value, act, dur, broadcast)
+}
+
+func toSet(items []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(items))
+	for _, s := range items {
+		set[s] = struct{}{}
+	}
+	return set
+}
+
+func sortedKeys(m map[string]bool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}

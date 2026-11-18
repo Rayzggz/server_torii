@@ -3,20 +3,25 @@ package server
 import (
 	"net/http"
 	"net/http/httptest"
+	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
 	"server_torii/internal/rules"
+	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
-func customRule(t *testing.T, id string, act rules.Action, expr string, skip ...string) *rules.Rule {
+func customRule(t *testing.T, id string, act action.Action, expr string, skip ...string) *rules.Rule {
 	t.Helper()
-	prog, err := rules.Compile(expr)
+	prog, err := rules.Compile(expr, nil)
 	if err != nil {
 		t.Fatalf("Compile(%q): %v", expr, err)
 	}
-	mask, err := rules.ParseSkipTargets(skip)
+	mask, err := feature.ParseSkipTargets(skip)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,239 +29,234 @@ func customRule(t *testing.T, id string, act rules.Action, expr string, skip ...
 }
 
 func TestCheckMainCustomRules(t *testing.T) {
-	floodLimited := func(rs *config.RuleSet, shared *dataType.SharedMemory) {
-		rs.HTTPFloodRule.HTTPFloodSpeedLimit = map[int64]int64{1: 0}
-		shared.HTTPFloodSpeedLimitCounter.Store(dataType.NewCounter(16, 1))
-		shared.HTTPFloodSameURILimitCounter.Store(dataType.NewCounter(16, 1))
-		shared.HTTPFloodFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+	floodLimited := func(rs *config.RuleSet, shared *state.Runtime) {
+		rs.HTTPFloodRule.SpeedLimit = ratelimit.Rates{{Limit: 0, Window: 1}}
+		shared.HTTPFloodSpeedLimitCounter.Store(ratelimit.NewCounter(16, 1))
+		shared.HTTPFloodSameURILimitCounter.Store(ratelimit.NewCounter(16, 1))
+		shared.HTTPFloodFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	}
 	for _, tc := range []struct {
-		name       string
-		rules      func(t *testing.T) []*rules.Rule
-		setup      func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory)
-		wantStatus int
-		wantAction string
+		name  string
+		rules func(t *testing.T) []*rules.Rule
+		setup func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime)
+		want  string
 	}{
 		{
 			name: "no match continues",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.referer contains "spam"`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `http.referer contains "spam"`)}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "block on referer",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.referer wildcard "https://evil.example/*"`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `http.referer wildcard "https://evil.example/*"`)}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "block on method header",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `http.request.method eq "POST" and http.request.uri.path eq "/login"`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `http.request.method eq "POST" and http.request.uri.path eq "/login"`)}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "captcha",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionCaptcha, `ip.src in {192.0.2.0/24}`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionChallenge, `ip.src in {192.0.2.0/24}`)}
 			},
-			wantStatus: 445, wantAction: "CAPTCHA",
+			want: "challenge",
 		},
 		{
 			name: "captcha with clearance continues",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionCaptcha, `ip.src in {192.0.2.0/24}`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionChallenge, `ip.src in {192.0.2.0/24}`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
 				req.ToriiClearance = string(check.GenClearance(*req, *rs))
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "external",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionExternal, `http.host eq "example.com"`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionChallenge, `http.host eq "example.com"`)}
 			},
-			wantStatus: 445, wantAction: "EXTERNAL",
+			want: "challenge",
 		},
 		{
 			name: "allow bypasses later flood and country",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionAllow, `http.user_agent contains "Monitor"`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionAllow, `http.user_agent contains "Monitor"`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= dataType.FeatureHTTPFlood | dataType.FeatureCountryRule
-				rs.CountryRule.UnknownAction = dataType.CountryBlock
+				req.FeatureControl |= feature.HTTPFlood.ControlMask() | feature.CountryRule.ControlMask()
+				rs.CountryRule.UnknownAction = action.ActionBlock
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "skip HTTPFlood",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `starts_with(http.request.uri.path, "/login")`, "HTTPFlood")}
+				return []*rules.Rule{customRule(t, "r", action.ActionSkip, `starts_with(http.request.uri.path, "/login")`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= dataType.FeatureHTTPFlood
+				req.FeatureControl |= feature.HTTPFlood.ControlMask()
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "skip HTTPFlood keeps country",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `true`, "HTTPFlood")}
+				return []*rules.Rule{customRule(t, "r", action.ActionSkip, `true`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= dataType.FeatureHTTPFlood | dataType.FeatureCountryRule
-				rs.CountryRule.UnknownAction = dataType.CountryBlock
+				req.FeatureControl |= feature.HTTPFlood.ControlMask() | feature.CountryRule.ControlMask()
+				rs.CountryRule.UnknownAction = action.ActionBlock
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "flood still applies without skip",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionSkip, `http.request.uri.path eq "/other"`, "HTTPFlood")}
+				return []*rules.Rule{customRule(t, "r", action.ActionSkip, `http.request.uri.path eq "/other"`, "HTTPFlood")}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, shared *dataType.SharedMemory) {
+			setup: func(rs *config.RuleSet, req *request.UserRequest, shared *state.Runtime) {
 				floodLimited(rs, shared)
-				req.FeatureControl |= dataType.FeatureHTTPFlood
+				req.FeatureControl |= feature.HTTPFlood.ControlMask()
 			},
-			wantStatus: 445, wantAction: "429",
+			want: "rate_limit",
 		},
 		{
 			name: "skip continues to next rule",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{
-					customRule(t, "a", rules.ActionSkip, `true`, "HTTPFlood"),
-					customRule(t, "b", rules.ActionBlock, `true`),
+					customRule(t, "a", action.ActionSkip, `true`, "HTTPFlood"),
+					customRule(t, "b", action.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "skip CustomRules stops rule evaluation",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{
-					customRule(t, "a", rules.ActionSkip, `true`, "CustomRules"),
-					customRule(t, "b", rules.ActionBlock, `true`),
+					customRule(t, "a", action.ActionSkip, `true`, "CustomRules"),
+					customRule(t, "b", action.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "log continues to next rule",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{
-					customRule(t, "a", rules.ActionLog, `true`),
-					customRule(t, "b", rules.ActionBlock, `true`),
+					customRule(t, "a", action.ActionLog, `true`),
+					customRule(t, "b", action.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "continue stops rule evaluation",
 			rules: func(t *testing.T) []*rules.Rule {
 				return []*rules.Rule{
-					customRule(t, "a", rules.ActionContinue, `true`),
-					customRule(t, "b", rules.ActionBlock, `true`),
+					customRule(t, "a", action.ActionContinue, `true`),
+					customRule(t, "b", action.ActionBlock, `true`),
 				}
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "continue does not bypass later checks",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "a", rules.ActionContinue, `true`)}
+				return []*rules.Rule{customRule(t, "a", action.ActionContinue, `true`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
-				req.FeatureControl |= dataType.FeatureCountryRule
-				rs.CountryRule.UnknownAction = dataType.CountryBlock
+			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
+				req.FeatureControl |= feature.CountryRule.ControlMask()
+				rs.CountryRule.UnknownAction = action.ActionBlock
 			},
-			wantStatus: 445, wantAction: "403",
+			want: "block",
 		},
 		{
 			name: "URL allow list runs before custom rules",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `true`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `true`)}
 			},
-			setup: func(rs *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
-				rs.URLAllowRule.List = &dataType.URLRuleList{}
-				rs.URLAllowRule.List.Append(&dataType.URLRule{Pattern: "/login?next=/"})
-				req.FeatureControl |= dataType.FeatureURLAllow
+			setup: func(rs *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
+				rs.Lists = config.NewListSet(config.MustNewList("url_allow", config.ListURL, action.ActionAllow, "/login?next=/"))
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 		{
 			name: "feature bit off disables rules",
 			rules: func(t *testing.T) []*rules.Rule {
-				return []*rules.Rule{customRule(t, "r", rules.ActionBlock, `true`)}
+				return []*rules.Rule{customRule(t, "r", action.ActionBlock, `true`)}
 			},
-			setup: func(_ *config.RuleSet, req *dataType.UserRequest, _ *dataType.SharedMemory) {
-				req.FeatureControl &^= dataType.FeatureCustomRules
+			setup: func(_ *config.RuleSet, req *request.UserRequest, _ *state.Runtime) {
+				req.FeatureControl &^= feature.CustomRules.ControlMask()
 			},
-			wantStatus: 200,
+			want: "pass",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rs := featureControlRuleSet()
-			rs.CAPTCHARule = &dataType.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60}
-			rs.ExternalMigrationRule = &dataType.ExternalMigrationRule{SecretKey: "1234567890abcdef", SessionTimeout: 60}
+			rs.Challenge = &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second}
+			rs.Challenge = &config.ChallengeRule{Mode: config.ChallengeExternal, CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second}
 			rs.CustomRules = &rules.CustomRules{Enabled: true, Rules: tc.rules(t)}
 			headers := http.Header{}
 			headers.Set("Referer", "https://evil.example/landing")
-			req := dataType.UserRequest{
+			req := request.UserRequest{
 				RemoteIP:       "192.0.2.10",
 				Host:           "example.com",
 				Uri:            "/login?next=/",
 				Method:         "POST",
 				UserAgent:      "Uptime Monitor/1.0",
 				Headers:        headers,
-				FeatureControl: dataType.FeatureCustomRules,
+				FeatureControl: feature.CustomRules.ControlMask(),
 			}
-			shared := &dataType.SharedMemory{}
-			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+			shared := &state.Runtime{}
+			shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			if tc.setup != nil {
 				tc.setup(rs, &req, shared)
 			}
-			recorder := httptest.NewRecorder()
-			CheckMain(recorder, req, rs, &config.MainConfig{}, shared)
-			if recorder.Code != tc.wantStatus || recorder.Header().Get("Torii-Action") != tc.wantAction {
-				t.Fatalf("got %d %q, want %d %q", recorder.Code, recorder.Header().Get("Torii-Action"), tc.wantStatus, tc.wantAction)
+			if got := decide(shared, req, rs); got != tc.want {
+				t.Fatalf("decision = %q, want %q", got, tc.want)
 			}
 		})
 	}
 }
 
-func TestProcessFeatureControlCustomRulesBit(t *testing.T) {
+func TestFeatureOverridesCustomRulesBit(t *testing.T) {
 	rs := featureControlRuleSet()
 	rs.CustomRules = &rules.CustomRules{Enabled: true}
-	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 
-	if processFeatureControl(cfg, httptest.NewRequest("GET", "/", nil), rs)&dataType.FeatureCustomRules == 0 {
+	if featureBits(rs, "")&feature.CustomRules.ControlMask() == 0 {
 		t.Fatal("CustomRules baseline bit is disabled, want enabled")
 	}
-	r := httptest.NewRequest("GET", "/", nil)
-	r.Header.Set("X-Features", "___________0")
-	if processFeatureControl(cfg, r, rs)&dataType.FeatureCustomRules != 0 {
-		t.Fatal("CustomRules bit remains enabled after position 11 override")
+	if featureBits(rs, "-custom_rules")&feature.CustomRules.ControlMask() != 0 {
+		t.Fatal("CustomRules bit remains enabled after the override")
 	}
 }
 
-func TestProcessRequestDataMethod(t *testing.T) {
-	cfg := config.DefaultMainConfig()
-	r := httptest.NewRequest("GET", "/torii/checker", nil)
-	if got := processRequestData(cfg, r).Method; got != "GET" {
-		t.Fatalf("Method without header = %q, want GET", got)
+// Nginx subrequests are always GET, so the connector reports the original method in a header.
+func TestV1RequestMethod(t *testing.T) {
+	s := newV1Server(t)
+	r := httptest.NewRequest("GET", v1CheckPath, nil)
+	r.Header.Set(headerClientIP, "203.0.113.5")
+	r.Header.Set(headerURI, "/")
+	if data, _, _, ok := s.v1Request(httptest.NewRecorder(), r); !ok || data.Method != "GET" {
+		t.Fatalf("Method without header = %q, want GET", data.Method)
 	}
-	r.Header.Set("Torii-Original-Method", "DELETE")
+	r.Header.Set(headerMethod, "DELETE")
 	r.Header.Set("Referer", "https://a.example/")
-	data := processRequestData(cfg, r)
-	if data.Method != "DELETE" || data.Headers.Get("Referer") != "https://a.example/" {
+	data, _, _, ok := s.v1Request(httptest.NewRecorder(), r)
+	if !ok || data.Method != "DELETE" || data.Headers.Get("Referer") != "https://a.example/" {
 		t.Fatalf("got method %q referer %q", data.Method, data.Headers.Get("Referer"))
 	}
 }

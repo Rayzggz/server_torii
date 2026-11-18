@@ -1,65 +1,78 @@
 # TEST ONLY: deliberately low thresholds and public test secrets.
-IPAllow: {enabled: true}
-IPBlock: {enabled: true}
-IPCAPTCHA: {enabled: true}
-URLAllow: {enabled: true}
-URLBlock: {enabled: true}
-URLCAPTCHA: {enabled: true}
-CountryRule:
+# The names are the ones the scenarios switch per request; the order is the one the lists apply in.
+lists:
+  - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
+  - {name: ip_captcha, enabled: true, type: ip, file: IP_CAPTCHAList.conf, action: challenge}
+  - {name: url_captcha, enabled: true, type: url, file: URL_CAPTCHAList.conf, action: challenge}
+country_rule:
   enabled: false
   default_action: block
   unknown_action: continue
-  countries: {US: captcha, AU: continue}
-CAPTCHA:
+  countries: {US: challenge, AU: continue}
+# One challenge per site: ALTCHA here, the external provider on the "external" site, which
+# setup_cluster makes by changing the mode.
+challenge:
   enabled: false
-  provider: altcha
-  secret_key: "e2e-only-captcha-secret-never-use-in-production"
-  captcha_validate_time: 5
-  captcha_challenge_session_timeout: 120
+  mode: altcha
+  external_secret: "e2e-only-challenge-secret-never-use-in-production"
+  clearance_ttl: 5s
+  session_ttl: 120s
   altcha_hmac_secret: "e2e-only-altcha-secret-never-use-in-production"
   altcha_cost: 1
-  CaptchaFailureLimit: ["20/30s"]
-  failure_block_duration: 300
-HTTPFlood:
-  enabled: false
-  HTTPFloodSpeedLimit: ["5/10s"]
-  HTTPFloodSameURILimit: ["3/10s"]
-  HTTPFloodFailureLimit: ["3/30s"]
-  failure_block_duration: 300
-VerifyBot:
-  enabled: false
-  verify_google_bot: true
-  verify_bing_bot: true
-  verify_baidu_bot: true
-  verify_yandex_bot: true
-  verify_sogou_bot: true
-  verify_apple_bot: true
-ExternalMigration:
-  enabled: false
   redirect_url: "https://mitigation.invalid/verify"
-  secret_key: "e2e-only-external-secret-never-use-in-production"
-  session_timeout: 5
-AdaptiveTrafficAnalyzer:
+  failure_limit: ["20/30s"]
+  failure_block_duration: 300s
+http_flood:
   enabled: false
-  tag: disabled
-  analysis_interval: 2
+  speed_limit: ["5/10s"]
+  same_uri_limit: ["3/10s"]
+  failure_limit: ["3/30s"]
+  failure_block_duration: 300s
+verify_bot:
+  enabled: false
+  bots: [google, bing, baidu, yandex, sogou, apple]
+traffic_analyzer:
+  enabled: false
+  analysis_interval: 2s
   window_buckets: 2
   uri_detection:
     action: observe
-    block_duration: 300
+    block_duration: 300s
     min_requests: 10
     min_distinct_ips: 5
-    sustain: 2
+    sustain: 2s
     fallback_share: 0.8
   ip_detection:
     enabled: false
     action: block
-    block_duration: 300
+    block_duration: 300s
     min_failures: 5
     fail_rate_threshold: 0.5
-CustomRules:
+custom_rules:
   enabled: false
   rules:
+    - id: cookie-query
+      expression: 'http.request.uri.path eq "/e2e/cookie" and http.request.cookies["role"] eq "blocked" and http.request.uri.args["mode"] eq "strict"'
+      action: block
+    - id: country-expression
+      expression: 'http.request.uri.path eq "/e2e/country" and ip.src.country eq "US"'
+      action: block
+    - id: challenge-expression
+      expression: 'http.request.uri.path eq "/e2e/challenge"'
+      action: challenge
+    - id: continue-expression
+      expression: 'http.request.uri.path eq "/e2e/continue"'
+      action: continue
+    - id: skip-remaining
+      expression: 'http.request.uri.path eq "/e2e/skip"'
+      action: skip
+      skip: [CustomRules, Challenge]
+    - id: unreachable-block
+      expression: 'http.request.uri.path in {"/e2e/continue" "/e2e/skip"}'
+      action: block
     - id: block-spam-referer
       expression: 'http.referer contains "spam.e2e"'
       action: block
@@ -69,9 +82,15 @@ CustomRules:
     - id: block-delete
       expression: 'http.request.method eq "DELETE" and not ip.src in {198.18.1.0/24}'
       action: block
-    - id: captcha-badbot
+    - id: challenge-badbot
       expression: 'http.user_agent wildcard "*badbot*"'
-      action: captcha
+      action: challenge
+    - id: block-listed-network
+      expression: 'http.request.uri.path eq "/e2e/list" and ip.src in $ip_captcha'
+      action: block
+    - id: block-listed-url
+      expression: 'http.request.uri.path in $url_captcha and http.user_agent contains "ListRef"'
+      action: block
     - id: allow-monitor
       expression: 'ip.src in {198.18.2.0/24} and http.request.uri.path eq "/health"'
       action: allow

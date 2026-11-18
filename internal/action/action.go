@@ -5,7 +5,6 @@ type checkState int
 const (
 	Continue checkState = iota
 	Done
-	Jump
 )
 
 // Verdict is the outcome a check assigns to a request.
@@ -14,22 +13,18 @@ type Verdict uint8
 const (
 	VerdictAllow     Verdict = iota // request passes
 	VerdictBlock                    // request is forbidden
-	VerdictCaptcha                  // request must solve a CAPTCHA
+	VerdictChallenge                // client must prove itself: a CAPTCHA, or a visit to the external provider
 	VerdictRateLimit                // request exceeded a rate limit
-	VerdictExternal                 // request is handed to external migration
-	VerdictError                    // internal error while deciding
 )
 
 var verdictNames = [...]string{
-	VerdictAllow:     "200",
-	VerdictBlock:     "403",
-	VerdictCaptcha:   "CAPTCHA",
-	VerdictRateLimit: "429",
-	VerdictExternal:  "EXTERNAL",
-	VerdictError:     "500",
+	VerdictAllow:     "pass",
+	VerdictBlock:     "block",
+	VerdictChallenge: "challenge",
+	VerdictRateLimit: "rate_limit",
 }
 
-// String returns the wire label of the verdict, as sent in the Torii-Action header.
+// String returns the wire label of the verdict, as sent in the Torii-Decision header.
 func (v Verdict) String() string {
 	if int(v) < len(verdictNames) {
 		return verdictNames[v]
@@ -37,42 +32,28 @@ func (v Verdict) String() string {
 	return "UNKNOWN"
 }
 
-// CaptchaResult is the outcome of a CAPTCHA submission.
-type CaptchaResult uint8
-
-const (
-	CaptchaNone       CaptchaResult = iota // no CAPTCHA submission was evaluated
-	CaptchaGood                            // solution accepted
-	CaptchaBad                             // solution missing or wrong
-	CaptchaBadSession                      // challenge session invalid or mismatched
-)
-
-var captchaResultNames = [...]string{
-	CaptchaNone:       "",
-	CaptchaGood:       "good",
-	CaptchaBad:        "bad",
-	CaptchaBadSession: "badSession",
-}
-
-// String returns the response body sent to the CAPTCHA page for this result.
-func (r CaptchaResult) String() string {
-	if int(r) < len(captchaResultNames) {
-		return captchaResultNames[r]
-	}
-	return "UNKNOWN"
-}
-
-// Decision saves the result of the decision
+// Decision is what the check pipeline has concluded about a request so far.
 type Decision struct {
-	Verdict   Verdict
-	State     checkState
-	Captcha   CaptchaResult
-	JumpIndex int
-	SkipMask  uint32 // checks to skip for the rest of the request, set by custom skip rules
+	Verdict  Verdict
+	State    checkState
+	SkipMask uint32 // checks to skip for the rest of the request, set by custom skip rules
+	// RequireChallenge is set by a check whose rule asks for the client to be challenged. The
+	// checks that follow still run and may end the pipeline with something stricter; if none
+	// does, the Challenge check runs whatever its switch and the skip mask say.
+	RequireChallenge bool
+	// Detail names what, within the check that is running, decided: a list, a custom rule. The
+	// pipeline adds it to the name of the check to form Reason.
+	Detail string
+	// Reason is the check behind the decision, with its Detail: "Lists:office", "HTTPFlood". The
+	// pipeline sets it when it ends.
+	Reason string
+	// Note is what the decision log says beyond Reason: the limit that was exceeded, why a
+	// crawler was not believed. The connector never sees it.
+	Note string
 }
 
 func NewDecision() *Decision {
-	return &Decision{Verdict: VerdictAllow, State: Continue, Captcha: CaptchaNone, JumpIndex: -1}
+	return &Decision{Verdict: VerdictAllow, State: Continue}
 }
 
 func (d *Decision) Set(state checkState) {
@@ -82,16 +63,4 @@ func (d *Decision) Set(state checkState) {
 func (d *Decision) SetVerdict(state checkState, verdict Verdict) {
 	d.State = state
 	d.Verdict = verdict
-}
-
-func (d *Decision) SetCaptchaResult(state checkState, verdict Verdict, result CaptchaResult) {
-	d.State = state
-	d.Verdict = verdict
-	d.Captcha = result
-}
-
-func (d *Decision) SetJump(state checkState, verdict Verdict, jumpIndex int) {
-	d.State = state
-	d.Verdict = verdict
-	d.JumpIndex = jumpIndex
 }

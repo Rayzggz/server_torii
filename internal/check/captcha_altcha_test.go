@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"net/http/httptest"
 	"net/url"
-	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"strings"
 	"testing"
 	"time"
@@ -24,26 +25,19 @@ func TestCheckCaptchaAltchaGood(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.State != action.Done {
-		t.Fatalf("expected done decision, got state=%v", decision.State)
-	}
-	if decision.Verdict != action.VerdictAllow {
-		t.Fatalf("expected http code 200, got %s", decision.Verdict)
-	}
-	if decision.Captcha != action.CaptchaGood {
-		t.Fatalf("expected response good, got %s", decision.Captcha)
+	if submission != SubmissionGood {
+		t.Fatalf("expected response good, got %s", submission)
 	}
 }
 
 func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
 	sessionTime := time.Now()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -59,15 +53,14 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	counter := dataType.NewCounter(1, 60)
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+	counter := ratelimit.NewCounter(1, 60)
+	rt := &state.Runtime{}
+	rt.ChallengeFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, replayReqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBadSession {
-		t.Fatalf("expected response badSession for fresh-session replay, got %s", decision.Captcha)
+	if submission != SubmissionBadSession {
+		t.Fatalf("expected response badSession for fresh-session replay, got %s", submission)
 	}
 	if got := counter.Query(replayReqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -77,7 +70,7 @@ func TestCheckCaptchaAltchaRejectsFreshSessionReplay(t *testing.T) {
 func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
 	sessionTime := time.Now()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -100,13 +93,12 @@ func TestCheckCaptchaAltchaRejectsTamperedSessionBinding(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, replayReqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, replayReqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad for tampered session binding, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad for tampered session binding, got %s", submission)
 	}
 }
 
@@ -126,11 +118,10 @@ func TestCheckCaptchaAltchaRejectsWrongSolution(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	CheckCaptcha(req, reqData, ruleSet, decision, testCaptchaSharedMemory())
+	submission := CheckCaptcha(req, reqData, ruleSet, testCaptchaRuntime())
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad for wrong solution, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad for wrong solution, got %s", submission)
 	}
 }
 
@@ -142,15 +133,14 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	counter := dataType.NewCounter(1, 60)
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(counter)
+	counter := ratelimit.NewCounter(1, 60)
+	rt := &state.Runtime{}
+	rt.ChallengeFailureLimitCounter.Store(counter)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad, got %s", submission)
 	}
 	if got := counter.Query(reqData.RemoteIP, 60); got != 1 {
 		t.Fatalf("failure counter = %d, want 1", got)
@@ -159,7 +149,7 @@ func TestCheckCaptchaAltchaInvalidPayloadReturnsBadAndIncrementsCounter(t *testi
 
 func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	ruleSet := testAltchaRuleSet()
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -169,34 +159,82 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	decision := action.NewDecision()
-	sharedMem := testCaptchaSharedMemory()
+	rt := testCaptchaRuntime()
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.Captcha != action.CaptchaBadSession {
-		t.Fatalf("expected response badSession, got %s", decision.Captcha)
+	if submission != SubmissionBadSession {
+		t.Fatalf("expected response badSession, got %s", submission)
+	}
+}
+
+// A challenge that carries a valid signature is still refused when it is not one the site
+// issues: less work, no end, or an end later than the session allows. Whoever holds the secret
+// cannot make the proof of work cheaper for themselves.
+func TestCheckCaptchaAltchaRejectsChallengeNotAsIssued(t *testing.T) {
+	ruleSet := testAltchaRuleSet()
+	ruleSet.Challenge.AltchaCost = 2
+	reqData := testCaptchaRequestData(ruleSet)
+	sign := func(cost int, expiresAt *time.Time) string {
+		challenge, err := altcha.CreateChallenge(altcha.CreateChallengeOptions{
+			Algorithm: altchaAlgorithm, DeriveKey: altcha.DeriveKeyPBKDF2(), KeyLength: altchaKeyLength,
+			HMACSignatureSecret: ruleSet.Challenge.AltchaHMACSecret, Cost: cost, ExpiresAt: expiresAt,
+			Data: map[string]interface{}{"toriiSession": altchaSessionBinding(reqData, *ruleSet)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		solution, err := altcha.SolveChallenge(altcha.SolveChallengeOptions{Challenge: challenge, DeriveKey: altcha.DeriveKeyPBKDF2()})
+		if err != nil || solution == nil {
+			t.Fatalf("SolveChallenge: %v", err)
+		}
+		payload, err := json.Marshal(altcha.Payload{Challenge: challenge, Solution: *solution})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString(payload)
+	}
+	in := func(d time.Duration) *time.Time { at := time.Now().Add(d); return &at }
+
+	for name, tt := range map[string]struct {
+		payload string
+		want    CaptchaSubmission
+	}{
+		"as issued": {sign(2, in(time.Minute)), SubmissionGood},
+		"more work": {sign(3, in(time.Minute)), SubmissionGood},
+		"less work": {sign(1, in(time.Minute)), SubmissionBad},
+		"no end":    {sign(2, nil), SubmissionBad},
+		"late end":  {sign(2, in(time.Hour)), SubmissionBad},
+	} {
+		t.Run(name, func(t *testing.T) {
+			form := url.Values{"altcha": {tt.payload}}
+			req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if got := CheckCaptcha(req, reqData, ruleSet, testCaptchaRuntime()); got != tt.want {
+				t.Fatalf("submission = %s, want %s", got, tt.want)
+			}
+		})
 	}
 }
 
 func testAltchaRuleSet() *config.RuleSet {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			Provider:                       CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaValidateTime:            60,
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
-			CaptchaFailureLimit:            map[int64]int64{60: 3},
-			FailureBlockDuration:           300,
+		Challenge: &config.ChallengeRule{
+			Mode:                 config.ChallengeAltcha,
+			CookieKey:            "1234567890abcdef",
+			ClearanceTTL:         60 * time.Second,
+			SessionTTL:           120 * time.Second,
+			AltchaHMACSecret:     "altcha-secret",
+			AltchaCost:           1,
+			FailureLimit:         ratelimit.Rates{{Limit: 3, Window: 60}},
+			FailureBlockDuration: 300 * time.Second,
 		},
 	}
 	return ruleSet
 }
 
-func testCaptchaRequestData(ruleSet *config.RuleSet) dataType.UserRequest {
-	reqData := dataType.UserRequest{
+func testCaptchaRequestData(ruleSet *config.RuleSet) request.UserRequest {
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
@@ -205,13 +243,13 @@ func testCaptchaRequestData(ruleSet *config.RuleSet) dataType.UserRequest {
 	return reqData
 }
 
-func testCaptchaSharedMemory() *dataType.SharedMemory {
-	sharedMem := &dataType.SharedMemory{}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(1, 60))
-	return sharedMem
+func testCaptchaRuntime() *state.Runtime {
+	rt := &state.Runtime{}
+	rt.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(1, 60))
+	return rt
 }
 
-func solveAltchaPayload(t *testing.T, ruleSet *config.RuleSet, reqData dataType.UserRequest) string {
+func solveAltchaPayload(t *testing.T, ruleSet *config.RuleSet, reqData request.UserRequest) string {
 	t.Helper()
 
 	challenge, err := GenAltchaChallenge(*ruleSet, reqData)

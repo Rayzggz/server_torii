@@ -2,7 +2,7 @@ package config
 
 import (
 	"path/filepath"
-	"server_torii/internal/dataType"
+	"server_torii/internal/action"
 	"strings"
 	"testing"
 )
@@ -13,8 +13,8 @@ func TestCountryRuleSchema(t *testing.T) {
 		invalid     bool
 	}{
 		{"defaults", "{}", false},
-		{"normalized", "countries: { ' us ': captcha, GB: continue }", false},
-		{"actions", "default_action: block\nunknown_action: captcha", false},
+		{"normalized", "countries: { ' us ': challenge, GB: continue }", false},
+		{"actions", "default_action: block\nunknown_action: challenge", false},
 		{"duplicate normalized", "countries: { us: block, US: continue }", true},
 		{"duplicate exact", "countries: { US: block, US: continue }", true},
 		{"invalid code", "countries: { USA: block }", true},
@@ -29,18 +29,18 @@ func TestCountryRuleSchema(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wrapper, err := decodeServerRules([]byte("CountryRule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
-			rule := &dataType.CountryRule{}
+			wrapper, err := decodeServerRules([]byte("country_rule:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
+			rule := &CountryRule{}
 			if err == nil {
 				err = mapCountryRule(wrapper.CountryRule, rule)
 			}
 			if (err != nil) != tt.invalid {
 				t.Fatalf("error = %v, invalid = %t", err, tt.invalid)
 			}
-			if tt.name == "defaults" && (rule.DefaultAction != dataType.CountryContinue || rule.UnknownAction != dataType.CountryContinue || len(rule.Countries) != 0) {
+			if tt.name == "defaults" && (rule.DefaultAction != action.ActionContinue || rule.UnknownAction != action.ActionContinue || len(rule.Countries) != 0) {
 				t.Fatalf("wrong defaults: %#v", rule)
 			}
-			if tt.name == "normalized" && rule.Countries["US"] != dataType.CountryCaptcha {
+			if tt.name == "normalized" && rule.Countries["US"] != action.ActionChallenge {
 				t.Fatalf("wrong normalization: %#v", rule)
 			}
 		})
@@ -48,26 +48,26 @@ func TestCountryRuleSchema(t *testing.T) {
 }
 
 func TestCountryCaptchaConfiguration(t *testing.T) {
-	for _, policy := range []string{"default_action: captcha", "unknown_action: captcha", "countries: { US: captcha }"} {
+	for _, policy := range []string{"default_action: challenge", "unknown_action: challenge", "countries: { US: challenge }"} {
 		for _, config := range []struct {
 			name, yaml string
 			invalid    bool
 		}{
-			{"missing", "", true},
-			{"invalid", "CAPTCHA: { enabled: false }", true},
-			{"valid disabled", `CAPTCHA:
+			{"invalid", "challenge: { enabled: false }", true},
+			{"valid disabled", `challenge:
+  mode: hcaptcha
+  hcaptcha_secret: test-hcaptcha-secret
   enabled: false
-  secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
-  CaptchaFailureLimit: ["3/1m"]
-  failure_block_duration: 60
+  clearance_ttl: 60s
+  session_ttl: 120s
+  failure_limit: ["3/1m"]
+  failure_block_duration: 60s
 `, false},
 		} {
 			t.Run(policy+"/"+config.name, func(t *testing.T) {
 				file := filepath.Join(t.TempDir(), "Server.yml")
-				writeFile(t, file, "CountryRule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
-				rules := &RuleSet{CountryRule: &dataType.CountryRule{}, CAPTCHARule: &dataType.CaptchaRule{}, HTTPFloodRule: &dataType.HTTPFloodRule{}}
+				writeFile(t, file, "country_rule:\n  enabled: false\n  "+policy+"\n"+config.yaml)
+				rules := NewRuleSet()
 				err := loadServerRules(file, rules)
 				if (err != nil) != config.invalid {
 					t.Fatalf("error = %v, invalid = %t", err, config.invalid)
@@ -78,27 +78,26 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 }
 
 func TestExampleCountryRulesLoad(t *testing.T) {
-	rules, err := LoadRules(filepath.Join("..", "..", "config_example", "rules", "default"))
+	rules, err := LoadRules(exampleRulesDirectory(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+	if rules.CountryRule.Enabled || rules.CountryRule.Countries["US"] != action.ActionChallenge || rules.CountryRule.DefaultAction != action.ActionBlock {
 		t.Fatalf("unexpected example: %#v", rules.CountryRule)
 	}
 }
 
 func TestInvalidCountryReloadRetainsSnapshot(t *testing.T) {
 	dir := t.TempDir()
-	writeRuleFiles(t, dir, map[string]string{"IP_AllowList.conf": "", "IP_BlockList.conf": "", "URL_AllowList.conf": "", "URL_BlockList.conf": "", "Server.yml": "CountryRule: { default_action: block }"})
-	cfg := &MainConfig{Sites: []AllSiteRuleSet{{Host: "default_site", RulePath: dir}}}
-	manager := &ConfigManager{}
-	shared := &dataType.SharedMemory{}
-	if err := manager.Reload(cfg, shared); err != nil {
+	writeRuleFiles(t, dir, map[string]string{"Server.yml": "country_rule: { default_action: block }"})
+	cfg := &MainConfig{Sites: []Site{{ID: "default_site", RulePath: dir}}}
+	manager := &Manager{}
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatal(err)
 	}
 	before := manager.Get()
-	writeFile(t, filepath.Join(dir, "Server.yml"), "CountryRule: { default_action: invalid }")
-	if err := manager.Reload(cfg, shared); err == nil {
+	writeFile(t, filepath.Join(dir, "Server.yml"), "country_rule: { default_action: invalid }")
+	if err := manager.Reload(cfg); err == nil {
 		t.Fatal("invalid reload succeeded")
 	}
 	if manager.Get() != before {

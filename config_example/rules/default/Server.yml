@@ -1,102 +1,141 @@
-IPAllow:
-  enabled: true
-IPBlock:
-  enabled: true
-IPCAPTCHA:
-  enabled: false
-URLAllow:
-  enabled: true
-URLBlock:
-  enabled: true
-URLCAPTCHA:
-  enabled: false
-CountryRule:
+# Every section of this file is required and must be complete and valid, also with
+# `enabled: false`: a missing section, an unknown key or an invalid value rejects the whole file.
+# `server_torii -check-config -config <dir>` reports every problem without starting anything.
+#
+# A duration is a number with a unit: 30s, 10m, 2h, 1h30m. A number without a unit is rejected.
+# A rate is "<count>/<window>", as in "150/10s"; the window takes s, m or h.
+# Lists of IP addresses and of URLs, each read from a file in this directory (or from an
+# absolute path). A list with an `action` is applied to every request before any other check, in
+# the order written here: the first list a request is on decides and the lists after it are not
+# looked at. So an allow list ahead of a block list exempts its entries from that block list.
+#
+#   name     lower-case letters, digits and underscores. Nginx can switch the action of a list
+#            for a location by this name: `torii_features "-url_block +ip_challenge";`
+#   enabled  whether the action applies. Custom rules that refer to the list are not affected.
+#   type     ip:  one address or CIDR per line, IPv4 or IPv6
+#            url: one URL per line, matched exactly against the request URI with its query
+#                 string, or `regex:` followed by a regular expression
+#   action   allow | block | challenge. Leave it out for a list that only custom rules use,
+#            as `ip.src in $office` or `http.request.uri.path in $admin_paths`.
+#
+# Blank lines and lines starting with `#` are skipped in the files; any other line that is not
+# valid rejects the whole configuration.
+lists:
+  - name: ip_allow
+    enabled: true
+    type: ip
+    file: IP_AllowList.conf
+    action: allow
+  - name: ip_block
+    enabled: true
+    type: ip
+    file: IP_BlockList.conf
+    action: block
+  - name: url_allow
+    enabled: true
+    type: url
+    file: URL_AllowList.conf
+    action: allow
+  - name: url_block
+    enabled: true
+    type: url
+    file: URL_BlockList.conf
+    action: block
+  - name: ip_challenge
+    enabled: false
+    type: ip
+    file: IP_ChallengeList.conf
+    action: challenge
+  - name: url_challenge
+    enabled: false
+    type: url
+    file: URL_ChallengeList.conf
+    action: challenge
+country_rule:
   enabled: false
   default_action: block
   unknown_action: continue
   countries:
     GB: continue
-    US: captcha
-CAPTCHA:
+    US: challenge
+# The one challenge of the site: how a client proves itself. `enabled: true` challenges every
+# client. With `enabled: false` only the clients a rule singles out are challenged: a list,
+# a country rule or a custom rule with the `challenge` action, and the traffic analyzer.
+challenge:
   enabled: true
-  provider: "hcaptcha"
-  secret_key: "0378b0f84c4310279918d71a5647ba5d"
-  captcha_validate_time: 600
-  captcha_challenge_session_timeout: 120
-  hcaptcha_secret: ""
+  mode: "altcha" # hcaptcha | altcha: a CAPTCHA page; external: a redirect to an external provider
+  clearance_ttl: 10m # how long a client stays cleared after passing
+  session_ttl: 2m # how long a client has to answer the CAPTCHA; not used by the external mode
+  # hcaptcha_secret: "" # the secret of the hCaptcha account; required by the hcaptcha mode
   altcha_hmac_secret: "0378b0f84c4310279918d71a5647ba5d"
   altcha_cost: 50000
-  CaptchaFailureLimit:
-    - "300/300s"
-  failure_block_duration: 1200
-HTTPFlood:
+  # redirect_url: "https://example.com/migration" # where the external mode sends the client
+  # external_secret: "" # the key shared with that provider, at least 16 characters; required by the external mode
+  failure_limit: # a client challenged more often than this without passing is blocked
+    - "300/5m"
+  failure_block_duration: 20m
+# Each list is checked in the order written; no two entries of a list may have the same window.
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit: # requests of one client
     - "150/10s"
-  HTTPFloodSameURILimit:
+  same_uri_limit: # requests of one client for one URI
     - "50/10s"
-  HTTPFloodFailureLimit:
-    - "300/300s"
-  failure_block_duration: 1200
-VerifyBot:
+  failure_limit: # a client that runs into the two limits above more often than this is blocked
+    - "300/5m"
+  failure_block_duration: 20m
+# A client that claims to be one of these crawlers is let through when DNS confirms the claim
+# and blocked when it does not. Crawlers: google, bing, baidu, yandex, sogou, apple.
+verify_bot:
   enabled: true
-  verify_google_bot: true
-  verify_bing_bot: true
-  verify_baidu_bot: true
-  verify_yandex_bot: true
-  verify_sogou_bot: true
-  verify_apple_bot: true
-ExternalMigration:
-  enabled: false
-  redirect_url: "https://example.com/migration"
-  secret_key: "0378b0f84c4310279918d71a5647ba5d"
-  session_timeout: 1800
-AdaptiveTrafficAnalyzer:
+  bots: [google, bing, baidu, yandex, sogou, apple]
+traffic_analyzer:
   enabled: true
-  tag: "default_site"
-  analysis_interval: 10
+  analysis_interval: 10s
   window_buckets: 30
-  browser_evidence: # decides which clients look like browsers; used by both detections and captcha_unverified
-    ttl: 21600
+  browser_evidence: # decides which clients look like browsers; used by both detections and challenge_unverified
+    ttl: 6h
     distinct_pages: 3
     asset_extensions: [] # empty uses the built-in static asset list
   uri_detection:
-    action: captcha_unverified # observe | captcha_unverified | captcha | block; captcha_unverified challenges only clients without browser evidence
-    block_duration: 600
+    action: challenge_unverified # observe | challenge_unverified | challenge | block; challenge_unverified challenges only clients without browser evidence
+    block_duration: 10m
     min_requests: 100
     min_distinct_ips: 50
-    sustain: 60
+    sustain: 1m
     ratio_threshold: 5
     fallback_share: 0.8
     baseline:
-      half_life: 21600
-      warmup: 3600
+      half_life: 6h
+      warmup: 1h
       min_reference_requests: 200
   ip_detection:
     enabled: true
-    action: observe # observe | captcha | block
-    block_duration: 600
-    max_block_duration: 86400
+    action: observe # observe | challenge_unverified | challenge | block
+    block_duration: 10m
+    max_block_duration: 24h
     score_threshold: 50
     hot_uri_min_hits: 3
     min_failures: 30
     fail_rate_threshold: 0.6
     scan_paths_threshold: 30
     max_broadcast_per_tick: 200
-CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after the IP/URL allow and block lists
+custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after the lists
   enabled: false
   # Fields: ip.src, ip.src.country (alias ip.geoip.country), http.host, http.request.uri, http.request.uri.path,
   #   http.request.uri.query, http.request.uri.path.extension, http.request.uri.args["k"], http.request.method,
   #   http.user_agent, http.referer, http.cookie, http.x_forwarded_for, http.request.headers["name"],
   #   http.request.cookies["name"], torii.browser_evidence
-  #   http.request.method needs Nginx to send the original method: proxy_set_header Torii-Original-Method $request_method;
+  #   http.request.method is the method of the client request, also when it has a body the check never sees
   # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (len() only)
+  #   in $name tests a field against a list above: an IP field against an ip list, a string field against a url list
   # Logic: not !, and &&, xor ^^, or || (in this precedence order), parentheses
   # Functions: lower(), upper(), url_decode(), len(), starts_with(f, "x"), ends_with(f, "x")
   # Actions: allow (pass now, skip every later check), skip (skip the checks in `skip`, keep evaluating rules),
-  #   continue (stop evaluating rules), log (log and keep evaluating), block, captcha, external
-  # Skip targets: CustomRules (the remaining rules), IPCAPTCHA, URLCAPTCHA, CountryRule, VerifyBot, ActionRule,
-  #   HTTPFlood, ExternalMigration, Captcha
+  #   continue (stop evaluating rules), log (log and keep evaluating), block,
+  #   challenge (stop evaluating rules; the client is challenged unless a later check blocks or rate-limits it)
+  # Skip targets: CustomRules (the remaining rules), CountryRule, VerifyBot, ActionRule,
+  #   HTTPFlood, Challenge (only the challenge of every client: one a rule asked for is never skipped)
   rules:
     - id: block-wp-scan
       description: "WordPress probes on a non-WordPress site"
@@ -104,7 +143,7 @@ CustomRules: # Cloudflare-style expression rules, evaluated top to bottom after 
       action: block
     - id: admin-hotlink
       expression: 'starts_with(http.request.uri.path, "/admin") and not http.referer wildcard "https://example.com/*"'
-      action: captcha
+      action: challenge
     - id: api-key-skip-flood
       expression: 'starts_with(http.request.uri.path, "/api/") and http.request.headers["x-api-key"] ne ""'
       action: skip

@@ -5,7 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
+	"net/netip"
+	"server_torii/internal/state"
 	"sync"
 	"time"
 )
@@ -24,6 +27,12 @@ const (
 	botVerifiedMaxEntries = 10_000
 	// botRejectedMaxEntries caps rejections and lookup errors, the segment spoofed traffic churns.
 	botRejectedMaxEntries = 100_000
+	// botMaxLookups caps lookups in progress. Each one holds a request and a resolver query for
+	// up to botLookupTimeout, so without a cap a flood of spoofed crawler user agents from many
+	// addresses becomes as many goroutines and DNS queries.
+	botMaxLookups = 64
+	// botBusyLogInterval spaces the log lines about lookups refused at the cap.
+	botBusyLogInterval = time.Minute
 )
 
 // botResolver is the part of *net.Resolver that bot verification uses.
@@ -112,24 +121,47 @@ type botVerifier struct {
 	verified *botLRU
 	rejected *botLRU
 	inflight map[string]*botInflight
+	slots    chan struct{} // one token per lookup in progress
+	refused  int64         // lookups refused at the cap since the last log line
+	busyLog  time.Time
+	log      *slog.Logger
+}
+
+// NewCrawlerVerifier returns the verifier a node shares between all its sites: what DNS said
+// about an address is remembered for every one of them. It logs to logger.
+func NewCrawlerVerifier(logger *slog.Logger) state.CrawlerVerifier {
+	v := newBotVerifier(net.DefaultResolver)
+	v.log = logger
+	return v
+}
+
+// Verify reports whether ip forward-confirms to a host under one of domains. err says why a
+// lookup made for this call failed; it is nil when the answer was remembered.
+func (v *botVerifier) Verify(ip netip.Addr, bot string, domains []string) (bool, error) {
+	verified, _, err := v.verify(ip, bot, domains)
+	return verified, err
 }
 
 func newBotVerifier(resolver botResolver) *botVerifier {
 	return &botVerifier{
+		log:      slog.New(slog.DiscardHandler),
 		resolver: resolver,
 		timeout:  botLookupTimeout,
 		now:      time.Now,
 		verified: newBotLRU(botVerifiedMaxEntries),
 		rejected: newBotLRU(botRejectedMaxEntries),
 		inflight: make(map[string]*botInflight),
+		slots:    make(chan struct{}, botMaxLookups),
 	}
 }
 
-var defaultBotVerifier = newBotVerifier(net.DefaultResolver)
-
 // verify reports whether ip forward-confirms to a host under one of domains.
 // fresh is true when this call performed the lookup; err is set only on fresh calls.
-func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified, fresh bool, err error) {
+//
+// When botMaxLookups lookups are already in progress the address is not looked up: it counts
+// as unverified for this request only. Nothing is cached, so it is checked again as soon as
+// there is room.
+func (v *botVerifier) verify(ip netip.Addr, bot string, domains []string) (verified, fresh bool, err error) {
 	key := bot + "|" + ip.String()
 
 	v.mu.Lock()
@@ -146,6 +178,13 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 		v.mu.Unlock()
 		<-f.done
 		return f.verdict.verified, false, nil
+	}
+	select {
+	case v.slots <- struct{}{}:
+	default:
+		v.noteRefusedLocked(now)
+		v.mu.Unlock()
+		return false, false, nil
 	}
 	f := &botInflight{done: make(chan struct{})}
 	v.inflight[key] = f
@@ -164,6 +203,7 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 			v.rejected.put(key, f.verdict)
 		}
 		v.mu.Unlock()
+		<-v.slots
 		close(f.done)
 	}()
 
@@ -179,8 +219,21 @@ func (v *botVerifier) verify(ip net.IP, bot string, domains []string) (verified,
 	return verified, true, err
 }
 
+// noteRefusedLocked counts a lookup refused at the cap and logs the count now and then, not once
+// per request: the cap is reached under a flood. The caller holds v.mu.
+func (v *botVerifier) noteRefusedLocked(now time.Time) {
+	v.refused++
+	if now.Sub(v.busyLog) < botBusyLogInterval {
+		return
+	}
+	v.log.Warn("crawler lookups refused: too many in progress; the clients are treated as unverified",
+		"refused", v.refused, "in_progress", botMaxLookups)
+	v.refused = 0
+	v.busyLog = now
+}
+
 // lookup returns a nil error with verified=false when DNS answered but did not confirm the crawler.
-func (v *botVerifier) lookup(ctx context.Context, ip net.IP, domains []string) (bool, error) {
+func (v *botVerifier) lookup(ctx context.Context, ip netip.Addr, domains []string) (bool, error) {
 	names, err := v.resolver.LookupAddr(ctx, ip.String())
 	if err != nil {
 		if isNotFound(err) {
@@ -202,7 +255,7 @@ func (v *botVerifier) lookup(ctx context.Context, ip net.IP, domains []string) (
 			continue
 		}
 		for _, a := range addrs {
-			if a.IP.Equal(ip) {
+			if got, ok := netip.AddrFromSlice(a.IP); ok && got.Unmap() == ip {
 				return true, nil
 			}
 		}

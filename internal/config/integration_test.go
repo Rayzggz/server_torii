@@ -1,9 +1,11 @@
 package config
 
 import (
-	"net"
+	"net/netip"
 	"path/filepath"
-	"server_torii/internal/dataType"
+	"server_torii/internal/action"
+	"server_torii/internal/ratelimit"
+	"slices"
 	"testing"
 )
 
@@ -15,59 +17,53 @@ func TestConfigIntegration_LoadAndReloadManager(t *testing.T) {
 	writeRuleFiles(t, ruleDir, map[string]string{
 		"IP_AllowList.conf":  "192.168.1.0/24\n",
 		"IP_BlockList.conf":  "10.0.0.5\n",
-		"URL_AllowList.conf": "/healthz\n^/api/.*$\n",
+		"URL_AllowList.conf": "/healthz\nregex:^/api/.*$\n",
 		"URL_BlockList.conf": "/admin\n",
-		"Server.yml": `IPAllow:
-  enabled: true
-IPBlock:
-  enabled: true
-URLAllow:
-  enabled: true
-URLBlock:
-  enabled: true
-CountryRule:
+		"Server.yml": `lists:
+  - {name: ip_allow, enabled: true, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
+country_rule:
   enabled: true
   default_action: block
   countries:
-    us: captcha
-CAPTCHA:
+    us: challenge
+challenge:
+  mode: hcaptcha
   enabled: true
-  secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   hcaptcha_secret: "hcaptcha-secret"
-  CaptchaFailureLimit:
+  failure_limit:
     - "3/1m"
     - "5/2m"
-  failure_block_duration: 300
-VerifyBot:
+  failure_block_duration: 300s
+verify_bot:
   enabled: true
-  verify_google_bot: true
-HTTPFlood:
+  bots: [google]
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit:
     - "10/1m"
     - "20/2m"
-  HTTPFloodSameURILimit:
+  same_uri_limit:
     - "5/30s"
     - "8/45s"
-  HTTPFloodFailureLimit:
+  failure_limit:
     - "4/5m"
-  failure_block_duration: 600
-ExternalMigration:
-  enabled: true
-  redirect_url: "https://example.com/migrate"
-  secret_key: "1234567890abcdef"
-  session_timeout: 180
+  failure_block_duration: 600s
 `,
 	})
 
-	writeFile(t, filepath.Join(tempDir, "torii.yml"), `port: "8080"
+	writeFile(t, filepath.Join(tempDir, "torii.yml"), `listen: [":8080"]
 web_path: "/edge"
 node_name: "integration-node"
+global_secret: "integration-secret-0123456789abcdef"
 sites:
-  - host: "default_site"
+  - id: "default_site"
     rule_path: "`+filepath.ToSlash(ruleDir)+`"
+default_site: "default_site"
 `)
 
 	cfg, err := LoadMainConfig(tempDir)
@@ -75,8 +71,8 @@ sites:
 		t.Fatalf("LoadMainConfig returned unexpected error: %v", err)
 	}
 
-	if cfg.Port != "8080" {
-		t.Fatalf("Port = %q, want %q", cfg.Port, "8080")
+	if len(cfg.Listen) != 1 || cfg.Listen[0] != ":8080" {
+		t.Fatalf("Listen = %v, want %q", cfg.Listen, ":8080")
 	}
 	if cfg.WebPath != "/edge" {
 		t.Fatalf("WebPath = %q, want %q", cfg.WebPath, "/edge")
@@ -88,50 +84,51 @@ sites:
 		t.Fatalf("LogPath = %q, want default %q", cfg.LogPath, DefaultLogPath)
 	}
 
-	sharedMem := &dataType.SharedMemory{}
-	if err := InitManager(cfg, sharedMem); err != nil {
-		t.Fatalf("InitManager returned unexpected error: %v", err)
+	manager := NewManager()
+	if err := manager.Reload(cfg); err != nil {
+		t.Fatalf("Reload returned unexpected error: %v", err)
 	}
 
-	snapshot := Manager.Get()
+	snapshot := manager.Get()
 	if snapshot == nil {
-		t.Fatal("Manager.Get() returned nil snapshot")
+		t.Fatal("manager.Get() returned nil snapshot")
 	}
 
-	rules := GetSiteRules(snapshot.SiteRules, "unknown.example.com")
-	if rules == nil {
-		t.Fatal("GetSiteRules returned nil for default_site fallback")
+	// A request that names no site belongs to the default site.
+	rules := snapshot.Site("")
+	if rules == nil || rules.ID != "default_site" {
+		t.Fatalf("Site(\"\") = %+v, want the default site", rules)
+	}
+	if snapshot.Site("unknown_site") != nil {
+		t.Fatal("an unknown site ID fell back to another site")
 	}
 
-	if !rules.IPAllowRule.Enabled {
-		t.Fatal("IPAllowRule.Enabled = false, want true")
-	}
-	if !rules.IPAllowRule.Trie.Search(net.ParseIP("192.168.1.15")) {
-		t.Fatal("IP allow trie did not match configured CIDR")
-	}
-	if !rules.IPBlockRule.Trie.Search(net.ParseIP("10.0.0.5")) {
-		t.Fatal("IP block trie did not match configured IP")
-	}
-	if !rules.URLAllowRule.List.Match("/healthz") {
-		t.Fatal("URL allow list did not match static rule")
-	}
-	if !rules.URLAllowRule.List.Match("/api/test") {
-		t.Fatal("URL allow list did not match regex rule")
-	}
-	if !rules.URLBlockRule.List.Match("/admin") {
-		t.Fatal("URL block list did not match configured rule")
+	addr := netip.MustParseAddr
+	for name, on := range map[string]bool{
+		"ip_allow":  rules.Lists.ByName("ip_allow").ContainsAddr(addr("192.168.1.15")),
+		"ip_block":  rules.Lists.ByName("ip_block").ContainsAddr(addr("10.0.0.5")),
+		"url_exact": rules.Lists.ByName("url_allow").ContainsURL("/healthz"),
+		"url_regex": rules.Lists.ByName("url_allow").ContainsURL("/api/test"),
+		"url_block": rules.Lists.ByName("url_block").ContainsURL("/admin"),
+		"enabled":   rules.Lists.ByName("ip_allow").Enabled,
+		"allows":    rules.Lists.AllowsAddr(addr("192.168.1.15")) && rules.Lists.AllowsURL("/healthz"),
+		"order":     len(rules.Lists.All()) == 4 && rules.Lists.All()[0].Name == "ip_allow",
+	} {
+		if !on {
+			t.Errorf("lists: %s does not hold", name)
+		}
 	}
 	if !rules.CountryRule.Enabled {
 		t.Fatal("CountryRule.Enabled = false, want true")
 	}
-	if rules.CountryRule.Countries["US"] != dataType.CountryCaptcha || rules.CountryRule.DefaultAction != dataType.CountryBlock {
+	if rules.CountryRule.Countries["US"] != action.ActionChallenge || rules.CountryRule.DefaultAction != action.ActionBlock {
 		t.Fatalf("unexpected country policy: %#v", rules.CountryRule)
 	}
-	if !rules.CAPTCHARule.Enabled {
-		t.Fatal("CAPTCHARule.Enabled = false, want true")
+	if !rules.Challenge.Enabled {
+		t.Fatal("Challenge.Enabled = false, want true")
 	}
-	if rules.CAPTCHARule.CaptchaFailureLimit[120] != 5 {
-		t.Fatalf("CaptchaFailureLimit[120] = %d, want 5", rules.CAPTCHARule.CaptchaFailureLimit[120])
+	if want := (ratelimit.Rates{{Limit: 3, Window: 60}, {Limit: 5, Window: 120}}); !slices.Equal(rules.Challenge.FailureLimit, want) {
+		t.Fatalf("FailureLimit = %v, want %v", rules.Challenge.FailureLimit, want)
 	}
 	if !rules.VerifyBotRule.Enabled {
 		t.Fatal("VerifyBotRule.Enabled = false, want true")
@@ -139,95 +136,59 @@ sites:
 	if !rules.HTTPFloodRule.Enabled {
 		t.Fatal("HTTPFloodRule.Enabled = false, want true")
 	}
-	if rules.HTTPFloodRule.HTTPFloodSpeedLimit[120] != 20 {
-		t.Fatalf("HTTPFloodSpeedLimit[120] = %d, want 20", rules.HTTPFloodRule.HTTPFloodSpeedLimit[120])
-	}
-	if !rules.ExternalMigrationRule.Enabled {
-		t.Fatal("ExternalMigrationRule.Enabled = false, want true")
+	if want := (ratelimit.Rates{{Limit: 10, Window: 60}, {Limit: 20, Window: 120}}); !slices.Equal(rules.HTTPFloodRule.SpeedLimit, want) {
+		t.Fatalf("SpeedLimit = %v, want %v", rules.HTTPFloodRule.SpeedLimit, want)
 	}
 
-	if got := sharedMem.HTTPFloodSpeedLimitCounter.Load(); got == nil || got.GetSegSize() != 120 {
-		if got == nil {
-			t.Fatal("HTTPFloodSpeedLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodSpeedLimitCounter segSize = %d, want 120", got.GetSegSize())
-	}
-	if got := sharedMem.HTTPFloodSameURILimitCounter.Load(); got == nil || got.GetSegSize() != 45 {
-		if got == nil {
-			t.Fatal("HTTPFloodSameURILimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodSameURILimitCounter segSize = %d, want 45", got.GetSegSize())
-	}
-	if got := sharedMem.HTTPFloodFailureLimitCounter.Load(); got == nil || got.GetSegSize() != 300 {
-		if got == nil {
-			t.Fatal("HTTPFloodFailureLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("HTTPFloodFailureLimitCounter segSize = %d, want 300", got.GetSegSize())
-	}
-	if got := sharedMem.CaptchaFailureLimitCounter.Load(); got == nil || got.GetSegSize() != 120 {
-		if got == nil {
-			t.Fatal("CaptchaFailureLimitCounter = nil, want initialized counter")
-		}
-		t.Fatalf("CaptchaFailureLimitCounter segSize = %d, want 120", got.GetSegSize())
+	if got, want := snapshot.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 120, HTTPFloodSameURI: 45, HTTPFloodFailure: 300, ChallengeFailure: 120}); got != want {
+		t.Fatalf("CounterWindows = %+v, want %+v", got, want)
 	}
 
-	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `IPAllow:
-  enabled: false
-IPBlock:
+	writeFile(t, filepath.Join(ruleDir, "Server.yml"), `lists:
+  - {name: ip_allow, enabled: false, type: ip, file: IP_AllowList.conf, action: allow}
+  - {name: ip_block, enabled: true, type: ip, file: IP_BlockList.conf, action: block}
+  - {name: url_allow, enabled: true, type: url, file: URL_AllowList.conf, action: allow}
+  - {name: url_block, enabled: true, type: url, file: URL_BlockList.conf, action: block}
+challenge:
+  mode: hcaptcha
   enabled: true
-URLAllow:
-  enabled: true
-URLBlock:
-  enabled: true
-CAPTCHA:
-  enabled: true
-  secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
+  clearance_ttl: 60s
+  session_ttl: 120s
   hcaptcha_secret: "hcaptcha-secret"
-  CaptchaFailureLimit:
+  failure_limit:
     - "7/4m"
-  failure_block_duration: 300
-HTTPFlood:
+  failure_block_duration: 300s
+http_flood:
   enabled: true
-  HTTPFloodSpeedLimit:
+  speed_limit:
     - "11/4m"
-  HTTPFloodSameURILimit:
+  same_uri_limit:
     - "9/1m"
-  HTTPFloodFailureLimit:
+  failure_limit:
     - "4/15m"
-  failure_block_duration: 600
+  failure_block_duration: 600s
 `)
 
-	if err := Manager.Reload(cfg, sharedMem); err != nil {
+	if err := manager.Reload(cfg); err != nil {
 		t.Fatalf("Reload returned unexpected error: %v", err)
 	}
 
-	reloaded := Manager.Get()
+	reloaded := manager.Get()
 	if reloaded == nil {
-		t.Fatal("Manager.Get() returned nil snapshot after reload")
+		t.Fatal("manager.Get() returned nil snapshot after reload")
 	}
 
 	reloadedRules := reloaded.SiteRules["default_site"]
 	if reloadedRules == nil {
 		t.Fatal("default_site missing after reload")
 	}
-	if reloadedRules.IPAllowRule.Enabled {
-		t.Fatal("IPAllowRule.Enabled = true after reload, want false")
+	if reloadedRules.Lists.ByName("ip_allow").Enabled || reloadedRules.Lists.AllowsAddr(netip.MustParseAddr("192.168.1.15")) {
+		t.Fatal("ip_allow is still enabled after the reload switched it off")
 	}
 	if reloadedRules.CountryRule == nil || reloadedRules.CountryRule.Enabled {
 		t.Fatal("CountryRule should remain present and disabled when omitted")
 	}
-	if got := sharedMem.HTTPFloodSpeedLimitCounter.Load().GetSegSize(); got != 240 {
-		t.Fatalf("HTTPFloodSpeedLimitCounter segSize after reload = %d, want 240", got)
-	}
-	if got := sharedMem.HTTPFloodSameURILimitCounter.Load().GetSegSize(); got != 60 {
-		t.Fatalf("HTTPFloodSameURILimitCounter segSize after reload = %d, want 60", got)
-	}
-	if got := sharedMem.HTTPFloodFailureLimitCounter.Load().GetSegSize(); got != 900 {
-		t.Fatalf("HTTPFloodFailureLimitCounter segSize after reload = %d, want 900", got)
-	}
-	if got := sharedMem.CaptchaFailureLimitCounter.Load().GetSegSize(); got != 240 {
-		t.Fatalf("CaptchaFailureLimitCounter segSize after reload = %d, want 240", got)
+	if got, want := reloaded.CounterWindows()["default_site"], (CounterWindows{HTTPFloodSpeed: 240, HTTPFloodSameURI: 60, HTTPFloodFailure: 900, ChallengeFailure: 240}); got != want {
+		t.Fatalf("CounterWindows after reload = %+v, want %+v", got, want)
 	}
 }

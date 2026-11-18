@@ -3,42 +3,42 @@ package check
 import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
 
 type fakeBrowserEvidence map[string]bool
 
-func (f fakeBrowserEvidence) HasBrowserEvidence(ip string) bool { return f[ip] }
+func (f fakeBrowserEvidence) HasBrowserEvidence(_, ip string) bool { return f[ip] }
 
 func TestActionRuleCaptchaUnverified(t *testing.T) {
 	engine := action.NewActionRuleEngine(time.Minute)
 	defer engine.Stop()
-	engine.AddURIRule("/members/:id", action.ActionCaptchaUnverified, time.Minute)
-	rules := &config.RuleSet{CAPTCHARule: &dataType.CaptchaRule{
-		SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{},
+	engine.AddURIRule("", "/members/:id", action.ActionChallengeUnverified, time.Minute)
+	rules := &config.RuleSet{Challenge: &config.ChallengeRule{
+		CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second, SessionTTL: 120 * time.Second, FailureLimit: ratelimit.Rates{},
 	}}
 	for _, tc := range []struct {
-		name     string
-		analyzer any
-		ip       string
-		wantDone bool
+		name          string
+		analyzer      state.BrowserEvidence
+		ip            string
+		wantChallenge bool
 	}{
 		{"browser evidence passes", fakeBrowserEvidence{"8.8.8.8": true}, "8.8.8.8", false},
 		{"no evidence is challenged", fakeBrowserEvidence{}, "8.8.8.8", true},
 		{"no analyzer is challenged", nil, "8.8.8.8", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			shared := &dataType.SharedMemory{ActionRuleEngine: engine, AdaptiveTrafficAnalyzer: tc.analyzer}
-			shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+			shared := &state.Runtime{ActionRuleEngine: engine, BrowserEvidence: tc.analyzer}
+			shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 			decision := action.NewDecision()
-			ActionRule(dataType.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
-			if done := decision.State == action.Done; done != tc.wantDone {
-				t.Fatalf("done = %v (code %s), want %v", done, decision.Verdict, tc.wantDone)
-			}
-			if tc.wantDone && decision.Verdict != action.VerdictCaptcha {
-				t.Fatalf("code = %s, want CAPTCHA", decision.Verdict)
+			ActionRule(request.UserRequest{RemoteIP: tc.ip, Uri: "/members/42/"}, rules, decision, shared)
+			// The rule only marks the request; the Challenge check at the end of the pipeline answers it.
+			if decision.State != action.Continue || decision.RequireChallenge != tc.wantChallenge {
+				t.Fatalf("decision = %+v, want a challenge required: %v", decision, tc.wantChallenge)
 			}
 		})
 	}

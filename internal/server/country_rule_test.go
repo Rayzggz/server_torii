@@ -2,15 +2,19 @@ package server
 
 import (
 	"errors"
-	"net"
-	"net/http/httptest"
+	"log/slog"
 	"net/netip"
 	"os"
 	"path/filepath"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 type serverCountryResolver struct {
@@ -21,61 +25,41 @@ func (r serverCountryResolver) Country(netip.Addr) (string, error) {
 	return r.country, nil
 }
 
-func TestCheckMainIPAllowBypassesCountryRule(t *testing.T) {
-	_, allowedNetwork, err := net.ParseCIDR("8.8.8.8/32")
-	if err != nil {
-		t.Fatalf("ParseCIDR returned error: %v", err)
-	}
-	trie := &dataType.TrieNode{}
-	trie.Insert(allowedNetwork)
+func TestIPAllowBypassesCountryRule(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		IPAllowRule: &dataType.IPAllowRule{Enabled: true, Trie: trie},
-		CountryRule: &dataType.CountryRule{
+		Lists: config.NewListSet(config.MustNewList("ip_allow", config.ListIP, action.ActionAllow, "8.8.8.8/32")),
+		CountryRule: &config.CountryRule{
 			Enabled:   true,
-			Countries: map[string]dataType.CountryAction{"US": dataType.CountryBlock},
+			Countries: map[string]action.Action{"US": action.ActionBlock},
 		},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:       "8.8.8.8",
-		FeatureControl: dataType.FeatureIPAllow | dataType.FeatureCountryRule,
+		FeatureControl: feature.CountryRule.ControlMask(),
 	}
-	recorder := httptest.NewRecorder()
-
-	CheckMain(recorder, reqData, ruleSet, &config.MainConfig{}, &dataType.SharedMemory{
-		CountryResolver: serverCountryResolver{country: "US"},
-	})
-
-	if recorder.Code != 200 {
-		t.Fatalf("response status = %d, want 200 allowlist bypass", recorder.Code)
+	rt := &state.Runtime{CountryResolver: serverCountryResolver{country: "US"}}
+	if got := decide(rt, reqData, ruleSet); got != "pass" {
+		t.Fatalf("decision = %q, want pass: allowlist bypass", got)
 	}
 }
 
-func TestProcessFeatureControlCountryRuleBit(t *testing.T) {
+func TestFeatureOverridesCountryRuleBit(t *testing.T) {
 	ruleSet := featureControlRuleSet()
-	cfg := &config.MainConfig{ConnectingFeatureControlHeaders: []string{"X-Features"}}
 
-	baseline := processFeatureControl(cfg, httptest.NewRequest("GET", "/", nil), ruleSet)
-	if baseline&dataType.FeatureCountryRule == 0 {
+	if featureBits(ruleSet, "")&feature.CountryRule.ControlMask() == 0 {
 		t.Fatal("CountryRule baseline bit is disabled, want enabled")
 	}
-
-	disableRequest := httptest.NewRequest("GET", "/", nil)
-	disableRequest.Header.Set("X-Features", "________0")
-	disabled := processFeatureControl(cfg, disableRequest, ruleSet)
-	if disabled&dataType.FeatureCountryRule != 0 {
-		t.Fatal("CountryRule bit remains enabled after position 8 override")
+	if featureBits(ruleSet, "-country_rule")&feature.CountryRule.ControlMask() != 0 {
+		t.Fatal("CountryRule bit remains enabled after the override")
 	}
 
 	ruleSet.CountryRule.Enabled = false
-	enableRequest := httptest.NewRequest("GET", "/", nil)
-	enableRequest.Header.Set("X-Features", "________1")
-	enabled := processFeatureControl(cfg, enableRequest, ruleSet)
-	if enabled&dataType.FeatureCountryRule == 0 {
-		t.Fatal("CountryRule bit remains disabled after position 8 override")
+	if featureBits(ruleSet, "+country_rule")&feature.CountryRule.ControlMask() == 0 {
+		t.Fatal("CountryRule bit remains disabled after the override")
 	}
 }
 
-func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
+func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 	databasePath := filepath.Join("..", "..", "config_example", "data", "GeoLite2-Country.mmdb")
 	if _, err := os.Stat(databasePath); errors.Is(err, os.ErrNotExist) {
 		t.Skipf("GeoLite2 test database is not present at %s", databasePath)
@@ -83,33 +67,32 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 		t.Fatalf("Stat GeoLite2 database: %v", err)
 	}
 
-	database := geoip.NewCountryDatabase(databasePath)
+	database := geoip.NewCountryDatabase(databasePath, slog.New(slog.DiscardHandler))
 	defer database.CloseOrWarn()
 
 	ruleSet := featureControlRuleSet()
-	ruleSet.CountryRule = &dataType.CountryRule{
+	ruleSet.CountryRule = &config.CountryRule{
 		Enabled:   true,
-		Countries: map[string]dataType.CountryAction{"US": dataType.CountryCaptcha, "CN": dataType.CountryBlock},
+		Countries: map[string]action.Action{"US": action.ActionChallenge, "CN": action.ActionBlock},
 	}
-	ruleSet.CAPTCHARule = &dataType.CaptchaRule{
-		SecretKey:                      "1234567890abcdef",
-		CaptchaValidateTime:            60,
-		CaptchaChallengeSessionTimeout: 120,
-		CaptchaFailureLimit:            map[int64]int64{},
+	ruleSet.Challenge = &config.ChallengeRule{
+		CookieKey:    "1234567890abcdef",
+		ClearanceTTL: 60 * time.Second,
+		SessionTTL:   120 * time.Second,
+		FailureLimit: ratelimit.Rates{},
 	}
-	sharedMem := &dataType.SharedMemory{CountryResolver: database}
-	sharedMem.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+	sharedMem := &state.Runtime{CountryResolver: database}
+	sharedMem.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 
 	tests := []struct {
 		name        string
 		remoteIP    string
 		wantCountry string
-		wantStatus  int
-		wantAction  string
+		want        string
 	}{
-		{name: "US requires CAPTCHA", remoteIP: "8.8.8.8", wantCountry: "US", wantStatus: 445, wantAction: "CAPTCHA"},
-		{name: "CN is blocked", remoteIP: "114.114.114.114", wantCountry: "CN", wantStatus: 445, wantAction: "403"},
-		{name: "DE passes normally", remoteIP: "84.200.69.80", wantCountry: "DE", wantStatus: 200},
+		{name: "US requires CAPTCHA", remoteIP: "8.8.8.8", wantCountry: "US", want: "challenge"},
+		{name: "CN is blocked", remoteIP: "114.114.114.114", wantCountry: "CN", want: "block"},
+		{name: "DE passes normally", remoteIP: "84.200.69.80", wantCountry: "DE", want: "pass"},
 	}
 
 	for _, tt := range tests {
@@ -122,17 +105,12 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 				t.Fatalf("Country(%s) = %q, want %q", tt.remoteIP, country, tt.wantCountry)
 			}
 
-			recorder := httptest.NewRecorder()
-			CheckMain(recorder, dataType.UserRequest{
+			got := decide(sharedMem, request.UserRequest{
 				RemoteIP:       tt.remoteIP,
-				FeatureControl: dataType.FeatureCountryRule,
-			}, ruleSet, &config.MainConfig{}, sharedMem)
-
-			if recorder.Code != tt.wantStatus {
-				t.Fatalf("response status = %d, want %d", recorder.Code, tt.wantStatus)
-			}
-			if got := recorder.Header().Get("Torii-Action"); got != tt.wantAction {
-				t.Fatalf("Torii-Action = %q, want %q", got, tt.wantAction)
+				FeatureControl: feature.CountryRule.ControlMask(),
+			}, ruleSet)
+			if got != tt.want {
+				t.Fatalf("decision = %q, want %q", got, tt.want)
 			}
 		})
 	}
@@ -140,14 +118,10 @@ func TestCheckMainCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		IPAllowRule:           &dataType.IPAllowRule{},
-		IPBlockRule:           &dataType.IPBlockRule{},
-		URLAllowRule:          &dataType.URLAllowRule{},
-		URLBlockRule:          &dataType.URLBlockRule{},
-		VerifyBotRule:         &dataType.VerifyBotRule{},
-		HTTPFloodRule:         &dataType.HTTPFloodRule{},
-		CAPTCHARule:           &dataType.CaptchaRule{},
-		ExternalMigrationRule: &dataType.ExternalMigrationRule{},
-		CountryRule:           &dataType.CountryRule{Enabled: true},
+		Lists:         config.NewListSet(),
+		VerifyBotRule: &config.VerifyBotRule{},
+		HTTPFloodRule: &config.HTTPFloodRule{},
+		Challenge:     &config.ChallengeRule{},
+		CountryRule:   &config.CountryRule{Enabled: true},
 	}
 }

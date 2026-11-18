@@ -6,26 +6,29 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
+	"time"
 
 	altcha "github.com/altcha-org/altcha-lib-go/v2"
 )
 
-func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
+func TestAltchaChallengeEndpoint(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			Provider:                       check.CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
+		Challenge: &config.ChallengeRule{
+			Mode:             config.ChallengeAltcha,
+			CookieKey:        "1234567890abcdef",
+			SessionTTL:       120 * time.Second,
+			AltchaHMACSecret: "altcha-secret",
+			AltchaCost:       1,
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Uri:       "/torii/captcha/challenge",
 		Host:      "example.com",
@@ -35,7 +38,7 @@ func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/torii/captcha/challenge", nil)
 	rec := httptest.NewRecorder()
 
-	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
+	NewServer(cfg, nil, &state.Runtime{}, nil).servePublic(rec, req, reqData, ruleSet, pagesFor(cfg))
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
@@ -59,32 +62,32 @@ func TestCheckToriiAltchaChallengeEndpoint(t *testing.T) {
 	}
 }
 
-func TestCheckToriiAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
+func TestAltchaChallengeEndpointRejectsMissingSession(t *testing.T) {
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			Provider:                       check.CaptchaProviderAltcha,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
-			AltchaHMACSecret:               "altcha-secret",
-			AltchaCost:                     1,
+		Challenge: &config.ChallengeRule{
+			Mode:             config.ChallengeAltcha,
+			CookieKey:        "1234567890abcdef",
+			SessionTTL:       120 * time.Second,
+			AltchaHMACSecret: "altcha-secret",
+			AltchaCost:       1,
 		},
 	}
 	cfg := &config.MainConfig{WebPath: "/torii"}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP: "127.0.0.1",
 		Uri:      "/torii/captcha/challenge",
 	}
 	req := httptest.NewRequest(http.MethodGet, "/torii/captcha/challenge", nil)
 	rec := httptest.NewRecorder()
 
-	CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
+	NewServer(cfg, nil, &state.Runtime{}, nil).servePublic(rec, req, reqData, ruleSet, pagesFor(cfg))
 
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusForbidden)
 	}
 }
 
-func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
+func TestCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 	errorPageDir := t.TempDir()
 	for _, name := range []string{"CAPTCHA_ALTCHA.html", "CAPTCHA.html"} {
 		if err := os.WriteFile(filepath.Join(errorPageDir, name), []byte("captcha"), 0o600); err != nil {
@@ -94,37 +97,32 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		provider    string
+		mode        config.ChallengeMode
 		withSession bool
 	}{
 		{
 			name:        "ALTCHA reuses a valid session",
-			provider:    check.CaptchaProviderAltcha,
+			mode:        config.ChallengeAltcha,
 			withSession: true,
 		},
 		{
-			name:     "ALTCHA creates a missing session",
-			provider: check.CaptchaProviderAltcha,
+			name: "ALTCHA creates a missing session",
+			mode: config.ChallengeAltcha,
 		},
 		{
 			name:        "hCAPTCHA reuses a valid session",
-			provider:    check.CaptchaProviderHCaptcha,
-			withSession: true,
-		},
-		{
-			name:        "future provider reuses a valid session",
-			provider:    "future-provider",
+			mode:        config.ChallengeHCaptcha,
 			withSession: true,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ruleSet := captchaPageRuleSet(tt.provider)
+			ruleSet := captchaPageRuleSet(tt.mode)
 			cfg := &config.MainConfig{WebPath: "/torii", ErrorPage: errorPageDir}
-			reqData := dataType.UserRequest{
+			reqData := request.UserRequest{
 				RemoteIP:  "127.0.0.1",
-				Uri:       "/torii/checker_pages/CAPTCHA",
+				Uri:       "/protected",
 				Host:      "example.com",
 				UserAgent: "test-agent",
 			}
@@ -132,9 +130,7 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 				reqData.ToriiSessionID = string(check.GenSessionID(reqData, *ruleSet))
 			}
 
-			req := httptest.NewRequest(http.MethodGet, "/torii/checker_pages/CAPTCHA", nil)
-			rec := httptest.NewRecorder()
-			CheckTorii(rec, req, reqData, ruleSet, cfg, &dataType.SharedMemory{}, pagesFor(cfg))
+			rec := serveVerdictPage(action.VerdictChallenge, reqData, ruleSet, cfg, pagesFor(cfg))
 
 			if rec.Code != http.StatusServiceUnavailable {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
@@ -164,12 +160,12 @@ func TestCheckToriiCaptchaPagePreservesValidSessionCookie(t *testing.T) {
 	}
 }
 
-func captchaPageRuleSet(provider string) *config.RuleSet {
+func captchaPageRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			Provider:                       provider,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
+		Challenge: &config.ChallengeRule{
+			Mode:       mode,
+			CookieKey:  "1234567890abcdef",
+			SessionTTL: 120 * time.Second,
 		},
 	}
 }

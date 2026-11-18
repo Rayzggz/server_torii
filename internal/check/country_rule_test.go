@@ -5,9 +5,13 @@ import (
 	"net/netip"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
 	"server_torii/internal/geoip"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 type fakeCountryResolver struct {
@@ -20,24 +24,24 @@ func (r *fakeCountryResolver) Country(netip.Addr) (string, error) { r.calls++; r
 
 func countryTestRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		CountryRule: &dataType.CountryRule{DefaultAction: dataType.CountryContinue, UnknownAction: dataType.CountryContinue, Countries: map[string]dataType.CountryAction{}},
-		CAPTCHARule: &dataType.CaptchaRule{SecretKey: "1234567890abcdef", CaptchaValidateTime: 60, CaptchaChallengeSessionTimeout: 120, CaptchaFailureLimit: map[int64]int64{}},
+		CountryRule: &config.CountryRule{DefaultAction: action.ActionContinue, UnknownAction: action.ActionContinue, Countries: map[string]action.Action{}},
+		Challenge:   &config.ChallengeRule{CookieKey: "1234567890abcdef", ClearanceTTL: 60 * time.Second, SessionTTL: 120 * time.Second, FailureLimit: ratelimit.Rates{}},
 	}
 }
 
 func TestCountryRulePolicies(t *testing.T) {
-	for _, policy := range []dataType.CountryAction{dataType.CountryContinue, dataType.CountryBlock, dataType.CountryCaptcha} {
+	for _, policy := range []action.Action{action.ActionContinue, action.ActionBlock, action.ActionChallenge} {
 		for _, source := range []string{"override", "default", "invalid", "private", "loopback", "link_local", "empty", "error", "missing", "missing_database"} {
 			t.Run(string(policy)+"/"+source, func(t *testing.T) {
 				rules := countryTestRuleSet()
 				resolver := &fakeCountryResolver{country: "us"}
-				shared := &dataType.SharedMemory{CountryResolver: resolver}
-				shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
-				req := dataType.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: dataType.FeatureCountryRule}
+				shared := &state.Runtime{CountryResolver: resolver}
+				shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
+				req := request.UserRequest{RemoteIP: "8.8.8.8", FeatureControl: feature.CountryRule.ControlMask()}
 				rules.CountryRule.UnknownAction = policy
 				switch source {
 				case "override":
-					rules.CountryRule.DefaultAction = dataType.CountryBlock
+					rules.CountryRule.DefaultAction = action.ActionBlock
 					rules.CountryRule.Countries["US"] = policy
 				case "default":
 					rules.CountryRule.DefaultAction = policy
@@ -58,11 +62,14 @@ func TestCountryRulePolicies(t *testing.T) {
 				case "missing":
 					shared.CountryResolver = nil
 				}
+				req.ResolveCountry(shared.CountryResolver)
 				decision := action.NewDecision()
 				CountryRule(req, rules, decision, shared)
-				want := map[dataType.CountryAction]string{dataType.CountryContinue: "200", dataType.CountryBlock: "403", dataType.CountryCaptcha: "CAPTCHA"}[policy]
-				if decision.Verdict.String() != want || (decision.State == action.Done) != (policy != dataType.CountryContinue) {
-					t.Fatalf("decision = %#v, want %s", decision, want)
+				// A block ends the pipeline; a challenge only marks the request for the Challenge check.
+				wantBlock, wantChallenge := policy == action.ActionBlock, policy == action.ActionChallenge
+				if (decision.State == action.Done) != wantBlock || (decision.Verdict == action.VerdictBlock) != wantBlock ||
+					decision.RequireChallenge != wantChallenge {
+					t.Fatalf("decision = %#v, want policy %s", decision, policy)
 				}
 				if (source == "invalid" || source == "private" || source == "loopback" || source == "missing") && resolver.calls != 0 {
 					t.Fatal("unexpected lookup")
@@ -72,30 +79,26 @@ func TestCountryRulePolicies(t *testing.T) {
 	}
 }
 
-func TestCountryRuleSkipsLookup(t *testing.T) {
-	for _, absent := range []bool{false, true} {
-		rules := countryTestRuleSet()
-		req := dataType.UserRequest{RemoteIP: "8.8.8.8"}
-		if absent {
-			rules.CountryRule = nil
-			req.FeatureControl = dataType.FeatureCountryRule
-		}
-		resolver := &fakeCountryResolver{country: "US"}
-		decision := action.NewDecision()
-		CountryRule(req, rules, decision, &dataType.SharedMemory{CountryResolver: resolver})
-		if resolver.calls != 0 || decision.State != action.Continue {
-			t.Fatalf("unexpected lookup or decision: %#v", decision)
-		}
+func TestCountryRuleWithoutRuleContinues(t *testing.T) {
+	rules := countryTestRuleSet()
+	rules.CountryRule = nil
+	req := request.UserRequest{RemoteIP: "8.8.8.8"}
+	req.ResolveCountry(&fakeCountryResolver{country: "US"})
+	decision := action.NewDecision()
+	CountryRule(req, rules, decision, &state.Runtime{})
+	if decision.State != action.Continue {
+		t.Fatalf("unexpected decision: %#v", decision)
 	}
 }
 
 func TestCountryRuleCaptchaClearanceContinues(t *testing.T) {
 	rules := countryTestRuleSet()
-	rules.CountryRule.DefaultAction = dataType.CountryCaptcha
-	req := dataType.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: dataType.FeatureCountryRule}
+	rules.CountryRule.DefaultAction = action.ActionChallenge
+	req := request.UserRequest{RemoteIP: "8.8.8.8", Host: "example.com", FeatureControl: feature.CountryRule.ControlMask()}
 	req.ToriiClearance = string(GenClearance(req, *rules))
-	shared := &dataType.SharedMemory{CountryResolver: &fakeCountryResolver{country: "US"}}
-	shared.CaptchaFailureLimitCounter.Store(dataType.NewCounter(16, 1))
+	req.ResolveCountry(&fakeCountryResolver{country: "US"})
+	shared := &state.Runtime{}
+	shared.ChallengeFailureLimitCounter.Store(ratelimit.NewCounter(16, 1))
 	decision := action.NewDecision()
 	CountryRule(req, rules, decision, shared)
 	if decision.State != action.Continue {

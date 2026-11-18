@@ -2,6 +2,7 @@ package server
 
 import (
 	"bufio"
+	"log/slog"
 	"net"
 	"net/http"
 	"testing"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestNewHTTPServerSetsLimits(t *testing.T) {
-	srv := newHTTPServer(":0", nil)
+	srv := newHTTPServer(":0", nil, slog.New(slog.DiscardHandler))
 	if srv.ReadHeaderTimeout <= 0 || srv.ReadTimeout <= 0 || srv.WriteTimeout <= 0 || srv.IdleTimeout <= 0 {
 		t.Fatalf("all timeouts must be set: %+v", srv)
 	}
@@ -24,7 +25,7 @@ func TestHTTPServerDropsSlowHeaderClient(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := newHTTPServer("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	srv := newHTTPServer("", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}), slog.New(slog.DiscardHandler))
 	srv.ReadHeaderTimeout = 200 * time.Millisecond
 	go func() { _ = srv.Serve(ln) }()
 	defer func() { _ = srv.Close() }()

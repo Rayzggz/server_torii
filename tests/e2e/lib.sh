@@ -4,9 +4,13 @@
 NUM_NODES=${NUM_NODES:-10}
 BASE_PORT=${BASE_PORT:-25000}
 KEEP_ARTIFACTS=${KEEP_ARTIFACTS:-0}
+# How the requests of the scenarios reach Torii: "direct" speaks the connector protocol to the
+# nodes; "nginx" sends ordinary requests through nginx sites (nginx_lib.sh).
+VIA=${VIA:-direct}
 ZERO=0000000000000000
 SECRET=e2e-only-global-secret-never-use-in-production
-EXTERNAL_SECRET=e2e-only-external-secret-never-use-in-production
+# The key of the site's Challenge section; it also signs the links exchanged with the external provider.
+EXTERNAL_SECRET=e2e-only-challenge-secret-never-use-in-production
 UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36'
 NODE_PIDS=()
 ASSERTIONS=0
@@ -34,6 +38,7 @@ alive() {
 cleanup() {
     local status=$? pid deadline file
     trap - EXIT ERR INT TERM
+    if [[ "$VIA" == nginx ]]; then stop_nginx; fi
     for pid in "${NODE_PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
     deadline=$((SECONDS + 5))
     for pid in "${NODE_PIDS[@]}"; do
@@ -47,6 +52,9 @@ cleanup() {
             [[ -f "$file" ]] || continue
             log "$file"; tail -n 8 "$file" || true
         done
+        if [[ -f "$RUN/nginx/logs/error.log" ]]; then
+            log "$RUN/nginx/logs/error.log"; grep -v '\[info\]' "$RUN/nginx/logs/error.log" | tail -n 8 || true
+        fi
     fi
     if [[ "$KEEP_ARTIFACTS" == 1 ]]; then
         log "Artifacts: $RUN"
@@ -68,6 +76,14 @@ preflight() {
     for tool in go curl jq openssl dig ss awk sed grep head tail mktemp date base64 tr dd cp mv rm mkdir cat sleep uname; do
         command -v "$tool" >/dev/null || fail "Missing dependency: $tool (see tests/e2e/README.md)"
     done
+    if [[ "$VIA" == nginx ]]; then
+        for tool in make cc tar find nproc; do
+            command -v "$tool" >/dev/null || fail "Missing dependency: $tool (see tests/e2e/README.md)"
+        done
+        if [[ ! "$NGINX_BASE_PORT" =~ ^[1-9][0-9]{3,4}$ ]] || (( NGINX_BASE_PORT < 1024 || NGINX_BASE_PORT + NUM_NODES > 65535 )); then
+            fail 'Invalid NGINX_BASE_PORT'
+        fi
+    fi
     openssl version | grep -Eq '^OpenSSL [3-9]\.' || fail 'OpenSSL 3+ is required for PBKDF2'
     # Probe KDF support, including binary-safe hex passwords, before launching nodes.
     openssl kdf -keylen 32 -kdfopt digest:SHA512 -kdfopt hexpass:00000000 -kdfopt hexsalt:00 -kdfopt iter:1 PBKDF2 >/dev/null
@@ -77,44 +93,51 @@ preflight() {
             fail "TCP or UDP port $port already in use; choose BASE_PORT"
         fi
     done
+    if [[ "$VIA" == nginx ]]; then
+        for ((port=NGINX_BASE_PORT; port<=NGINX_BASE_PORT+NUM_NODES; port++)); do
+            if awk -v p="$port" '$5 ~ (":" p "$") {found=1} END {exit !found}' <<< "$listeners"; then
+                fail "TCP port $port already in use; choose NGINX_BASE_PORT"
+            fi
+        done
+    fi
     RUN=$(mktemp -d "${TMPDIR:-/tmp}/torii-e2e.XXXXXXXX")
     trap cleanup EXIT
     trap 'log "Unexpected failure at ${BASH_SOURCE[0]}:$LINENO: $BASH_COMMAND" >&2' ERR
     trap 'exit 130' INT
     trap 'exit 143' TERM
     mkdir -p "$RUN/responses"
-    ALLOWED=$(jq -r .allowed.body "$E2E/fixtures/responses.json")
-    CHALLENGED=$(jq -r .challenged.body "$E2E/fixtures/responses.json")
     log "Artifacts: $RUN"
 }
 setup_cluster() {
     local i j node site cfg deadline
     log "Building Torii and preparing $NUM_NODES processes"
-    (cd "$ROOT" && go build -o "$RUN/server_torii" .)
+    (cd "$ROOT" && go build -o "$RUN/server_torii" ./cmd/server_torii)
     for ((i=1; i<=NUM_NODES; i++)); do
         node="$RUN/node$i"
         mkdir -p "$node/log" "$node/data" "$node/rules"
         cp -R "$E2E/fixtures/pages" "$node/pages"
         # Last node intentionally has no database, testing the unknown-country policy.
         if (( i < NUM_NODES )); then cp "$ROOT/config_example/data/GeoLite2-Country.mmdb" "$node/data/"; fi
-        for site in default exact wildcard failures unknown non200 uri expiry non200expiry uriexpiry; do
+        for site in default exact wildcard failures unknown non200 uri expiry non200expiry uriexpiry external; do
             cp -R "$E2E/fixtures/rules" "$node/rules/$site"
         done
         printf '/exact-site\n' >> "$node/rules/exact/URL_BlockList.conf"
         printf '/wildcard-site\n' >> "$node/rules/wildcard/URL_BlockList.conf"
-        sed -i 's/20\/30s/2\/30s/; s/captcha_challenge_session_timeout: 120/captcha_challenge_session_timeout: 2/' "$node/rules/failures/Server.yml"
+        sed -i 's/20\/30s/2\/30s/; s/session_ttl: 120s/session_ttl: 2s/' "$node/rules/failures/Server.yml"
         sed -i 's/unknown_action: continue/unknown_action: block/' "$node/rules/unknown/Server.yml"
-        sed -i 's/failure_block_duration: 300/failure_block_duration: 3/g' "$node/rules/expiry/Server.yml"
+        # The same site, handing its clients to the external provider instead of showing a CAPTCHA.
+        sed -i 's/^  mode: altcha$/  mode: external/' "$node/rules/external/Server.yml"
+        sed -i 's/failure_block_duration: 300s/failure_block_duration: 3s/g' "$node/rules/expiry/Server.yml"
         for site in non200 uri non200expiry uriexpiry; do
             cfg="$node/rules/$site/Server.yml"
             # Ranges end at the next top-level key so later sections such as CustomRules stay untouched.
-            sed -i "/^AdaptiveTrafficAnalyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/; s/tag: disabled/tag: e2e-$site/" "$cfg"
+            sed -i "/^traffic_analyzer:/,/^  uri_detection:/s/enabled: false/enabled: true/" "$cfg"
             if [[ "$site" == non200* ]]; then
                 sed -i '/^  ip_detection:/,/^[^ ]/s/enabled: false/enabled: true/' "$cfg"
             else
-                sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: captcha/' "$cfg"
+                sed -i '/^  uri_detection:/,/^  ip_detection:/s/action: observe/action: challenge/' "$cfg"
             fi
-            if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300/block_duration: 3/g' "$cfg"; fi
+            if [[ "$site" == *expiry ]]; then sed -i 's/block_duration: 300s/block_duration: 3s/g' "$cfg"; fi
         done
         # Bash replacement keeps paths literal even when TMPDIR contains sed metacharacters.
         cfg=$(cat "$E2E/fixtures/torii.yml")
@@ -124,6 +147,9 @@ setup_cluster() {
             (( i != j )) || continue
             printf '  - name: "Node_%s"\n    address: "http://127.0.0.1:%s"\n    host: "node-%s.local"\n' "$j" "$((BASE_PORT+j))" "$j" >> "$node/torii.yml"
         done
+        # The configuration check loads what the server will load, and starts nothing.
+        "$RUN/server_torii" -check-config -config "$node/torii.yml" > "$node/log/check.log" 2>&1 \
+            || fail "Node $i: configuration check failed: $(cat "$node/log/check.log")"
         "$RUN/server_torii" -config "$node/torii.yml" > "$node/log/startup.log" 2>&1 &
         NODE_PIDS+=("$!")
     done
@@ -139,39 +165,124 @@ setup_cluster() {
     done
     alive
 }
+# request NODE ENDPOINT [curl args]: one request to the node, or with VIA=nginx to the nginx
+# sites in front of it. Sets HTTP_CODE, HTTP_BODY, HTTP_DECISION and HTTP_REASON.
 request() {
-    local node=$1 endpoint=$2
+    local node=$1 endpoint=$2 port=$((BASE_PORT+$1))
     shift 2
+    [[ "$VIA" != nginx ]] || port=$((NGINX_BASE_PORT+node))
     REQUESTS=$((REQUESTS+1))
     RESPONSE="$RUN/responses/$REQUESTS"
     printf '%q ' "node=$node" "$endpoint" "$@" > "$RESPONSE.request"
     printf '\n' >> "$RESPONSE.request"
     if ! HTTP_CODE=$(curl --silent --show-error --noproxy '*' --connect-timeout 2 --max-time 15 \
         -A "$UA" -D "$RESPONSE.headers" -o "$RESPONSE.body" -w '%{http_code}' \
-        "http://127.0.0.1:$((BASE_PORT+node))$endpoint" "$@"); then
+        "http://127.0.0.1:$port$endpoint" "$@"); then
         fail "Request $REQUESTS to node $node $endpoint failed (transport)"
     fi
     HTTP_BODY=$(cat "$RESPONSE.body")
-    HTTP_ACTION=$(header Torii-Action)
+    # Behind nginx the headers of the protocol never reach the client; the sites of the suite
+    # show what the module decided in headers of their own.
+    if [[ "$VIA" == nginx ]]; then
+        HTTP_DECISION=$(header X-E2E-Decision); HTTP_REASON=$(header X-E2E-Reason)
+    else
+        HTTP_DECISION=$(header Torii-Decision); HTTP_REASON=$(header Torii-Reason)
+    fi
 }
 header() { awk -v key="$1:" 'tolower($1)==tolower(key) {$1=""; sub(/^ /, ""); sub(/\r$/, ""); print}' "$RESPONSE.headers"; }
+# The scenarios select checks with a 16-character mask, one character per check in this order:
+# 1 forces the check on, 0 forces it off, _ keeps the setting of the site. An empty mask
+# changes nothing. Six of the names are lists of the fixture, which the connector switches the
+# same way as checks. Position 8 belonged to a check that no longer exists; it is kept, and
+# ignored, so the masks of the scenarios keep their positions.
+FEATURE_NAMES=(ip_allow ip_block url_allow url_block verify_bot http_flood challenge ''
+    country_rule ip_captcha url_captcha custom_rules)
+features_header() {
+    local mask=$1 i out=''
+    for ((i=0; i<${#FEATURE_NAMES[@]} && i<${#mask}; i++)); do
+        [[ -n "${FEATURE_NAMES[i]}" ]] || continue
+        case "${mask:i:1}" in
+            1) out+=" +${FEATURE_NAMES[i]}" ;;
+            0) out+=" -${FEATURE_NAMES[i]}" ;;
+        esac
+    done
+    printf '%s' "${out# }"
+}
+# site_for HOST: the site ID nginx would send for a host, as torii_site in its server block does.
+# A host no server block claims gets no site ID, and Torii uses its default site.
+site_for() {
+    case "$1" in
+        default_site) printf default_site ;;
+        exact.e2e.test) printf exact ;;
+        *.e2e.test) printf wildcard ;;
+        failures.test|unknown.test|non200.test|uri.test|expiry.test|non200expiry.test|uriexpiry.test|external.test)
+            printf '%s' "${1%.test}" ;;
+    esac
+}
+# check NODE IP [MASK [URI [HOST [curl args]]]]: what the connector asks for every request.
+# With VIA=nginx it is the request itself: sent to the server block of the host, from a proxy
+# nginx trusts to name the client address, and checked by the module on its way to the application.
 check() {
     local node=$1 ip=$2 features=${3-$ZERO} uri=${4:-/neutral} host=${5:-default_site}
     shift "$(( $# < 5 ? $# : 5 ))"
-    request "$node" /torii/checker -H "Torii-Real-IP: $ip" -H "Torii-Feature-Control: $features" \
-        -H "Torii-Original-URI: $uri" -H "Torii-Real-Host: $host" "$@"
-}
-decision() {
-    local expected=$1
-    if [[ "$expected" == 200 ]]; then
-        assert_eq "$HTTP_CODE" 200 'checker status'
-        assert_eq "$HTTP_BODY" "$ALLOWED" 'checker body'
-        assert_eq "$HTTP_ACTION" '' 'allowed action header'
-    else
-        assert_eq "$HTTP_CODE" 445 'checker status'
-        assert_eq "$HTTP_BODY" "$CHALLENGED" 'checker body'
-        assert_eq "$HTTP_ACTION" "$expected" 'checker action'
+    if [[ "$VIA" == nginx ]]; then
+        local -a args=()
+        while (( $# > 0 )); do
+            # The scenarios name the method of the original request the way the connector does.
+            if [[ "$1" == -H && "${2-}" == 'Torii-Method: '* ]]; then
+                args+=(-X "${2#Torii-Method: }"); shift 2
+            else
+                args+=("$1"); shift
+            fi
+        done
+        request "$node" "$uri" -H "Host: $host" -H "X-Forwarded-For: $ip" \
+            -H "X-E2E-Features: $(features_header "$features")" "${args[@]}"
+        return
     fi
+    request "$node" /v1/check -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
+        -H "Torii-Features: $(features_header "$features")" -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
+}
+# public NODE URI IP HOST [curl args]: a browser-facing endpoint, as the connector forwards it.
+public() {
+    local node=$1 uri=$2 ip=$3 host=$4
+    shift 4
+    if [[ "$VIA" == nginx ]]; then
+        request "$node" "$uri" -H "Host: $host" -H "X-Forwarded-For: $ip" "$@"
+        return
+    fi
+    request "$node" "/v1/public${uri#/torii}" -H "Torii-Site: $(site_for "$host")" -H "Torii-Client-IP: $ip" \
+        -H "Torii-URI: $uri" -H "Torii-Host: $host" "$@"
+}
+# decision EXPECTED: the last check decided EXPECTED and answered with the matching response.
+# A request that passes gets no body from Torii; behind nginx it gets the application's answer.
+# A challenge is answered with the CAPTCHA page, or, on a site in the external mode, with a
+# redirect to the provider: expect "redirect" there. Both are the decision "challenge".
+decision() {
+    local expected=$1 wire=$1
+    [[ "$expected" != redirect ]] || wire=challenge
+    assert_eq "$HTTP_DECISION" "$wire" 'decision'
+    case "$expected" in
+        pass)
+            if [[ "$VIA" == nginx ]]; then
+                assert_eq "$HTTP_CODE" 200 'pass status'
+                assert_contains "$HTTP_BODY" 'APP ' 'pass reaches the application'
+            else
+                assert_eq "$HTTP_CODE" 204 'pass status'
+                assert_eq "$HTTP_BODY" '' 'pass body'
+            fi ;;
+        block)
+            assert_eq "$HTTP_CODE" 403 'block status'
+            assert_contains "$HTTP_BODY" E2E-403 'block page' ;;
+        rate_limit)
+            assert_eq "$HTTP_CODE" 429 'rate limit status'
+            assert_contains "$HTTP_BODY" E2E-429 'rate limit page' ;;
+        challenge)
+            assert_eq "$HTTP_CODE" 503 'challenge status'
+            assert_contains "$HTTP_BODY" E2E-ALTCHA 'challenge page' ;;
+        redirect)
+            assert_eq "$HTTP_CODE" 302 'redirect status' ;;
+        *) fail "Unknown decision in test: $expected" ;;
+    esac
 }
 expect() { local expected=$1; shift; check "$@"; decision "$expected"; }
 wait_decision() {
@@ -179,33 +290,58 @@ wait_decision() {
     shift 2
     while true; do
         check "$@"
-        case "$HTTP_CODE/$HTTP_ACTION" in
-            200/) decision 200 ;;
-            445/403|445/429|445/CAPTCHA|445/EXTERNAL) decision "$HTTP_ACTION" ;;
-            *) fail "Unexpected checker response while polling: $HTTP_CODE/$HTTP_ACTION" ;;
+        case "$HTTP_DECISION" in
+            pass|block|rate_limit|challenge) decision "$HTTP_DECISION" ;;
+            *) fail "Unexpected checker response while polling: $HTTP_CODE/$HTTP_DECISION" ;;
         esac
-        if [[ "$expected" == 200 && "$HTTP_CODE" == 200 ]] || [[ "$HTTP_CODE" == 445 && "$HTTP_ACTION" == "$expected" ]]; then
-            return
-        fi
+        if [[ "$HTTP_DECISION" == "$expected" ]]; then return; fi
         alive
-        (( SECONDS < deadline )) || fail "Expected $expected within ${seconds}s; got $HTTP_CODE/$HTTP_ACTION"
+        (( SECONDS < deadline )) || fail "Expected $expected within ${seconds}s; got $HTTP_CODE/$HTTP_DECISION"
         sleep 0.2
     done
 }
+# cluster_decision EXPECTED IP [SKIP_NODE [MASK URI HOST]]: every node reaches the decision.
+# Temporary rules belong to one site, so name the host whose site the rule was made for.
 cluster_decision() {
     local expected=$1 ip=$2 skip=${3:-0} node remaining deadline=$((SECONDS+180))
+    shift "$(( $# < 3 ? $# : 3 ))"
     for ((node=1; node<=NUM_NODES; node++)); do
         (( node != skip )) || continue
         remaining=$((deadline-SECONDS))
         (( remaining > 0 )) || fail 'Cluster convergence exceeded 180 seconds'
-        wait_decision "$expected" "$remaining" "$node" "$ip"
+        wait_decision "$expected" "$remaining" "$node" "$ip" "$@"
     done
 }
 hmac() { printf '%s' "$1" | openssl dgst -sha512 -hmac "$2" | awk '{print $NF}'; }
 uuid() { cat /proc/sys/kernel/random/uuid; }
+# log_line FILE PART...: one line of the log holds every part.
+log_line() {
+    local file=$1 part lines deadline=$((SECONDS+10)); shift
+    while :; do
+        lines=$(cat "$file" 2>/dev/null || true)
+        for part in "$@"; do lines=$(grep -F -- "$part" <<<"$lines" || true); done
+        [[ -n $lines ]] && break
+        alive
+        (( SECONDS < deadline )) || fail "Missing log line in $file: $*"
+        sleep 0.2
+    done
+    ASSERTIONS=$((ASSERTIONS+1))
+}
+# wait_counter NAME VALUE: the health check of node 1 reports at least VALUE for the counter.
+wait_counter() {
+    local name=$1 want=$2 got deadline=$((SECONDS+10))
+    while :; do
+        request 1 /torii/health_check
+        got=$(sed -n "s/^$name=//p" <<< "$HTTP_BODY")
+        (( ${got:-0} >= want )) && break
+        (( SECONDS < deadline )) || fail "$name=$got, expected at least $want"
+        sleep 0.2
+    done
+    ASSERTIONS=$((ASSERTIONS+1))
+}
 wait_log() {
     local file=$1 pattern=$2 deadline=$((SECONDS+10))
-    until grep -Fq "$pattern" "$file"; do
+    until grep -Fq "$pattern" "$file" 2>/dev/null; do
         alive
         (( SECONDS < deadline )) || fail "Missing log: $pattern"
         sleep 0.2

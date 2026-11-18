@@ -1,47 +1,57 @@
 package config
 
 import (
-	"server_torii/internal/dataType"
+	"server_torii/internal/action"
+	"server_torii/internal/feature"
 	"server_torii/internal/rules"
-	"strings"
 )
 
 // RuleSet stores all rules for a single site.
 type RuleSet struct {
-	IPAllowRule                 *dataType.IPAllowRule
-	IPBlockRule                 *dataType.IPBlockRule
-	URLAllowRule                *dataType.URLAllowRule
-	URLBlockRule                *dataType.URLBlockRule
-	IPCAPTCHARule               *dataType.IPCAPTCHARule
-	URLCAPTCHARule              *dataType.URLCAPTCHARule
-	CAPTCHARule                 *dataType.CaptchaRule
-	VerifyBotRule               *dataType.VerifyBotRule
-	HTTPFloodRule               *dataType.HTTPFloodRule
-	ExternalMigrationRule       *dataType.ExternalMigrationRule
-	AdaptiveTrafficAnalyzerRule *dataType.AdaptiveTrafficAnalyzerRule
-	CountryRule                 *dataType.CountryRule
+	// ID is the site's ID from torii.yml. Runtime state that belongs to the site (rate counters,
+	// temporary action rules, log files, traffic analysis) is kept under it.
+	ID string
+
+	Lists                       *ListSet
+	Challenge                   *ChallengeRule
+	VerifyBotRule               *VerifyBotRule
+	HTTPFloodRule               *HTTPFloodRule
+	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule
+	CountryRule                 *CountryRule
 	CustomRules                 *rules.CustomRules
 }
 
-// GetSiteRules returns the rules for a specific host.
-func GetSiteRules(siteRules map[string]*RuleSet, host string) *RuleSet {
-	if rules, ok := siteRules[host]; ok {
-		return rules
+// NewRuleSet returns a rule set with every rule present, disabled and empty, for the loader to
+// fill from the site's files. Code that reads a loaded site never meets a nil rule.
+func NewRuleSet() *RuleSet {
+	return &RuleSet{
+		Lists:                       NewListSet(),
+		Challenge:                   &ChallengeRule{},
+		VerifyBotRule:               &VerifyBotRule{},
+		HTTPFloodRule:               &HTTPFloodRule{},
+		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
+		CountryRule:                 &CountryRule{DefaultAction: action.ActionContinue, UnknownAction: action.ActionContinue, Countries: make(map[string]action.Action)},
+		CustomRules:                 &rules.CustomRules{},
 	}
+}
 
-	// Check for wildcard match (e.g., *.example.com)
-	parts := strings.Split(host, ".")
-	if len(parts) > 1 {
-		wildcardHost := "*." + strings.Join(parts[1:], ".")
-		if rules, ok := siteRules[wildcardHost]; ok {
-			return rules
-		}
+// FeatureEnabled reports whether the site's configuration turns the check on.
+// The feature control header can still override it per request.
+func (rs *RuleSet) FeatureEnabled(c feature.Check) bool {
+	switch c {
+	case feature.CustomRules:
+		return rs.CustomRules != nil && rs.CustomRules.Enabled
+	case feature.CountryRule:
+		return rs.CountryRule != nil && rs.CountryRule.Enabled
+	case feature.VerifyBot:
+		return rs.VerifyBotRule != nil && rs.VerifyBotRule.Enabled
+	case feature.HTTPFlood:
+		return rs.HTTPFloodRule != nil && rs.HTTPFloodRule.Enabled
+	case feature.Challenge:
+		return rs.Challenge != nil && rs.Challenge.Enabled
+	default:
+		// Lists and ActionRule have no switch: every list has its own, and ActionRule is driven
+		// by the rules other components install at runtime.
+		return false
 	}
-
-	// Return default site rules
-	if rules, ok := siteRules["default_site"]; ok {
-		return rules
-	}
-
-	return nil
 }

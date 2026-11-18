@@ -1,26 +1,19 @@
 package check
 
 import (
-	"crypto/hmac"
-	"crypto/sha512"
-	"fmt"
+	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
 
 func TestGenSessionIDReusesValidSessionForEveryProvider(t *testing.T) {
-	providers := []string{
-		CaptchaProviderAltcha,
-		CaptchaProviderHCaptcha,
-		"",
-		"future-provider",
-	}
+	providers := []config.ChallengeMode{config.ChallengeAltcha, config.ChallengeHCaptcha}
 
 	for _, provider := range providers {
-		t.Run(provider, func(t *testing.T) {
+		t.Run(string(provider), func(t *testing.T) {
 			ruleSet := testCaptchaSessionRuleSet(provider)
 			reqData := testCaptchaSessionRequestData()
 			reqData.ToriiSessionID = genSessionIDAt(reqData, *ruleSet, time.Now().Add(-time.Second).Unix())
@@ -34,9 +27,9 @@ func TestGenSessionIDReusesValidSessionForEveryProvider(t *testing.T) {
 }
 
 func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
-	ruleSet := testCaptchaSessionRuleSet(CaptchaProviderAltcha)
+	ruleSet := testCaptchaSessionRuleSet(config.ChallengeAltcha)
 	reqData := testCaptchaSessionRequestData()
-	expiredAt := time.Now().Add(-time.Duration(ruleSet.CAPTCHARule.CaptchaChallengeSessionTimeout+1) * time.Second)
+	expiredAt := time.Now().Add(-ruleSet.Challenge.SessionTTL - time.Second)
 
 	tests := []struct {
 		name      string
@@ -65,26 +58,63 @@ func TestGenSessionIDReplacesInvalidSession(t *testing.T) {
 	}
 }
 
-func testCaptchaSessionRuleSet(provider string) *config.RuleSet {
+func testCaptchaSessionRuleSet(mode config.ChallengeMode) *config.RuleSet {
 	return &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			Provider:                       provider,
-			SecretKey:                      "1234567890abcdef",
-			CaptchaChallengeSessionTimeout: 120,
+		Challenge: &config.ChallengeRule{
+			Mode:       mode,
+			CookieKey:  "1234567890abcdef",
+			SessionTTL: 120 * time.Second,
 		},
 	}
 }
 
-func testCaptchaSessionRequestData() dataType.UserRequest {
-	return dataType.UserRequest{
+func testCaptchaSessionRequestData() request.UserRequest {
+	return request.UserRequest{
 		RemoteIP:  "127.0.0.1",
 		Host:      "example.com",
 		UserAgent: "test-agent",
 	}
 }
 
-func genSessionIDAt(reqData dataType.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
-	mac := hmac.New(sha512.New, []byte(ruleSet.CAPTCHARule.SecretKey))
-	mac.Write(fmt.Appendf(nil, "%d%s%sCAPTCHA-SESSION", timestamp, reqData.Host, utils.GetClearanceUserAgent(reqData.UserAgent)))
-	return fmt.Sprintf("%d:%x", timestamp, mac.Sum(nil))
+func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
+	return challengeSigner(ruleSet, "SESSION").Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), time.Unix(timestamp, 0))
+}
+
+// A challenge says why a clearance the client did send was refused; a client without one, the
+// usual case, gets no note.
+func TestChallengeNotesWhyAClearanceWasRefused(t *testing.T) {
+	ruleSet := testCaptchaSessionRuleSet(config.ChallengeAltcha)
+	reqData := testCaptchaSessionRequestData()
+	valid := string(GenClearance(reqData, *ruleSet))
+	elsewhere := reqData
+	elsewhere.Host = "other.example"
+
+	for _, tt := range []struct {
+		name      string
+		req       request.UserRequest
+		clearance string
+		verdict   action.Verdict
+		note      string
+	}{
+		{"valid", reqData, valid, action.VerdictAllow, ""},
+		{"none", reqData, "", action.VerdictChallenge, ""},
+		{"malformed", reqData, "nonsense", action.VerdictChallenge, "clearance malformed"},
+		{"of another host", elsewhere, valid, action.VerdictChallenge, "clearance not signed for this site, host, browser and address"},
+	} {
+		tt.req.ToriiClearance = tt.clearance
+		decision := action.NewDecision()
+		Challenge(tt.req, ruleSet, decision, &state.Runtime{})
+		if decision.Verdict != tt.verdict || decision.Note != tt.note {
+			t.Errorf("%s: verdict %v note %q, want %v %q", tt.name, decision.Verdict, decision.Note, tt.verdict, tt.note)
+		}
+	}
+
+	// The note of the check that asked for the challenge is kept.
+	reqData.ToriiClearance = "nonsense"
+	decision := action.NewDecision()
+	decision.Note = "country=US"
+	Challenge(reqData, ruleSet, decision, &state.Runtime{})
+	if decision.Note != "country=US" {
+		t.Errorf("note = %q, want the one of the earlier check", decision.Note)
+	}
 }

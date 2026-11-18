@@ -4,73 +4,71 @@ import (
 	"net/http/httptest"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
+	"server_torii/internal/ratelimit"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
+	"time"
 )
 
 func TestHTTPFloodNilCountersContinue(t *testing.T) {
 	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		HTTPFloodRule: &dataType.HTTPFloodRule{
-			HTTPFloodSpeedLimit:   map[int64]int64{1: 1},
-			HTTPFloodSameURILimit: map[int64]int64{1: 1},
-			HTTPFloodFailureLimit: map[int64]int64{1: 1},
+		HTTPFloodRule: &config.HTTPFloodRule{
+			SpeedLimit:   ratelimit.Rates{{Limit: 1, Window: 1}},
+			SameURILimit: ratelimit.Rates{{Limit: 1, Window: 1}},
+			FailureLimit: ratelimit.Rates{{Limit: 1, Window: 1}},
 		},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP:       "127.0.0.1",
 		Uri:            "/test",
-		FeatureControl: dataType.FeatureHTTPFlood,
+		FeatureControl: feature.HTTPFlood.ControlMask(),
 	}
 
-	HTTPFlood(reqData, ruleSet, decision, sharedMem)
+	HTTPFlood(reqData, ruleSet, decision, rt)
 
 	if decision.State != action.Continue {
 		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
 	}
 }
 
-func TestCaptchaNilCounterContinue(t *testing.T) {
+// Without a failure counter the failure limit cannot be enforced, but the client is still challenged.
+func TestChallengeNilCounterStillChallenges(t *testing.T) {
 	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{
-			CaptchaFailureLimit: map[int64]int64{1: 1},
+		Challenge: &config.ChallengeRule{
+			CookieKey:            "1234567890abcdef",
+			ClearanceTTL:         60 * time.Second,
+			FailureLimit:         ratelimit.Rates{{Limit: 1, Window: 1}},
+			FailureBlockDuration: 60 * time.Second,
 		},
 	}
-	reqData := dataType.UserRequest{
-		RemoteIP:       "127.0.0.1",
-		FeatureControl: dataType.FeatureCaptcha,
-	}
+	reqData := request.UserRequest{RemoteIP: "127.0.0.1"}
 
-	Captcha(reqData, ruleSet, decision, sharedMem)
+	Challenge(reqData, ruleSet, decision, rt)
 
-	if decision.State != action.Continue {
-		t.Fatalf("expected continue decision, got state=%v httpCode=%s", decision.State, decision.Verdict)
+	if decision.State != action.Done || decision.Verdict != action.VerdictChallenge {
+		t.Fatalf("decision = %+v, want a challenge", decision)
 	}
 }
 
 func TestCheckCaptchaNilCounterStillReturnsBad(t *testing.T) {
-	decision := action.NewDecision()
-	sharedMem := &dataType.SharedMemory{}
+	rt := &state.Runtime{}
 	ruleSet := &config.RuleSet{
-		CAPTCHARule: &dataType.CaptchaRule{},
+		Challenge: &config.ChallengeRule{},
 	}
-	reqData := dataType.UserRequest{
+	reqData := request.UserRequest{
 		RemoteIP: "127.0.0.1",
 	}
 	req := httptest.NewRequest("POST", "/captcha", nil)
 
-	CheckCaptcha(req, reqData, ruleSet, decision, sharedMem)
+	submission := CheckCaptcha(req, reqData, ruleSet, rt)
 
-	if decision.State != action.Done {
-		t.Fatalf("expected done decision, got state=%v", decision.State)
-	}
-	if decision.Verdict != action.VerdictAllow {
-		t.Fatalf("expected http code 200, got %s", decision.Verdict)
-	}
-	if decision.Captcha != action.CaptchaBad {
-		t.Fatalf("expected response bad, got %s", decision.Captcha)
+	if submission != SubmissionBad {
+		t.Fatalf("expected response bad, got %s", submission)
 	}
 }

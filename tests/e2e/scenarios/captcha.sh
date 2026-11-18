@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 captcha_session() {
-    local jar=$1 host=${2:-default_site}
-    request 1 /torii/checker_pages/CAPTCHA -H "Torii-Real-Host: $host" -c "$jar"
-    assert_eq "$HTTP_CODE" 503
-    assert_contains "$HTTP_BODY" E2E-ALTCHA
+    local jar=$1 host=${2:-default_site} ip=${3:-203.0.113.130}
+    # A check that ends in a CAPTCHA answers with the page and opens the challenge session.
+    # It also counts against the client's CAPTCHA failure limit, hence the choice of address.
+    check 1 "$ip" 0000001000000000 /neutral "$host" -c "$jar"
+    decision challenge
     assert_contains "$(header Set-Cookie)" '__torii_session_id='
     assert_contains "$(header Set-Cookie)" 'HttpOnly'
 }
@@ -33,22 +34,21 @@ solve_altcha() {
 submit_altcha() {
     local payload=$1 jar=$2 host=${3:-default_site} ip=${4:-203.0.113.130} encoded
     encoded=$(printf '%s' "$payload" | base64 -w 0)
-    request 1 /torii/captcha -b "$jar" -c "$jar" -H "Torii-Real-Host: $host" -H "Torii-Real-IP: $ip" \
-        --data-urlencode "altcha=$encoded"
+    public 1 /torii/captcha "$ip" "$host" -b "$jar" -c "$jar" --data-urlencode "altcha=$encoded"
     assert_eq "$HTTP_CODE" 200
 }
 test_captcha() {
     local jar="$RUN/captcha.cookies" other="$RUN/other.cookies" challenge solved malformed session i
-    expect CAPTCHA 1 203.0.113.130 0000001000000000
-    request 1 /torii/captcha/challenge
+    expect challenge 1 203.0.113.130 0000001000000000
+    public 1 /torii/captcha/challenge 203.0.113.130 default_site
     assert_eq "$HTTP_CODE" 403
-    request 1 /torii/captcha/challenge -X POST
+    public 1 /torii/captcha/challenge 203.0.113.130 default_site -X POST
     assert_eq "$HTTP_CODE" 405
     captcha_session "$jar"
     session=$(awk '$6=="__torii_session_id" {print $7}' "$jar")
-    request 1 /torii/checker_pages/CAPTCHA -H 'Torii-Real-Host: default_site' -b "$jar" -c "$jar"
+    check 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar" -c "$jar"
     assert_contains "$(header Set-Cookie)" "__torii_session_id=$session;"
-    request 1 /torii/captcha/challenge -H 'Torii-Real-Host: default_site' -b "$jar"
+    public 1 /torii/captcha/challenge 203.0.113.130 default_site -b "$jar"
     assert_eq "$HTTP_CODE" 200
     assert_contains "$(header Content-Type)" application/json
     challenge=$HTTP_BODY
@@ -60,7 +60,7 @@ test_captcha() {
     malformed=$(jq -c '.challenge.signature = "invalid"' <<< "$solved")
     submit_altcha "$malformed" "$jar"
     assert_eq "$HTTP_BODY" bad
-    request 1 /torii/captcha -H 'Torii-Real-Host: default_site' -b "$jar" --data-urlencode 'altcha=not-base64!'
+    public 1 /torii/captcha 203.0.113.130 default_site -b "$jar" --data-urlencode 'altcha=not-base64!'
     assert_eq "$HTTP_CODE" 200
     assert_eq "$HTTP_BODY" bad
     # A valid second session on a different site must not accept the first site's proof.
@@ -70,29 +70,45 @@ test_captcha() {
     submit_altcha "$solved" "$jar"
     assert_eq "$HTTP_BODY" "$(jq -r .captcha_success "$E2E/fixtures/responses.json")"
     assert_contains "$(header Set-Cookie)" '__torii_clearance='
-    expect 200 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
-    expect 200 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
-    expect 200 1 203.0.113.130 0000000000100000 /challenge default_site -b "$jar"
-    expect CAPTCHA 1 203.0.113.130 0000001000000000 /neutral exact.e2e.test -b "$jar"
+    [[ "$(awk '$6=="__torii_clearance" {print $7}' "$jar")" == v3.*.* ]] || fail 'Clearance is not a v3 token'
+    [[ "$session" == v3.*.* ]] || fail 'CAPTCHA session is not a v3 token'
+    expect pass 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
+    # Nodes that hold the same key share cookies: the clearance earned on node 1 clears node 2.
+    expect pass 2 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
+    # A clearance is good only at the address that earned it: a listed client that was handed
+    # the cookie is still challenged.
+    expect challenge 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
+    expect pass 1 203.0.113.130 0000000000100000 /challenge default_site -b "$jar"
+    expect challenge 1 203.0.113.130 0000001000000000 /neutral exact.e2e.test -b "$jar"
     sleep 6
-    expect CAPTCHA 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
-    captcha_session "$other" failures.test
-    request 1 /torii/captcha/challenge -H 'Torii-Real-Host: failures.test' -b "$other"
+    expect challenge 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
+    # The listed client passes with a clearance of its own.
+    captcha_session "$other" default_site 198.51.100.60
+    public 1 /torii/captcha/challenge 198.51.100.60 default_site -b "$other"
+    assert_eq "$HTTP_CODE" 200
+    solve_altcha "$HTTP_BODY"
+    submit_altcha "$SOLUTION" "$other" default_site 198.51.100.60
+    expect pass 1 198.51.100.60 0000000001000000 /neutral default_site -b "$other"
+    # The session is bound to the address too: another client cannot fetch its challenge.
+    captcha_session "$other" failures.test 203.0.113.133
+    public 1 /torii/captcha/challenge 203.0.113.130 failures.test -b "$other"
+    assert_eq "$HTTP_CODE" 403 'session of another address'
+    public 1 /torii/captcha/challenge 203.0.113.133 failures.test -b "$other"
     assert_eq "$HTTP_CODE" 200
     challenge=$HTTP_BODY
     # Challenge expires independently; a fresh session cannot rescue the old proof.
     sleep 3
-    request 1 /torii/captcha/challenge -H 'Torii-Real-Host: failures.test' -b "$other"
+    public 1 /torii/captcha/challenge 203.0.113.133 failures.test -b "$other"
     assert_eq "$HTTP_CODE" 403 'expired session'
     solve_altcha "$challenge"
-    captcha_session "$other" failures.test
-    submit_altcha "$SOLUTION" "$other" failures.test 203.0.113.131
+    captcha_session "$other" failures.test 203.0.113.134
+    submit_altcha "$SOLUTION" "$other" failures.test 203.0.113.134
     assert_eq "$HTTP_BODY" bad 'expired challenge'
     for ((i=0; i<3; i++)); do
-        request 1 /torii/captcha -H 'Torii-Real-Host: failures.test' -H 'Torii-Real-IP: 203.0.113.132' -d ''
+        public 1 /torii/captcha 203.0.113.132 failures.test -d ''
         assert_eq "$HTTP_CODE" 200
         assert_eq "$HTTP_BODY" bad
     done
-    expect 403 1 203.0.113.132 0000001000000000 /neutral failures.test
-    cluster_decision 403 203.0.113.132
+    expect block 1 203.0.113.132 0000001000000000 /neutral failures.test
+    cluster_decision block 203.0.113.132 0 "$ZERO" /neutral failures.test
 }

@@ -2,7 +2,7 @@ package config
 
 import (
 	"path/filepath"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
 	"server_torii/internal/rules"
 	"strings"
 	"testing"
@@ -36,12 +36,11 @@ func TestCustomRulesSchema(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			wrapper, err := decodeServerRules([]byte("CustomRules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
-			if err != nil {
-				t.Fatalf("decode: %v", err)
-			}
+			wrapper, err := decodeServerRules([]byte("custom_rules:\n  " + strings.ReplaceAll(tt.input, "\n", "\n  ")))
 			dest := &rules.CustomRules{}
-			err = mapCustomRules(wrapper.CustomRules, dest)
+			if err == nil {
+				err = mapCustomRules(wrapper.CustomRules, dest, nil)
+			}
 			if tt.wantErr == "" {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
@@ -56,57 +55,61 @@ func TestCustomRulesSchema(t *testing.T) {
 }
 
 func TestCustomRulesDisabledRuleDropped(t *testing.T) {
-	wrapper, err := decodeServerRules([]byte(`CustomRules:
+	wrapper, err := decodeServerRules([]byte(`custom_rules:
   enabled: true
   rules:
     - {id: off, enabled: false, expression: 'true', action: block}
-    - {id: on, expression: 'true', action: skip, skip: [Captcha, HTTPFlood]}
+    - {id: on, expression: 'true', action: skip, skip: [Challenge, HTTPFlood]}
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	dest := &rules.CustomRules{}
-	if err := mapCustomRules(wrapper.CustomRules, dest); err != nil {
+	if err := mapCustomRules(wrapper.CustomRules, dest, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !dest.Enabled || len(dest.Rules) != 1 || dest.Rules[0].ID != "on" {
 		t.Fatalf("rules = %#v", dest.Rules)
 	}
-	if dest.Rules[0].SkipMask != rules.SkipCaptcha|rules.SkipHTTPFlood {
+	if dest.Rules[0].SkipMask != feature.Challenge.SkipMask()|feature.HTTPFlood.SkipMask() {
 		t.Fatalf("skip mask = %b", dest.Rules[0].SkipMask)
 	}
 }
 
 func TestCustomRulesDependencies(t *testing.T) {
-	const validCaptcha = `CAPTCHA:
+	const validCaptcha = `challenge:
+  mode: hcaptcha
+  hcaptcha_secret: test-hcaptcha-secret
   enabled: false
-  secret_key: "1234567890abcdef"
-  captcha_validate_time: 60
-  captcha_challenge_session_timeout: 120
-  CaptchaFailureLimit: ["3/1m"]
-  failure_block_duration: 60
+  clearance_ttl: 60s
+  session_ttl: 120s
+  failure_limit: ["3/1m"]
+  failure_block_duration: 60s
 `
-	const validExternal = `ExternalMigration:
+	const validExternal = `challenge:
+  mode: external
   enabled: false
   redirect_url: "https://example.com/migration"
-  secret_key: "1234567890abcdef"
-  session_timeout: 60
+  external_secret: "provider-secret-0123456789"
+  clearance_ttl: 60s
+  failure_limit: ["3/1m"]
+  failure_block_duration: 60s
 `
 	for _, tc := range []struct {
 		name, action, extra string
 		invalid             bool
 	}{
-		{"captcha missing", "captcha", "", true},
-		{"captcha invalid", "captcha", "CAPTCHA: { enabled: false }\n", true},
-		{"captcha valid", "captcha", validCaptcha, false},
-		{"external missing", "external", "", true},
-		{"external valid", "external", validExternal, false},
+		{"challenge invalid", "challenge", "challenge: { enabled: false }\n", true},
+		{"challenge with a CAPTCHA", "challenge", validCaptcha, false},
+		{"challenge with the external provider", "challenge", validExternal, false},
+		{"captcha is no longer an action", "captcha", validCaptcha, true},
+		{"external is no longer an action", "external", validExternal, true},
 		{"block needs nothing", "block", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			file := filepath.Join(t.TempDir(), "Server.yml")
-			writeFile(t, file, "CustomRules:\n  enabled: false\n  rules:\n    - {id: a, expression: 'true', action: "+tc.action+"}\n"+tc.extra)
-			rs := &RuleSet{CountryRule: &dataType.CountryRule{}, CAPTCHARule: &dataType.CaptchaRule{}, HTTPFloodRule: &dataType.HTTPFloodRule{}, ExternalMigrationRule: &dataType.ExternalMigrationRule{}}
+			writeFile(t, file, "custom_rules:\n  enabled: false\n  rules:\n    - {id: a, expression: 'true', action: "+tc.action+"}\n"+tc.extra)
+			rs := NewRuleSet()
 			err := loadServerRules(file, rs)
 			if (err != nil) != tc.invalid {
 				t.Fatalf("error = %v, invalid = %t", err, tc.invalid)

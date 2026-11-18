@@ -2,7 +2,7 @@ package geoip
 
 import (
 	"fmt"
-	"log"
+	"log/slog"
 	"net/netip"
 	"strings"
 	"sync"
@@ -23,12 +23,14 @@ type CountryDatabase struct {
 	path   string
 	reader countryReader
 	open   readerOpener
+	log    *slog.Logger
 }
 
 // NewCountryDatabase creates a database wrapper and attempts its initial load.
 // A load failure is logged and leaves country lookups subject to the site unknown policy.
-func NewCountryDatabase(path string) *CountryDatabase {
+func NewCountryDatabase(path string, logger *slog.Logger) *CountryDatabase {
 	database := newCountryDatabase(path, openMaxMindReader)
+	database.log = logger
 	database.ReloadOrWarn()
 	return database
 }
@@ -37,6 +39,7 @@ func newCountryDatabase(path string, open readerOpener) *CountryDatabase {
 	return &CountryDatabase{
 		path: path,
 		open: open,
+		log:  slog.New(slog.DiscardHandler),
 	}
 }
 
@@ -68,10 +71,10 @@ func (d *CountryDatabase) ReloadOrWarn() {
 		d.mu.RUnlock()
 
 		if hasReader {
-			log.Printf("[WARNING] MaxMind country database reload failed; retaining the previous reader: %v", err)
+			d.log.Warn("country database reload failed; retaining the previous reader", "error", err.Error())
 			return
 		}
-		log.Printf("[WARNING] MaxMind country database unavailable; CountryRule will use each site's unknown_action: %v", err)
+		d.log.Warn("country database unavailable; CountryRule uses the unknown_action of each site", "error", err.Error())
 	}
 }
 
@@ -110,7 +113,7 @@ func (d *CountryDatabase) Close() error {
 // CloseOrWarn releases the active reader and logs any shutdown error.
 func (d *CountryDatabase) CloseOrWarn() {
 	if err := d.Close(); err != nil {
-		log.Printf("[WARNING] Failed to close MaxMind country database: %v", err)
+		d.log.Warn("country database not closed", "error", err.Error())
 	}
 }
 

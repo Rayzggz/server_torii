@@ -1,35 +1,87 @@
 package action
 
 import (
-	"server_torii/internal/dataType"
-	"server_torii/internal/utils"
+	"fmt"
+	"server_torii/internal/request"
+	"strings"
 	"sync"
 	"time"
 )
 
-// ActionType defines the type of action to take.
-type ActionType string
+// Action is what a rule asks to be done with a request. It is the one vocabulary shared by the
+// site configuration, the temporary rules and the messages nodes send each other; every place
+// that reads an action accepts the subset that makes sense there, see Parse.
+type Action string
 
 const (
-	ActionNone    ActionType = "NONE"
-	ActionBlock   ActionType = "BLOCK"
-	ActionCaptcha ActionType = "CAPTCHA"
-	// ActionCaptchaUnverified challenges only clients the traffic analyzer has not seen behave like a browser.
-	ActionCaptchaUnverified ActionType = "CAPTCHA_UNVERIFIED"
+	// ActionNone is the absence of an action: no rule matched.
+	ActionNone Action = ""
+	// ActionContinue leaves the request to the checks that follow.
+	ActionContinue Action = "continue"
+	// ActionAllow lets the request through at once.
+	ActionAllow Action = "allow"
+	ActionBlock Action = "block"
+	// ActionChallenge makes the client prove itself before it is let through.
+	ActionChallenge Action = "challenge"
+	// ActionChallengeUnverified challenges only clients the traffic analyzer has not seen behave like a browser.
+	ActionChallengeUnverified Action = "challenge_unverified"
+	// ActionSkip skips some of the checks that follow.
+	ActionSkip Action = "skip"
+	// ActionLog only records that the rule matched.
+	ActionLog Action = "log"
+	// ActionObserve is what the traffic analyzer does with a detection it must not act on.
+	ActionObserve Action = "observe"
 )
+
+// Parse returns the action called name when it is one of allowed.
+func Parse(name string, allowed ...Action) (Action, error) {
+	for _, a := range allowed {
+		if name == string(a) {
+			return a, nil
+		}
+	}
+	names := make([]string, len(allowed))
+	for i, a := range allowed {
+		names[i] = string(a)
+	}
+	return ActionNone, fmt.Errorf("invalid action %q: expected one of %s", name, strings.Join(names, ", "))
+}
+
+// RuleKind is what a temporary rule matches a request on.
+type RuleKind string
+
+const (
+	RuleIP  RuleKind = "IP"
+	RuleURI RuleKind = "URI"
+)
+
+// ParseRuleKind returns the rule kind called name.
+func ParseRuleKind(name string) (RuleKind, error) {
+	switch kind := RuleKind(name); kind {
+	case RuleIP, RuleURI:
+		return kind, nil
+	}
+	return "", fmt.Errorf("invalid rule type %q: expected IP or URI", name)
+}
+
+// ruleKey scopes a rule to a site, so a rule installed for one site never matches a request of
+// another.
+type ruleKey struct {
+	site  string
+	kind  RuleKind
+	value string
+}
 
 // actionRule represents a temporary rule with an expiration time.
 type actionRule struct {
-	Action    ActionType
+	Action    Action
 	ExpiresAt time.Time
 }
 
-// ActionRuleEngine manages action rules based on IP, UA, and URI.
+// ActionRuleEngine manages the temporary action rules of every site, based on IP and URI.
 type ActionRuleEngine struct {
 	mu           sync.RWMutex
-	ipRules      map[string]actionRule
-	uaRules      map[string]actionRule
-	uriRules     map[string]actionRule
+	rules        map[ruleKey]actionRule
 	stopCleanup  chan struct{}
 	cleanupTimer *time.Ticker
 }
@@ -37,9 +89,7 @@ type ActionRuleEngine struct {
 // NewActionRuleEngine creates a new ActionRuleEngine and starts the cleanup routine.
 func NewActionRuleEngine(cleanupInterval time.Duration) *ActionRuleEngine {
 	e := &ActionRuleEngine{
-		ipRules:      make(map[string]actionRule),
-		uaRules:      make(map[string]actionRule),
-		uriRules:     make(map[string]actionRule),
+		rules:        make(map[ruleKey]actionRule),
 		stopCleanup:  make(chan struct{}),
 		cleanupTimer: time.NewTicker(cleanupInterval),
 	}
@@ -53,107 +103,68 @@ func (e *ActionRuleEngine) Stop() {
 	close(e.stopCleanup)
 }
 
-// AddIPRule adds a rule for a specific IP.
-func (e *ActionRuleEngine) AddIPRule(ip string, action ActionType, ttl time.Duration) {
+// AddRule installs a rule on one site. A rule that already exists for the same value takes the
+// new action and keeps whichever expiry is later.
+func (e *ActionRuleEngine) AddRule(site string, kind RuleKind, value string, action Action, ttl time.Duration) {
+	key := ruleKey{site, kind, value}
+	expiresAt := time.Now().Add(ttl)
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
-
-	newExpiresAt := time.Now().Add(ttl)
-	if existing, ok := e.ipRules[ip]; ok && existing.ExpiresAt.After(newExpiresAt) {
-		newExpiresAt = existing.ExpiresAt
+	if existing, ok := e.rules[key]; ok && existing.ExpiresAt.After(expiresAt) {
+		expiresAt = existing.ExpiresAt
 	}
-
-	e.ipRules[ip] = actionRule{
-		Action:    action,
-		ExpiresAt: newExpiresAt,
-	}
+	e.rules[key] = actionRule{Action: action, ExpiresAt: expiresAt}
 }
 
-// HasIPRule reports whether an unexpired rule exists for the IP.
-func (e *ActionRuleEngine) HasIPRule(ip string) bool {
+// AddIPRule adds a rule for a specific IP on one site.
+func (e *ActionRuleEngine) AddIPRule(site, ip string, action Action, ttl time.Duration) {
+	e.AddRule(site, RuleIP, ip, action, ttl)
+}
+
+// AddURIRule adds a rule for a specific URI on one site.
+func (e *ActionRuleEngine) AddURIRule(site, uri string, action Action, ttl time.Duration) {
+	e.AddRule(site, RuleURI, uri, action, ttl)
+}
+
+// HasIPRule reports whether an unexpired rule exists for the IP on the site.
+func (e *ActionRuleEngine) HasIPRule(site, ip string) bool {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	rule, ok := e.ipRules[ip]
-	return ok && rule.ExpiresAt.After(time.Now())
+	return e.activeLocked(ruleKey{site, RuleIP, ip}, time.Now()) != ActionNone
 }
 
-// AddUARule adds a rule for a specific User-Agent.
-func (e *ActionRuleEngine) AddUARule(ua string, action ActionType, ttl time.Duration) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	newExpiresAt := time.Now().Add(ttl)
-	if existing, ok := e.uaRules[ua]; ok && existing.ExpiresAt.After(newExpiresAt) {
-		newExpiresAt = existing.ExpiresAt
+// activeLocked returns the action of the rule under key, or ActionNone when there is none or it
+// has expired. Callers hold e.mu.
+func (e *ActionRuleEngine) activeLocked(key ruleKey, now time.Time) Action {
+	if rule, ok := e.rules[key]; ok && rule.ExpiresAt.After(now) {
+		return rule.Action
 	}
-
-	e.uaRules[ua] = actionRule{
-		Action:    action,
-		ExpiresAt: newExpiresAt,
-	}
+	return ActionNone
 }
 
-// AddURIRule adds a rule for a specific URI.
-func (e *ActionRuleEngine) AddURIRule(uri string, action ActionType, ttl time.Duration) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
-	newExpiresAt := time.Now().Add(ttl)
-	if existing, ok := e.uriRules[uri]; ok && existing.ExpiresAt.After(newExpiresAt) {
-		newExpiresAt = existing.ExpiresAt
-	}
-
-	e.uriRules[uri] = actionRule{
-		Action:    action,
-		ExpiresAt: newExpiresAt,
-	}
-}
-
-// Check evaluates the request attributes against the rules.
-// Priority: IP > UA > URI.
-func (e *ActionRuleEngine) Check(ip, ua, uri string) ActionType {
+// Check evaluates the request attributes against the rules of the site.
+// Priority: IP > URI as sent > canonical URI.
+func (e *ActionRuleEngine) Check(site, ip, uri string) Action {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
 	now := time.Now()
-
-	// Check IP Rules
-	if rule, ok := e.ipRules[ip]; ok {
-		if rule.ExpiresAt.After(now) {
-			return rule.Action
-		}
+	if act := e.activeLocked(ruleKey{site, RuleIP, ip}, now); act != ActionNone {
+		return act
 	}
-
-	// Check UA Rules
-	if rule, ok := e.uaRules[ua]; ok {
-		if rule.ExpiresAt.After(now) {
-			return rule.Action
-		}
+	if act := e.activeLocked(ruleKey{site, RuleURI, uri}, now); act != ActionNone {
+		return act
 	}
-
-	// Check URI Rules
-	if rule, ok := e.uriRules[uri]; ok {
-		if rule.ExpiresAt.After(now) {
-			return rule.Action
-		}
+	if canonicalURI := CanonicalizeURI(uri); canonicalURI != uri {
+		return e.activeLocked(ruleKey{site, RuleURI, canonicalURI}, now)
 	}
-
-	// Check Canonical URI Rules
-	canonicalURI := utils.CanonicalizeURI(uri)
-	if canonicalURI != uri {
-		if rule, ok := e.uriRules[canonicalURI]; ok {
-			if rule.ExpiresAt.After(now) {
-				return rule.Action
-			}
-		}
-	}
-
 	return ActionNone
 }
 
 // CheckRequest evaluates the request against the rules using UserRequest data.
-func (e *ActionRuleEngine) CheckRequest(req dataType.UserRequest) ActionType {
-	return e.Check(req.RemoteIP, req.UserAgent, req.Uri)
+func (e *ActionRuleEngine) CheckRequest(req request.UserRequest) Action {
+	return e.Check(req.Site, req.ClientKey(), req.Uri)
 }
 
 // runCleanup periodically removes expired rules.
@@ -173,62 +184,39 @@ func (e *ActionRuleEngine) cleanup() {
 	defer e.mu.Unlock()
 
 	now := time.Now()
-
-	for k, v := range e.ipRules {
+	for k, v := range e.rules {
 		if !v.ExpiresAt.After(now) {
-			delete(e.ipRules, k)
-		}
-	}
-	for k, v := range e.uaRules {
-		if !v.ExpiresAt.After(now) {
-			delete(e.uaRules, k)
-		}
-	}
-	for k, v := range e.uriRules {
-		if !v.ExpiresAt.After(now) {
-			delete(e.uriRules, k)
+			delete(e.rules, k)
 		}
 	}
 }
 
+// RuleSnapshot is one active rule as reported by GetSnapshot.
+type RuleSnapshot struct {
+	Site      string
+	RuleType  RuleKind
+	Value     string
+	Action    Action
+	ExpiresAt time.Time
+}
+
 // GetSnapshot returns a copy of the active action rules.
-func (e *ActionRuleEngine) GetSnapshot() []dataType.ActionRulePayload {
+func (e *ActionRuleEngine) GetSnapshot() []RuleSnapshot {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
-	var snapshot []dataType.ActionRulePayload
+	var snapshot []RuleSnapshot
 	now := time.Now()
-
-	for ip, rule := range e.ipRules {
+	for key, rule := range e.rules {
 		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
-				RuleType:  "IP",
-				Value:     ip,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
+			snapshot = append(snapshot, RuleSnapshot{
+				Site:      key.site,
+				RuleType:  key.kind,
+				Value:     key.value,
+				Action:    rule.Action,
+				ExpiresAt: rule.ExpiresAt,
 			})
 		}
 	}
-	for ua, rule := range e.uaRules {
-		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
-				RuleType:  "UA",
-				Value:     ua,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
-			})
-		}
-	}
-	for uri, rule := range e.uriRules {
-		if rule.ExpiresAt.After(now) {
-			snapshot = append(snapshot, dataType.ActionRulePayload{
-				RuleType:  "URI",
-				Value:     uri,
-				Action:    string(rule.Action),
-				ExpiresAt: rule.ExpiresAt.Unix(),
-			})
-		}
-	}
-
 	return snapshot
 }

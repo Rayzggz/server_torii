@@ -1,73 +1,116 @@
 package server
 
 import (
-	"fmt"
-	"net/http"
+	"context"
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
-	"server_torii/internal/rules"
-	"server_torii/internal/utils"
+	"server_torii/internal/feature"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
+	"strings"
 )
 
-type CheckFunc func(dataType.UserRequest, *config.RuleSet, *action.Decision, *dataType.SharedMemory)
+type CheckFunc func(request.UserRequest, *config.RuleSet, *action.Decision, *state.Runtime)
 
-// checkStep pairs a check with the rules.Skip* bit that lets a custom skip rule bypass it.
-type checkStep struct {
-	skip uint32
-	fn   CheckFunc
+// checkFuncs implements each step of feature.Pipeline.
+var checkFuncs = [feature.Count]CheckFunc{
+	feature.Lists:       check.Lists,
+	feature.CustomRules: check.CustomRules,
+	feature.CountryRule: check.CountryRule,
+	feature.VerifyBot:   check.VerifyBot,
+	feature.ActionRule:  check.ActionRule,
+	feature.HTTPFlood:   check.HTTPFlood,
+	feature.Challenge:   check.Challenge,
 }
 
-func CheckMain(w http.ResponseWriter, userRequestData dataType.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *dataType.SharedMemory) {
+// runChecks runs the checks that are switched on for the request and that no custom rule
+// skipped, in pipeline order, until one of them ends the pipeline.
+//
+// It also returns the check behind the decision, or feature.Count when every check let the
+// request continue, and sets Decision.Reason to that check's name and detail. For a challenge
+// that is the check whose rule asked for it, not the Challenge check that carried it out,
+// unless the site challenges every client.
+func (s *Server) runChecks(userRequestData request.UserRequest, ruleSet *config.RuleSet) (*action.Decision, feature.Check) {
 	decision := action.NewDecision()
-
-	checkSteps := []checkStep{
-		{0, check.IPAllowList},
-		{0, check.IPBlockList},
-		{0, check.URLAllowList},
-		{0, check.URLBlockList},
-		{rules.SkipCustomRules, check.CustomRules},
-		{rules.SkipIPCAPTCHA, check.IPCAPTCHA},
-		{rules.SkipURLCAPTCHA, check.URLCAPTCHA},
-		{rules.SkipCountryRule, check.CountryRule},
-		{rules.SkipVerifyBot, check.VerifyBot},
-		{rules.SkipActionRule, check.ActionRule},
-		{rules.SkipHTTPFlood, check.HTTPFlood},
-		{rules.SkipExternalMigration, check.ExternalMigration},
-		{rules.SkipCaptcha, check.Captcha},
-	}
-
-	for _, step := range checkSteps {
-		if decision.SkipMask&step.skip != 0 {
+	requiredBy, requiredReason := feature.Count, ""
+	// At the debug level the line of the request says what every check did.
+	var trace []string
+	debug := s.rt.SiteLog(userRequestData.Site).Enabled(context.Background(), slog.LevelDebug)
+	for _, c := range feature.Pipeline() {
+		// A challenge an earlier check asked for is not optional: neither the switch of the
+		// Challenge check nor a skip rule takes it back.
+		required := c == feature.Challenge && decision.RequireChallenge
+		if !required && (!c.Enabled(userRequestData.FeatureControl) || decision.SkipMask&c.SkipMask() != 0) {
+			if debug {
+				outcome := "off"
+				if c.Enabled(userRequestData.FeatureControl) {
+					outcome = "skipped"
+				}
+				trace = append(trace, c.String()+":"+outcome)
+			}
 			continue
 		}
-		step.fn(userRequestData, ruleSet, decision, sharedMem)
-		if decision.State == action.Done {
-			break
+		before := *decision
+		checkFuncs[c](userRequestData, ruleSet, decision, s.rt)
+		if debug {
+			trace = append(trace, c.String()+":"+outcome(&before, decision))
 		}
-	}
 
-	switch decision.Verdict {
-	case action.VerdictAllow:
-		w.WriteHeader(http.StatusOK)
-		_, err := w.Write([]byte("Server Torii Access Passed"))
-		if err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
-			return
+		reason := c.String()
+		if decision.Detail != "" {
+			reason += ":" + decision.Detail
+			decision.Detail = ""
 		}
-	case action.VerdictBlock, action.VerdictCaptcha, action.VerdictRateLimit, action.VerdictExternal:
-		w.Header().Set("Torii-Action", decision.Verdict.String())
-		w.WriteHeader(445)
-		_, err := w.Write([]byte("Server Torii Auth Required"))
-		if err != nil {
-			utils.LogError(userRequestData, fmt.Sprintf("Error writing response: %v", err), "CheckMain")
-			return
+		if decision.RequireChallenge && requiredBy == feature.Count {
+			requiredBy, requiredReason = c, reason
 		}
-	default:
-		//should never happen
-		utils.LogError(userRequestData, fmt.Sprintf("Error access in wrong state: %v", decision), "CheckMain")
-		http.Error(w, "500 - Internal Server Error", http.StatusInternalServerError)
-		return
+		if decision.State == action.Done {
+			// Only the challenge belongs to the check that asked for it: a block for failing
+			// it too often is the doing of the Challenge check.
+			if c == feature.Challenge && decision.Verdict == action.VerdictChallenge && requiredBy != feature.Count {
+				c, reason = requiredBy, requiredReason
+			}
+			decision.Reason = reason
+			s.logDecision(userRequestData, decision, trace)
+			return decision, c
+		}
 	}
+	s.logDecision(userRequestData, decision, trace)
+	return decision, feature.Count
+}
+
+// outcome names what one check did to the decision, for the debug line of the request.
+func outcome(before, after *action.Decision) string {
+	switch {
+	case after.State == action.Done:
+		return after.Verdict.String()
+	case after.RequireChallenge && !before.RequireChallenge:
+		return "challenge"
+	case after.SkipMask != before.SkipMask:
+		return "skip"
+	}
+	return "continue"
+}
+
+// logDecision writes the request to the events of its site: at the info level when it was not
+// let through, at the debug level when it was. It is the one place decisions are logged: the
+// checks only decide. trace is what every check did; it is nil unless the debug level is on.
+func (s *Server) logDecision(req request.UserRequest, decision *action.Decision, trace []string) {
+	level := slog.LevelInfo
+	if decision.Verdict == action.VerdictAllow {
+		level = slog.LevelDebug
+	}
+	attrs := []slog.Attr{slog.String("verdict", decision.Verdict.String())}
+	if decision.Reason != "" {
+		attrs = append(attrs, slog.String("reason", decision.Reason))
+	}
+	if decision.Note != "" {
+		attrs = append(attrs, slog.String("note", decision.Note))
+	}
+	if len(trace) > 0 {
+		attrs = append(attrs, slog.String("checks", strings.Join(trace, " ")))
+	}
+	s.rt.Event(req, level, "decision", attrs...)
 }

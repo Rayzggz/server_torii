@@ -3,7 +3,7 @@ package rules
 import (
 	"net/http"
 	"net/netip"
-	"server_torii/internal/dataType"
+	"server_torii/internal/request"
 	"strings"
 	"testing"
 )
@@ -14,15 +14,22 @@ func (r stubResolver) Country(netip.Addr) (string, error) { return r.country, ni
 
 type stubEvidence struct{ ip string }
 
-func (e stubEvidence) HasBrowserEvidence(ip string) bool { return ip == e.ip }
+func (e stubEvidence) HasBrowserEvidence(_, ip string) bool { return ip == e.ip }
 
-func testRequest() *dataType.UserRequest {
+// testRequest is a request from 8.8.8.8, which the country database places in the US.
+func testRequest() *request.UserRequest {
+	req := testRequestWithoutCountry()
+	req.ResolveCountry(stubResolver{country: "us"})
+	return req
+}
+
+func testRequestWithoutCountry() *request.UserRequest {
 	headers := http.Header{}
 	headers.Set("Referer", "https://evil.example/page")
 	headers.Set("Accept-Language", "zh-CN,zh;q=0.9")
 	headers.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
 	headers.Add("Cookie", "session=abc; theme=dark")
-	return &dataType.UserRequest{
+	return &request.UserRequest{
 		RemoteIP:  "8.8.8.8",
 		Uri:       "/wp-admin/Setup.PHP?step=2&lang=en%20US",
 		UserAgent: "Mozilla/5.0 (compatible; Googlebot/2.1)",
@@ -92,24 +99,20 @@ func TestEval(t *testing.T) {
 		{`http.host eq "www.example.com" ^^ ip.src eq 8.8.8.8`, false},
 		{`http.request.uri.path wildcard "/wp-*" and not ip.src in {10.0.0.0/8}`, true},
 	}
-	sharedMem := &dataType.SharedMemory{
-		CountryResolver:         stubResolver{country: "us"},
-		AdaptiveTrafficAnalyzer: stubEvidence{ip: "8.8.8.8"},
-	}
 	for _, tc := range cases {
-		prog, err := Compile(tc.expr)
+		prog, err := Compile(tc.expr, nil)
 		if err != nil {
-			t.Errorf("Compile(%q) error: %v", tc.expr, err)
+			t.Errorf("Compile(%q, nil) error: %v", tc.expr, err)
 			continue
 		}
-		if got := prog.Eval(NewContext(testRequest(), sharedMem)); got != tc.want {
+		if got := prog.Eval(NewContext(testRequest(), stubEvidence{ip: "8.8.8.8"})); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
 		}
 	}
 }
 
 func TestEvalMissingData(t *testing.T) {
-	req := &dataType.UserRequest{RemoteIP: "not-an-ip", Uri: "/"}
+	req := &request.UserRequest{RemoteIP: "not-an-ip", Uri: "/"}
 	cases := []struct {
 		expr string
 		want bool
@@ -124,9 +127,9 @@ func TestEvalMissingData(t *testing.T) {
 		{`http.request.uri.path.extension eq ""`, true},
 	}
 	for _, tc := range cases {
-		prog, err := Compile(tc.expr)
+		prog, err := Compile(tc.expr, nil)
 		if err != nil {
-			t.Fatalf("Compile(%q) error: %v", tc.expr, err)
+			t.Fatalf("Compile(%q, nil) error: %v", tc.expr, err)
 		}
 		if got := prog.Eval(NewContext(req, nil)); got != tc.want {
 			t.Errorf("Eval(%q) = %v, want %v", tc.expr, got, tc.want)
@@ -135,11 +138,11 @@ func TestEvalMissingData(t *testing.T) {
 }
 
 func TestIPv4MappedAddress(t *testing.T) {
-	prog, err := Compile(`ip.src in {192.0.2.0/24}`)
+	prog, err := Compile(`ip.src in {192.0.2.0/24}`, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := &dataType.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
+	req := &request.UserRequest{RemoteIP: "::ffff:192.0.2.1"}
 	if !prog.Eval(NewContext(req, nil)) {
 		t.Error("IPv4-mapped address should match its IPv4 prefix")
 	}
@@ -175,13 +178,13 @@ func TestCompileErrors(t *testing.T) {
 		{`http.host eq "a" @`, "unexpected character"},
 	}
 	for _, tc := range cases {
-		_, err := Compile(tc.expr)
+		_, err := Compile(tc.expr, nil)
 		if err == nil {
-			t.Errorf("Compile(%q) succeeded, want error containing %q", tc.expr, tc.wantErr)
+			t.Errorf("Compile(%q, nil) succeeded, want error containing %q", tc.expr, tc.wantErr)
 			continue
 		}
 		if !strings.Contains(err.Error(), tc.wantErr) {
-			t.Errorf("Compile(%q) error = %q, want it to contain %q", tc.expr, err, tc.wantErr)
+			t.Errorf("Compile(%q, nil) error = %q, want it to contain %q", tc.expr, err, tc.wantErr)
 		}
 	}
 }
@@ -205,15 +208,5 @@ func TestWildcardEscapes(t *testing.T) {
 		if got := re.MatchString(tc.input); got != tc.want {
 			t.Errorf("wildcard %q on %q = %v, want %v", tc.pattern, tc.input, got, tc.want)
 		}
-	}
-}
-
-func TestParseSkipTargets(t *testing.T) {
-	mask, err := ParseSkipTargets([]string{"HTTPFlood", "Captcha"})
-	if err != nil || mask != SkipHTTPFlood|SkipCaptcha {
-		t.Fatalf("ParseSkipTargets = %b, %v", mask, err)
-	}
-	if _, err := ParseSkipTargets([]string{"IPAllow"}); err == nil {
-		t.Fatal("IPAllow runs before CustomRules and must not be a skip target")
 	}
 }

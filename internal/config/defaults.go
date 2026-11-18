@@ -1,56 +1,36 @@
 package config
 
-import (
-	"crypto/rand"
-	"encoding/hex"
-)
-
 // Default values for MainConfig fields.
 const (
-	DefaultPort         = "25555"
-	DefaultWebPath      = "/torii"
-	DefaultErrorPage    = "/www/server_torii/config/error_page"
-	DefaultLogPath      = "/www/server_torii/log/"
+	DefaultListen    = ":25555"
+	DefaultWebPath   = "/torii"
+	DefaultErrorPage = "/www/server_torii/config/error_page"
+	DefaultLogPath   = "/www/server_torii/log/"
+	DefaultLogLevel  = "info"
+	// DefaultGlobalSecret is the value in config_example/torii.yml. It is public, so it is refused.
 	DefaultGlobalSecret = "0378b0f84c4310279918d71a5647ba5d"
 	DefaultNodeName     = "Server Torii"
+	DefaultSiteID       = "default_site"
 )
 
-// Default header lists.
+// DefaultSites is the site list used when torii.yml names none.
 var (
-	DefaultConnectingHostHeaders           = []string{"Torii-Real-Host"}
-	DefaultConnectingIPHeaders             = []string{"Torii-Real-IP"}
-	DefaultConnectingURIHeaders            = []string{"Torii-Original-URI"}
-	DefaultConnectingFeatureControlHeaders = []string{"Torii-Feature-Control"}
-	DefaultConnectingMethodHeaders         = []string{"Torii-Original-Method"}
-	DefaultSites                           = []AllSiteRuleSet{
-		{Host: "default_site", RulePath: "/www/server_torii/config/rules/default"},
+	DefaultSites = []Site{
+		{ID: DefaultSiteID, RulePath: "/www/server_torii/config/rules/default"},
 	}
 )
 
-// DefaultMainConfig returns a fully populated MainConfig with all default values.
+// DefaultMainConfig returns the values of the keys torii.yml leaves out. There is no default
+// global secret: it has to be configured. There is no default site either: a request that
+// names no site gets a decision only when default_site says which site it belongs to.
 func DefaultMainConfig() *MainConfig {
 	return &MainConfig{
-		Port:                            DefaultPort,
-		WebPath:                         DefaultWebPath,
-		ErrorPage:                       DefaultErrorPage,
-		LogPath:                         DefaultLogPath,
-		GlobalSecret:                    generateDefaultGlobalSecret(),
-		NodeName:                        DefaultNodeName,
-		EnableGossip:                    false,
-		ConnectingHostHeaders:           append([]string{}, DefaultConnectingHostHeaders...),
-		ConnectingIPHeaders:             append([]string{}, DefaultConnectingIPHeaders...),
-		ConnectingURIHeaders:            append([]string{}, DefaultConnectingURIHeaders...),
-		ConnectingFeatureControlHeaders: append([]string{}, DefaultConnectingFeatureControlHeaders...),
-		ConnectingMethodHeaders:         append([]string{}, DefaultConnectingMethodHeaders...),
-		Sites:                           append([]AllSiteRuleSet{}, DefaultSites...),
+		Listen:    []string{DefaultListen},
+		WebPath:   DefaultWebPath,
+		ErrorPage: DefaultErrorPage,
+		LogPath:   DefaultLogPath,
+		LogLevel:  DefaultLogLevel,
+		NodeName:  DefaultNodeName,
+		Sites:     append([]Site{}, DefaultSites...),
 	}
-}
-
-func generateDefaultGlobalSecret() string {
-	secret := make([]byte, 16)
-	if _, err := rand.Read(secret); err != nil {
-		return DefaultGlobalSecret
-	}
-
-	return hex.EncodeToString(secret)
 }

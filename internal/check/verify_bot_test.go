@@ -1,29 +1,29 @@
 package check
 
 import (
+	"log/slog"
 	"server_torii/internal/action"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"testing"
 	"time"
 )
 
 type recordingMarker struct{ neutral, verified []string }
 
-func (m *recordingMarker) MarkVerified(ip string, _ time.Duration) {
+func (m *recordingMarker) MarkVerified(_, ip string, _ time.Duration) {
 	m.verified = append(m.verified, ip)
 }
-func (m *recordingMarker) MarkNeutral(ip string, _ time.Duration) { m.neutral = append(m.neutral, ip) }
+func (m *recordingMarker) MarkNeutral(_, ip string, _ time.Duration) {
+	m.neutral = append(m.neutral, ip)
+}
 
 func allBotsRuleSet() *config.RuleSet {
-	return &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{
-		Enabled:         true,
-		VerifyGoogleBot: true,
-		VerifyBingBot:   true,
-		VerifyBaiduBot:  true,
-		VerifyYandexBot: true,
-		VerifySogouBot:  true,
-		VerifyAppleBot:  true,
+	return &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{
+		Enabled: true,
+		Bots:    config.AllBots(),
 	}}
 }
 
@@ -34,18 +34,17 @@ func TestVerifyBotSkipsWithoutDNS(t *testing.T) {
 		ua      string
 		ruleSet *config.RuleSet
 	}{
-		{"feature disabled", 0, "Googlebot/2.1", allBotsRuleSet()},
-		{"ordinary browser", dataType.FeatureVerifyBot, "Mozilla/5.0 (Windows NT 10.0) Chrome/120", allBotsRuleSet()},
-		{"empty user agent", dataType.FeatureVerifyBot, "", allBotsRuleSet()},
-		{"googlebot verification off", dataType.FeatureVerifyBot, "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{VerifyBingBot: true}}},
-		{"bingbot verification off", dataType.FeatureVerifyBot, "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &dataType.VerifyBotRule{VerifyGoogleBot: true}}},
+		{"ordinary browser", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (Windows NT 10.0) Chrome/120", allBotsRuleSet()},
+		{"empty user agent", feature.VerifyBot.ControlMask(), "", allBotsRuleSet()},
+		{"googlebot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; Googlebot/2.1)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{Bots: map[string]bool{"bing": true}}}},
+		{"bingbot verification off", feature.VerifyBot.ControlMask(), "Mozilla/5.0 (compatible; bingbot/2.0)", &config.RuleSet{VerifyBotRule: &config.VerifyBotRule{Bots: map[string]bool{"google": true}}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			marker := &recordingMarker{}
-			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
+			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: tt.ua, FeatureControl: tt.feature}
 			decision := action.NewDecision()
-			VerifyBot(reqData, tt.ruleSet, decision, &dataType.SharedMemory{AdaptiveTrafficAnalyzer: marker})
+			VerifyBot(reqData, tt.ruleSet, decision, &state.Runtime{TrafficMarker: marker, Crawlers: NewCrawlerVerifier(slog.New(slog.DiscardHandler))})
 			if decision.State != action.Continue {
 				t.Fatalf("state = %v, want Continue", decision.State)
 			}
@@ -68,9 +67,9 @@ func TestVerifyBotBlocksSpoofedCrawlers(t *testing.T) {
 	} {
 		t.Run(ua, func(t *testing.T) {
 			marker := &recordingMarker{}
-			reqData := dataType.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: dataType.FeatureVerifyBot}
+			reqData := request.UserRequest{RemoteIP: "127.0.0.1", UserAgent: ua, FeatureControl: feature.VerifyBot.ControlMask()}
 			decision := action.NewDecision()
-			VerifyBot(reqData, allBotsRuleSet(), decision, &dataType.SharedMemory{AdaptiveTrafficAnalyzer: marker})
+			VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{TrafficMarker: marker, Crawlers: NewCrawlerVerifier(slog.New(slog.DiscardHandler))})
 			if decision.State != action.Done || decision.Verdict != action.VerdictBlock {
 				t.Fatalf("decision = (%v, %q), want (Done, 403)", decision.State, decision.Verdict)
 			}
@@ -108,5 +107,15 @@ func TestHostInDomain(t *testing.T) {
 		if got := hostInDomain(tt.host, tt.domain); got != tt.want {
 			t.Errorf("hostInDomain(%q, %q) = %v, want %v", tt.host, tt.domain, got, tt.want)
 		}
+	}
+}
+
+// Without a verifier a crawler claim is neither believed nor punished.
+func TestVerifyBotWithoutAVerifierDoesNothing(t *testing.T) {
+	decision := action.NewDecision()
+	reqData := request.UserRequest{RemoteIP: "203.0.113.5", Addr: request.ParseAddr("203.0.113.5"), UserAgent: "Googlebot/2.1"}
+	VerifyBot(reqData, allBotsRuleSet(), decision, &state.Runtime{})
+	if decision.State == action.Done || decision.Verdict != action.VerdictAllow {
+		t.Fatalf("decision = (%v, %v), want the request to continue", decision.State, decision.Verdict)
 	}
 }

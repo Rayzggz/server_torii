@@ -18,7 +18,8 @@ const (
 	tokLBracket
 	tokRBracket
 	tokComma
-	tokOp // symbolic operators: == != && || ^^ ! ~ < <= > >=
+	tokListRef // $name, a list of the site
+	tokOp      // symbolic operators: == != && || ^^ ! ~ < <= > >=
 )
 
 type token struct {
@@ -100,6 +101,15 @@ func lex(src string) ([]token, error) {
 		case c == ',':
 			tokens = append(tokens, token{kind: tokComma, text: ",", pos: start + 1})
 			i++
+		case c == '$':
+			i++
+			for i < len(src) && isWordChar(src[i]) {
+				i++
+			}
+			if i == start+1 {
+				return nil, fmt.Errorf("col %d: expected a list name after \"$\"", start+1)
+			}
+			tokens = append(tokens, token{kind: tokListRef, text: src[start+1 : i], pos: start + 1})
 		case isWordChar(c):
 			for i < len(src) && isWordChar(src[i]) {
 				i++

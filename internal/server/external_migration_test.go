@@ -9,7 +9,9 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/check"
 	"server_torii/internal/config"
-	"server_torii/internal/dataType"
+	"server_torii/internal/feature"
+	"server_torii/internal/request"
+	"server_torii/internal/state"
 	"strconv"
 	"strings"
 	"testing"
@@ -64,7 +66,7 @@ func TestValidateInternalRedirectPath(t *testing.T) {
 type externalFixture struct {
 	ruleSet *config.RuleSet
 	cfg     *config.MainConfig
-	reqData dataType.UserRequest
+	reqData request.UserRequest
 }
 
 func newExternalFixture(t *testing.T) *externalFixture {
@@ -72,21 +74,22 @@ func newExternalFixture(t *testing.T) *externalFixture {
 	dir := t.TempDir()
 	writePage(t, dir, "error.html", "{{.ErrorCode}}|{{.ErrorTitle}}|{{.ErrorMessage}}|{{.EdgeTag}}|{{.ConnectIP}}")
 	f := &externalFixture{
-		ruleSet: &config.RuleSet{ExternalMigrationRule: &dataType.ExternalMigrationRule{
+		ruleSet: &config.RuleSet{Challenge: &config.ChallengeRule{Mode: config.ChallengeExternal,
 			Enabled:        true,
-			RedirectUrl:    "https://mitigation.invalid/verify",
-			SecretKey:      "external-secret-0123456789",
-			SessionTimeout: 600,
+			RedirectURL:    "https://mitigation.invalid/verify",
+			CookieKey:      "cookie-key-0123456789",
+			ExternalSecret: "external-secret-0123456789",
+			ClearanceTTL:   600 * time.Second,
 		}},
 		cfg: &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"},
-		reqData: dataType.UserRequest{
+		reqData: request.UserRequest{
 			RemoteIP:       "203.0.113.10",
 			Host:           "example.com",
 			UserAgent:      "Mozilla/5.0 test-agent",
-			FeatureControl: dataType.FeatureExternalMigration,
+			FeatureControl: feature.Challenge.ControlMask(),
 		},
 	}
-	f.reqData.ToriiSessionID = string(check.GenExternalMigrationSessionID(f.reqData, *f.ruleSet))
+	f.reqData.ToriiSessionID = string(check.GenSessionID(f.reqData, *f.ruleSet))
 	return f
 }
 
@@ -98,12 +101,12 @@ func writePage(t *testing.T, dir, name, body string) {
 }
 
 // migrate calls the callback endpoint the mitigation provider redirects back to.
-func (f *externalFixture) migrate(t *testing.T, reqData dataType.UserRequest, q url.Values) *httptest.ResponseRecorder {
+func (f *externalFixture) migrate(t *testing.T, reqData request.UserRequest, q url.Values) *httptest.ResponseRecorder {
 	t.Helper()
 	target := "/torii/external_migration?" + q.Encode()
 	reqData.Uri = target
 	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	NewServer(f.cfg, nil, &state.Runtime{}, nil).servePublic(rec, httptest.NewRequest(http.MethodGet, target, nil), reqData, f.ruleSet, pagesFor(f.cfg))
 	return rec
 }
 
@@ -112,7 +115,7 @@ func (f *externalFixture) signedQuery(originalURI string, ts int64) url.Values {
 	return url.Values{
 		"original_uri": {originalURI},
 		"timestamp":    {stamp},
-		"hmac":         {check.CalculateExternalMigrationHMAC(f.reqData.ToriiSessionID, stamp, originalURI, f.ruleSet.ExternalMigrationRule.SecretKey)},
+		"hmac":         {check.CalculateExternalMigrationHMAC(f.reqData.ToriiSessionID, stamp, originalURI, f.ruleSet.Challenge.ExternalSecret)},
 	}
 }
 
@@ -147,7 +150,7 @@ func TestExternalMigrationCallbackGrantsClearance(t *testing.T) {
 	next := f.reqData
 	next.ToriiClearance = clearance
 	decision := action.NewDecision()
-	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
+	check.Challenge(next, f.ruleSet, decision, &state.Runtime{})
 	if decision.State != action.Continue {
 		t.Fatalf("clearance rejected: state=%v code=%q", decision.State, decision.Verdict)
 	}
@@ -159,7 +162,7 @@ func TestExternalMigrationCallbackRejections(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		reqData func() dataType.UserRequest
+		reqData func() request.UserRequest
 		query   func() url.Values
 		wantMsg string
 	}{
@@ -200,13 +203,13 @@ func TestExternalMigrationCallbackRejections(t *testing.T) {
 		},
 		{
 			name:    "missing session",
-			reqData: func() dataType.UserRequest { r := f.reqData; r.ToriiSessionID = ""; return r },
+			reqData: func() request.UserRequest { r := f.reqData; r.ToriiSessionID = ""; return r },
 			query:   func() url.Values { return f.signedQuery("/r", now) },
 			wantMsg: "Invalid session",
 		},
 		{
 			name:    "session from another host",
-			reqData: func() dataType.UserRequest { r := f.reqData; r.Host = "other.example.com"; return r },
+			reqData: func() request.UserRequest { r := f.reqData; r.Host = "other.example.com"; return r },
 			query:   func() url.Values { return f.signedQuery("/r", now) },
 			wantMsg: "Invalid session",
 		},
@@ -266,14 +269,13 @@ func TestExternalMigrationErrorPageMissingTemplate(t *testing.T) {
 	}
 }
 
-func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
+func TestExternalVerdictRedirectsToProvider(t *testing.T) {
 	f := newExternalFixture(t)
 	reqData := f.reqData
 	reqData.ToriiSessionID = ""
 	reqData.Uri = "/protected"
 
-	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	rec := serveVerdictPage(action.VerdictChallenge, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 
 	if rec.Code != http.StatusFound {
 		t.Fatalf("status = %d, want 302", rec.Code)
@@ -289,7 +291,7 @@ func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
 	}
 	withSession := reqData
 	withSession.ToriiSessionID = session
-	if !check.VerifyExternalMigrationSessionIDCookie(withSession, *f.ruleSet) {
+	if !check.VerifySessionIDCookie(withSession, *f.ruleSet) {
 		t.Fatalf("issued session %q does not verify", session)
 	}
 
@@ -297,15 +299,15 @@ func TestCheckerPageExternalRedirectsToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Location is not a URL: %v", err)
 	}
-	if got := loc.Scheme + "://" + loc.Host + loc.Path; got != f.ruleSet.ExternalMigrationRule.RedirectUrl {
-		t.Fatalf("redirect base = %q, want %q", got, f.ruleSet.ExternalMigrationRule.RedirectUrl)
+	if got := loc.Scheme + "://" + loc.Host + loc.Path; got != f.ruleSet.Challenge.RedirectURL {
+		t.Fatalf("redirect base = %q, want %q", got, f.ruleSet.Challenge.RedirectURL)
 	}
 	q := loc.Query()
 	if q.Get("domain") != "example.com" || q.Get("session_id") != session || q.Get("original_uri") != "/protected" {
 		t.Fatalf("redirect query = %v", q)
 	}
 	stamp, _, _ := strings.Cut(session, ":")
-	wantHMAC := check.CalculateRedirectHMAC("example.com", stamp, "/protected", f.ruleSet.ExternalMigrationRule.SecretKey)
+	wantHMAC := check.CalculateRedirectHMAC("example.com", stamp, "/protected", f.ruleSet.Challenge.ExternalSecret)
 	if q.Get("hmac") != wantHMAC {
 		t.Fatalf("hmac = %q, want %q", q.Get("hmac"), wantHMAC)
 	}
@@ -318,14 +320,13 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	reqData.ToriiSessionID = ""
 	reqData.Uri = "/protected"
 
-	rec := httptest.NewRecorder()
-	CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+	rec := serveVerdictPage(action.VerdictChallenge, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 	loc, _ := url.Parse(rec.Header().Get("Location"))
 	provider := loc.Query()
 
 	// The provider verifies Torii's signature, then signs its own callback.
 	stamp, _, _ := strings.Cut(provider.Get("session_id"), ":")
-	key := f.ruleSet.ExternalMigrationRule.SecretKey
+	key := f.ruleSet.Challenge.ExternalSecret
 	if provider.Get("hmac") != check.CalculateRedirectHMAC(provider.Get("domain"), stamp, provider.Get("original_uri"), key) {
 		t.Fatal("provider could not verify the redirect signature")
 	}
@@ -338,7 +339,7 @@ func TestExternalMigrationRoundTrip(t *testing.T) {
 	next := f.reqData
 	next.ToriiClearance = clearanceFrom(t, cb)
 	decision := action.NewDecision()
-	check.ExternalMigration(next, f.ruleSet, decision, &dataType.SharedMemory{})
+	check.Challenge(next, f.ruleSet, decision, &state.Runtime{})
 	if decision.State != action.Continue {
 		t.Fatalf("clearance rejected after round trip: %v %q", decision.State, decision.Verdict)
 	}
@@ -371,12 +372,11 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			f := newExternalFixture(t)
-			f.ruleSet.ExternalMigrationRule.RedirectUrl = tt.redirectURL
+			f.ruleSet.Challenge.RedirectURL = tt.redirectURL
 			reqData := f.reqData
 			reqData.Uri = tt.uri
 
-			rec := httptest.NewRecorder()
-			CheckTorii(rec, httptest.NewRequest(http.MethodGet, "/torii/checker_pages/EXTERNAL", nil), reqData, f.ruleSet, f.cfg, &dataType.SharedMemory{}, pagesFor(f.cfg))
+			rec := serveVerdictPage(action.VerdictChallenge, reqData, f.ruleSet, f.cfg, pagesFor(f.cfg))
 
 			loc, err := url.Parse(rec.Header().Get("Location"))
 			if err != nil {
@@ -401,9 +401,37 @@ func TestCheckerPageExternalEscapesRedirectQuery(t *testing.T) {
 			}
 			// The provider must be able to verify the signature from the decoded values.
 			stamp, _, _ := strings.Cut(q.Get("session_id"), ":")
-			want := check.CalculateRedirectHMAC(q.Get("domain"), stamp, q.Get("original_uri"), f.ruleSet.ExternalMigrationRule.SecretKey)
+			want := check.CalculateRedirectHMAC(q.Get("domain"), stamp, q.Get("original_uri"), f.ruleSet.Challenge.ExternalSecret)
 			if q.Get("hmac") != want {
 				t.Fatal("provider cannot verify the redirect signature")
+			}
+		})
+	}
+}
+
+// A site answers only the endpoints of the kind of challenge it uses. The CAPTCHA submission
+// endpoint is left out: it answers a GET like a path that does not exist.
+func TestPublicEndpointsFollowTheChallengeMode(t *testing.T) {
+	external := newExternalFixture(t)
+	writePage(t, external.cfg.ErrorPage, "403.html", "forbidden")
+	captcha := testAltchaServerRuleSet()
+
+	for name, tt := range map[string]struct {
+		ruleSet *config.RuleSet
+		path    string
+		served  bool
+	}{
+		"ALTCHA challenge on a CAPTCHA site":    {captcha, "/torii/captcha/challenge", true},
+		"external callback on a CAPTCHA site":   {captcha, "/torii/external_migration", false},
+		"external callback on an external site": {external.ruleSet, "/torii/external_migration", true},
+		"ALTCHA challenge on an external site":  {external.ruleSet, "/torii/captcha/challenge", false},
+		"health check on any site":              {captcha, "/torii/health_check", true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			rec := serveTorii(tt.path, external.reqData, tt.ruleSet, external.cfg, &state.Runtime{})
+			forbidden := rec.Code == http.StatusForbidden && rec.Body.String() == "forbidden"
+			if forbidden == tt.served {
+				t.Fatalf("got %d %q, want served = %v", rec.Code, rec.Body.String(), tt.served)
 			}
 		})
 	}

@@ -22,6 +22,10 @@
 * URL 允许列表
 * 自定义规则（类 Cloudflare 表达式，可匹配 IP、国家、URI、Referer、User-Agent、请求头和 Cookie）
 
+## ⬆️ 从 1.x 升级
+
+2.0 与 1.x 不兼容,请看[迁移指南](MIGRATION-zh_cn.md)。
+
 ## 🔧 文档
 
 https://rayzggz.github.io/server_torii-docs/zh/

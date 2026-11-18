@@ -1,26 +1,27 @@
 package config
 
 import (
-	"server_torii/internal/dataType"
+	"server_torii/internal/action"
 	"strings"
+	"time"
 )
 
 // Default values for AdaptiveTrafficAnalyzer fields left at zero.
 const (
-	DefaultATAAnalysisInterval     = 10
+	DefaultATAAnalysisInterval     = 10 * time.Second
 	DefaultATAWindowBuckets        = 30
-	DefaultATAEvidenceTTL          = 21600
+	DefaultATAEvidenceTTL          = 6 * time.Hour
 	DefaultATADistinctPages        = 3
-	DefaultATABaselineHalfLife     = 21600
-	DefaultATABaselineWarmup       = 3600
+	DefaultATABaselineHalfLife     = 6 * time.Hour
+	DefaultATABaselineWarmup       = time.Hour
 	DefaultATAMinReferenceRequests = 200
 	DefaultATAHotURIMinRequests    = 100
 	DefaultATAHotURIMinDistinctIPs = 50
 	DefaultATAHotURIRatioThreshold = 5.0
-	DefaultATAHotURISustain        = 60
+	DefaultATAHotURISustain        = time.Minute
 	DefaultATAHotURIFallbackShare  = 0.8
-	DefaultATABlockDuration        = 600
-	DefaultATAMaxBlockDuration     = 86400
+	DefaultATABlockDuration        = 10 * time.Minute
+	DefaultATAMaxBlockDuration     = 24 * time.Hour
 	DefaultATAScoreThreshold       = 50
 	DefaultATAHotURIMinHits        = 3
 	DefaultATAMinFailures          = 30
@@ -36,20 +37,20 @@ var DefaultATAAssetExtensions = []string{
 }
 
 // NormalizeAnalyzerAction lowercases a configured action. Unknown values fall back to observe.
-func NormalizeAnalyzerAction(a dataType.AnalyzerAction) (dataType.AnalyzerAction, bool) {
-	switch v := dataType.AnalyzerAction(strings.ToLower(strings.TrimSpace(string(a)))); v {
-	case dataType.AnalyzerObserve, dataType.AnalyzerCaptchaUnverified, dataType.AnalyzerCaptcha, dataType.AnalyzerBlock:
+func NormalizeAnalyzerAction(a action.Action) (action.Action, bool) {
+	switch v := action.Action(strings.ToLower(strings.TrimSpace(string(a)))); v {
+	case action.ActionObserve, action.ActionChallengeUnverified, action.ActionChallenge, action.ActionBlock:
 		return v, true
 	case "":
-		return dataType.AnalyzerObserve, true
+		return action.ActionObserve, true
 	default:
-		return dataType.AnalyzerObserve, false
+		return action.ActionObserve, false
 	}
 }
 
 // NormalizeAdaptiveTrafficAnalyzerRule fills defaults and normalizes lists in place.
 // It is idempotent, so the analyzer may call it on rules built outside the loader.
-func NormalizeAdaptiveTrafficAnalyzerRule(r *dataType.AdaptiveTrafficAnalyzerRule) {
+func NormalizeAdaptiveTrafficAnalyzerRule(r *AdaptiveTrafficAnalyzerRule) {
 	setDefault(&r.AnalysisInterval, DefaultATAAnalysisInterval)
 	setDefault(&r.WindowBuckets, DefaultATAWindowBuckets)
 	setDefault(&r.BrowserEvidence.TTL, DefaultATAEvidenceTTL)
@@ -88,7 +89,7 @@ func NormalizeAdaptiveTrafficAnalyzerRule(r *dataType.AdaptiveTrafficAnalyzerRul
 	}
 }
 
-func setDefault[T int | int64 | float64](v *T, def T) {
+func setDefault[T ~int | ~int64 | ~float64](v *T, def T) {
 	if *v <= 0 {
 		*v = def
 	}

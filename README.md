@@ -22,6 +22,10 @@ English | [简体中文](README-zh_cn.md)
 * URL Allow List
 * Custom Rules (Cloudflare-style expressions on IP, country, URI, Referer, User-Agent, headers and cookies)
 
+## ⬆️ Upgrading from 1.x
+
+2.0 is not compatible with 1.x. See the [migration guide](MIGRATION.md).
+
 ## 🔧 Documents
 
 https://rayzggz.github.io/server_torii-docs/
