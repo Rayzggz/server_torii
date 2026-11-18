@@ -118,9 +118,14 @@ func TestLoadRules_DisabledSectionsAreLoaded(t *testing.T) {
 	}
 }
 
-// The shipped example rules must stay loadable.
+// The shipped example rules must stay loadable once they have an ALTCHA secret of their own.
+// As shipped they are refused, for the public secret alone.
 func TestLoadRules_Example(t *testing.T) {
-	if _, err := LoadRules("../../config_example/rules/default"); err != nil {
+	_, err := LoadRules(exampleRulesPath)
+	if err == nil || strings.Count(err.Error(), "\n") != 1 || !strings.Contains(err.Error(), "challenge.altcha_hmac_secret: this is the public value") {
+		t.Fatalf("the example as shipped: error = %v, want the public secret refused and nothing else", err)
+	}
+	if _, err := LoadRules(exampleRulesDirectory(t)); err != nil {
 		t.Fatalf("the example rules do not load: %v", err)
 	}
 }

@@ -78,7 +78,7 @@ func TestCountryCaptchaConfiguration(t *testing.T) {
 }
 
 func TestExampleCountryRulesLoad(t *testing.T) {
-	rules, err := LoadRules(filepath.Join("..", "..", "config_example", "rules", "default"))
+	rules, err := LoadRules(exampleRulesDirectory(t))
 	if err != nil {
 		t.Fatal(err)
 	}

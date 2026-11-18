@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const exampleRulesPath = "../../config_example/rules/default"
+
 // decodeServerRules decodes the text of a Server.yml the way the loader does.
 func decodeServerRules(data []byte) (ruleSetWrapper, error) {
 	var wrapper ruleSetWrapper
@@ -72,6 +74,26 @@ func writeFile(t *testing.T, path, content string) {
 		content = completeServerRules(content)
 	}
 	writeRawFile(t, path, content)
+}
+
+// exampleRulesDirectory copies the shipped example rules, giving them an ALTCHA secret of their
+// own: the one they ship with is public and refused, like the global_secret of the example.
+func exampleRulesDirectory(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.CopyFS(dir, os.DirFS(exampleRulesPath)); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "Server.yml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), DefaultGlobalSecret) {
+		t.Fatal("the example rules no longer carry the public ALTCHA secret")
+	}
+	writeRawFile(t, path, strings.ReplaceAll(string(data), DefaultGlobalSecret, "test-only-altcha-secret"))
+	return dir
 }
 
 func writeRawFile(t *testing.T, path, content string) {
