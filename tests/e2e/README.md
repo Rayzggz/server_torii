@@ -125,8 +125,8 @@ node's own port) are skipped. At the end the run fails if nginx exited or logged
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `NGX_TORII_SRC` | `../ngx_torii` next to this repository | The module checkout |
-| `NGINX_VERSION` | `1.28.0` | Downloaded from nginx.org on the first run |
-| `NGINX_SHA256` | that of 1.28.0 | Checked before every build; required with another `NGINX_VERSION`, empty builds unchecked |
+| `NGINX_VERSION` | `1.30.7` | Downloaded from nginx.org on the first run |
+| `NGINX_SHA256` | that of 1.30.7 | Checked before every build; required with another `NGINX_VERSION`, empty builds unchecked |
 | `E2E_CACHE` | `~/.cache/torii-e2e` | Source archive and build; rebuilt when the module source is newer |
 | `NGINX_BASE_PORT` | `BASE_PORT+100` | The application's port; node N is at `+N` |
 

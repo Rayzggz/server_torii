@@ -3,11 +3,11 @@
 # front of the nodes, one group of server blocks per node. Every request of the scenarios
 # then enters through an nginx site, the way a visitor's request does.
 # shellcheck disable=SC2034
-NGINX_VERSION=${NGINX_VERSION:-1.28.0}
+NGINX_VERSION=${NGINX_VERSION:-1.30.7}
 # The SHA-256 of the source archive, which is compiled and run. Another NGINX_VERSION needs its
 # own; an empty NGINX_SHA256 builds the archive unchecked.
-if [[ -z ${NGINX_SHA256+set} && "$NGINX_VERSION" == 1.28.0 ]]; then
-    NGINX_SHA256=c6b5c6b086c0df9d3ca3ff5e084c1d0ef909e6038279c71c1c3e985f576ff76a
+if [[ -z ${NGINX_SHA256+set} && "$NGINX_VERSION" == 1.30.7 ]]; then
+    NGINX_SHA256=2565b5c837050e958f70fb0f73c48e2bca4542ad349fd356f46fb0c72610bc6e
 fi
 NGX_TORII_SRC=${NGX_TORII_SRC:-$ROOT/../ngx_torii}
 E2E_CACHE=${E2E_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/torii-e2e}
