@@ -56,7 +56,7 @@ server_torii -check-config -config /www/server_torii/config
 | — | `unix_socket_mode`、`ipv6_prefix`、`log_level` |
 | — | `sites: - error_page:` 给站点配置自己的错误页 |
 
-示例里的 `global_secret` 是公开的,知道它的人可以伪造通行 cookie,所以 2.0 用它会拒绝启动。请自己生成一个,例如 `openssl rand -hex 16`。
+示例里的 `global_secret` 是公开的,知道它的人可以伪造通行 cookie,所以 2.0 用它会拒绝启动。请自己生成一个,例如 `openssl rand -hex 16`。`Server.yml` 里的 `altcha_hmac_secret` 用这个公开值同样会被拒绝:不写这一项即可,ALTCHA 挑战会用从 `global_secret` 派生的密钥签名。
 
 IPv6 客户端现在按网段计数,默认 `/64`,可用 `ipv6_prefix` 调整:限速、临时封禁和流量分析都把整个网段当作一个客户端。
 

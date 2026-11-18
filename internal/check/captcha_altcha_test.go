@@ -168,6 +168,55 @@ func TestCheckCaptchaAltchaBadSession(t *testing.T) {
 	}
 }
 
+// A challenge that carries a valid signature is still refused when it is not one the site
+// issues: less work, no end, or an end later than the session allows. Whoever holds the secret
+// cannot make the proof of work cheaper for themselves.
+func TestCheckCaptchaAltchaRejectsChallengeNotAsIssued(t *testing.T) {
+	ruleSet := testAltchaRuleSet()
+	ruleSet.Challenge.AltchaCost = 2
+	reqData := testCaptchaRequestData(ruleSet)
+	sign := func(cost int, expiresAt *time.Time) string {
+		challenge, err := altcha.CreateChallenge(altcha.CreateChallengeOptions{
+			Algorithm: altchaAlgorithm, DeriveKey: altcha.DeriveKeyPBKDF2(), KeyLength: altchaKeyLength,
+			HMACSignatureSecret: ruleSet.Challenge.AltchaHMACSecret, Cost: cost, ExpiresAt: expiresAt,
+			Data: map[string]interface{}{"toriiSession": altchaSessionBinding(reqData, *ruleSet)},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		solution, err := altcha.SolveChallenge(altcha.SolveChallengeOptions{Challenge: challenge, DeriveKey: altcha.DeriveKeyPBKDF2()})
+		if err != nil || solution == nil {
+			t.Fatalf("SolveChallenge: %v", err)
+		}
+		payload, err := json.Marshal(altcha.Payload{Challenge: challenge, Solution: *solution})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString(payload)
+	}
+	in := func(d time.Duration) *time.Time { at := time.Now().Add(d); return &at }
+
+	for name, tt := range map[string]struct {
+		payload string
+		want    CaptchaSubmission
+	}{
+		"as issued": {sign(2, in(time.Minute)), SubmissionGood},
+		"more work": {sign(3, in(time.Minute)), SubmissionGood},
+		"less work": {sign(1, in(time.Minute)), SubmissionBad},
+		"no end":    {sign(2, nil), SubmissionBad},
+		"late end":  {sign(2, in(time.Hour)), SubmissionBad},
+	} {
+		t.Run(name, func(t *testing.T) {
+			form := url.Values{"altcha": {tt.payload}}
+			req := httptest.NewRequest("POST", "/captcha", strings.NewReader(form.Encode()))
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			if got := CheckCaptcha(req, reqData, ruleSet, testCaptchaRuntime()); got != tt.want {
+				t.Fatalf("submission = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
 func testAltchaRuleSet() *config.RuleSet {
 	ruleSet := &config.RuleSet{
 		Challenge: &config.ChallengeRule{

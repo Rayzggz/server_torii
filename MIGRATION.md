@@ -72,6 +72,8 @@ watch:
 
 The example `global_secret` is public, and whoever knows it can issue clearance cookies: 2.0
 refuses to start with it. Generate your own, for example with `openssl rand -hex 16`.
+The same value is refused as `altcha_hmac_secret` in `Server.yml`: leave that setting out,
+and the ALTCHA challenges are signed with a key derived from `global_secret`.
 
 IPv6 clients are now counted per network, a `/64` unless `ipv6_prefix` says otherwise: rate
 limits, temporary blocks and traffic analysis treat the whole network as one client.

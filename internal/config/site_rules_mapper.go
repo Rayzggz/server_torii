@@ -176,6 +176,10 @@ func mapChallengeRule(wrapper *challengeRuleWrapper, dest *ChallengeRule) error 
 	dest.ClearanceTTL = wrapper.ClearanceTTL
 	dest.SessionTTL = wrapper.SessionTTL
 	dest.HCaptchaSecret = wrapper.HCaptchaSecret
+	// Whoever knows this secret signs challenges of their own, as easy as they like.
+	if wrapper.AltchaHMACSecret == DefaultGlobalSecret {
+		return fmt.Errorf("challenge.altcha_hmac_secret: this is the public value from the example configuration; remove it to use a key derived from global_secret, or set a secret of your own")
+	}
 	dest.AltchaHMACSecret = wrapper.AltchaHMACSecret
 	dest.AltchaCost = wrapper.AltchaCost
 	if dest.AltchaCost == 0 {

@@ -114,6 +114,9 @@ func verifyAltchaResponse(r *http.Request, reqData request.UserRequest, ruleSet 
 	if !ok {
 		return captchaVerificationInvalid, nil
 	}
+	if !altchaChallengeAsIssued(payload.Challenge.Parameters, ruleSet.Challenge, time.Now()) {
+		return captchaVerificationInvalid, nil
+	}
 
 	result, err := altcha.VerifySolution(altcha.VerifySolutionOptions{
 		Challenge:           payload.Challenge,
@@ -134,6 +137,18 @@ func verifyAltchaResponse(r *http.Request, reqData request.UserRequest, ruleSet 
 	}
 
 	return captchaVerificationValid, nil
+}
+
+// altchaChallengeAsIssued reports whether the challenge is one GenAltchaChallenge makes for the
+// site as it is configured now: the same algorithm, at least the same work, and an end no later
+// than a challenge issued now would have. The signature says only that the holder of the secret
+// made the challenge; this keeps a challenge that was made easier or longer-lived out, whoever
+// signed it.
+func altchaChallengeAsIssued(params altcha.ChallengeParameters, rule *config.ChallengeRule, now time.Time) bool {
+	if params.Algorithm != altchaAlgorithm || params.KeyLength != altchaKeyLength || params.Cost < rule.AltchaCost {
+		return false
+	}
+	return params.ExpiresAt > 0 && params.ExpiresAt <= now.Add(rule.SessionTTL).Unix()
 }
 
 func altchaChallengeSessionBinding(challenge altcha.Challenge) (string, bool) {
