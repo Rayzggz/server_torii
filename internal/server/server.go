@@ -9,7 +9,6 @@ import (
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
 	"server_torii/internal/gossip"
-	"server_torii/internal/request"
 	"server_torii/internal/state"
 	"strings"
 	"sync/atomic"
@@ -70,7 +69,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.gossip.HandleGossip(w, r)
 	case r.URL.Path == s.cfg.WebPath+"/health_check":
 		// Reachable without the connector, for monitoring and readiness probes.
-		s.handleHealthCheck(w, request.UserRequest{})
+		s.handleHealthCheck(w, r)
 	default:
 		http.NotFound(w, r)
 	}

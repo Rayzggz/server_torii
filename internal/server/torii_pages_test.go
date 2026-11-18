@@ -28,7 +28,7 @@ func newPagesConfig(t *testing.T) *config.MainConfig {
 	dir := t.TempDir()
 	writePage(t, dir, "403.html", "403|{{.EdgeTag}}|{{.ConnectIP}}")
 	writePage(t, dir, "429.html", "429|{{.EdgeTag}}|{{.ConnectIP}}")
-	return &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a"}
+	return &config.MainConfig{WebPath: "/torii", ErrorPage: dir, NodeName: "node-a", GlobalSecret: "test-only-global-secret-0123456789"}
 }
 
 func serveTorii(path string, reqData request.UserRequest, ruleSet *config.RuleSet, cfg *config.MainConfig, sharedMem *state.Runtime) *httptest.ResponseRecorder {
@@ -115,6 +115,21 @@ func TestHealthCheck(t *testing.T) {
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/plain") {
 		t.Fatalf("Content-Type = %q", ct)
 	}
+	// Without the key: that the node runs and which node it is, and nothing else.
+	if lines := strings.Split(rec.Body.String(), "\n"); len(lines) != 6 || lines[0] != "ok" ||
+		strings.Contains(rec.Body.String(), "reports_") || strings.Contains(rec.Body.String(), "counter_") {
+		t.Fatalf("body without the key = %q", rec.Body.String())
+	}
+	for name, query := range map[string]string{"wrong key": "?key=" + strings.Repeat("0", 32), "empty key": "?key="} {
+		if body := serveTorii("/torii/health_check"+query, request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{}).Body.String(); strings.Contains(body, "reports_") {
+			t.Fatalf("%s: body = %q", name, body)
+		}
+	}
+
+	rec = serveTorii("/torii/health_check?key="+cfg.HealthKey(), request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status with the key = %d, want 200", rec.Code)
+	}
 	lines := strings.Split(rec.Body.String(), "\n")
 	if len(lines) != 13 || lines[0] != "ok" {
 		t.Fatalf("body = %q", rec.Body.String())
@@ -141,10 +156,25 @@ func TestHealthCheck(t *testing.T) {
 		t.Error("ts is empty")
 	}
 	// Without a running report listener the counters are all zero, but present.
-	for _, counter := range []string{"reports_received", "reports_accepted", "reports_malformed", "reports_unknown_site", "reports_dropped"} {
+	for _, counter := range []string{"reports_received", "reports_accepted", "reports_malformed", "reports_unknown_site", "reports_dropped", "reports_discarded", "counter_untracked"} {
 		if fields[counter] != "0" {
 			t.Errorf("%s = %q, want 0", counter, fields[counter])
 		}
+	}
+
+	// The node's own endpoint, reached without the connector, takes the key the same way.
+	s := NewServer(cfg, nil, &state.Runtime{}, nil)
+	if body := v1Get(s, "/torii/health_check", nil).Body.String(); strings.Contains(body, "reports_") {
+		t.Fatalf("direct body without the key = %q", body)
+	}
+	if body := v1Get(s, "/torii/health_check?key="+cfg.HealthKey(), nil).Body.String(); !strings.Contains(body, "\ncounter_untracked=0") {
+		t.Fatalf("direct body with the key = %q", body)
+	}
+
+	// A node without a secret has no key.
+	cfg.GlobalSecret = ""
+	if body := serveTorii("/torii/health_check?key="+cfg.HealthKey(), request.UserRequest{}, &config.RuleSet{}, cfg, &state.Runtime{}).Body.String(); strings.Contains(body, "reports_") {
+		t.Fatalf("body without a secret = %q", body)
 	}
 }
 

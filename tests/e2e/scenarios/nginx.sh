@@ -74,11 +74,14 @@ test_nginx() {
     assert_eq "$HTTP_CODE" 403 'unknown endpoint of Torii'
 
     # Every request nginx served is reported to its node.
-    public 1 /torii/health_check "$ip" default_site
+    # The counters of the health check are for whoever has the health key; nginx forwards it.
+    assert_eq "$(grep -c '^reports_\|^counter_' <<< "$HTTP_BODY")" 0 'no counters without the health key'
+    public 1 "$(health_uri)" "$ip" default_site
     before=$(sed -n 's/^reports_received=//p' <<< "$HTTP_BODY")
+    [[ -n "$before" ]] || fail "health check with the key shows no counters through nginx: <$HTTP_BODY>"
     expect pass 1 "$ip" "$ZERO" /reported
     wait_counter reports_received "$((before+2))"
-    public 1 /torii/health_check "$ip" default_site
+    public 1 "$(health_uri)" "$ip" default_site
     assert_contains "$HTTP_BODY" 'reports_malformed=0' 'no report of nginx is malformed'
 
     # The access log of nginx has the site, the decision and the reason of every request.

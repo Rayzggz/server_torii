@@ -75,6 +75,18 @@ refuses to start with it. Generate your own, for example with `openssl rand -hex
 The same value is refused as `altcha_hmac_secret` in `Server.yml`: leave that setting out,
 and the ALTCHA challenges are signed with a key derived from `global_secret`.
 
+`/torii/health_check` is reachable through every site, so it only says that the node runs and
+which node it is. The counters (`reports_*`, `counter_untracked`) are added for a request that
+carries the health key, which is also derived from `global_secret` and the same on every node
+of a cluster:
+
+```bash
+printf '%s' 'torii health key' | openssl dgst -sha256 -hmac "<global_secret>" | awk '{print substr($NF,1,32)}'
+```
+
+Open `/torii/health_check?key=<key>` to see them. The key ends up in the access log of nginx
+like any query string; it shows the counters and nothing else.
+
 IPv6 clients are now counted per network, a `/64` unless `ipv6_prefix` says otherwise: rate
 limits, temporary blocks and traffic analysis treat the whole network as one client.
 

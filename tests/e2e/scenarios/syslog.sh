@@ -19,7 +19,7 @@ send_log() {
 test_syslog() {
     local i deadline remaining accepted=0 unknown=0
     if [[ "$VIA" == nginx ]]; then
-        request 1 /torii/health_check
+        request 1 "$(health_uri)"
         accepted=$(sed -n 's/^reports_accepted=//p' <<< "$HTTP_BODY")
         unknown=$(sed -n 's/^reports_unknown_site=//p' <<< "$HTTP_BODY")
     fi
@@ -48,7 +48,15 @@ test_syslog() {
         assert_contains "$HTTP_BODY" 'reports_malformed=0' 'malformed reports'
         assert_contains "$HTTP_BODY" 'reports_dropped=0' 'dropped reports'
     else
+        # The counters are for whoever has the health key.
         request 1 /torii/health_check
+        assert_contains "$HTTP_BODY" 'sliver=Node_1' 'health check without the key'
+        [[ "$HTTP_BODY" != *reports_* && "$HTTP_BODY" != *counter_* ]] || fail "health check without the key shows counters: <$HTTP_BODY>"
+        request 1 '/torii/health_check?key=00000000000000000000000000000000'
+        [[ "$HTTP_BODY" != *reports_* ]] || fail "health check with a wrong key shows counters: <$HTTP_BODY>"
+        ASSERTIONS=$((ASSERTIONS+2))
+        request 1 "$(health_uri)"
+        assert_contains "$HTTP_BODY" 'counter_untracked=' 'health check with the key'
         assert_contains "$HTTP_BODY" 'reports_accepted=11' 'accepted reports'
         assert_contains "$HTTP_BODY" 'reports_unknown_site=10' 'reports for an unknown site'
         assert_contains "$HTTP_BODY" 'reports_malformed=2' 'malformed reports'

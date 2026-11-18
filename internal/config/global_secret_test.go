@@ -58,6 +58,21 @@ func TestCookieKey(t *testing.T) {
 	}
 }
 
+// The health key follows the global secret alone too, and is neither the secret nor the cookie key.
+func TestHealthKey(t *testing.T) {
+	a := &MainConfig{GlobalSecret: "9f86d081884c7d659a2feaa0c55ad015", NodeName: "a"}
+	b := &MainConfig{GlobalSecret: "9f86d081884c7d659a2feaa0c55ad015", NodeName: "b", EnableGossip: true}
+	other := &MainConfig{GlobalSecret: "0f86d081884c7d659a2feaa0c55ad015"}
+	// printf '%s' 'torii health key' | openssl dgst -sha256 -hmac 9f86d081884c7d659a2feaa0c55ad015 | awk '{print substr($NF,1,32)}'
+	const want = "387ed5da53d6097b86a7959572c74884"
+	if a.HealthKey() != want {
+		t.Errorf("HealthKey = %s", a.HealthKey())
+	}
+	if a.HealthKey() != b.HealthKey() || a.HealthKey() == other.HealthKey() || strings.HasPrefix(a.CookieKey(), a.HealthKey()) {
+		t.Error("the health key must follow the global secret, and nothing else")
+	}
+}
+
 // Every site signs its cookies with the key derived from the global secret. A site that sets no
 // ALTCHA secret signs its challenges with it too.
 func TestSitesGetTheCookieKey(t *testing.T) {

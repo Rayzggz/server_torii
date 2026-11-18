@@ -27,8 +27,8 @@ func (s *Server) servePublicEndpoint(w http.ResponseWriter, r *http.Request, req
 	captcha := ruleSet.Challenge.ShowsCaptcha()
 	external := !captcha
 	switch {
-	case reqData.Uri == webPath+"/health_check":
-		s.handleHealthCheck(w, reqData)
+	case uriPath(reqData.Uri) == webPath+"/health_check":
+		s.handleHealthCheck(w, r)
 	case captcha && reqData.Uri == webPath+"/captcha/challenge":
 		s.handleCaptchaChallenge(w, r, reqData, ruleSet)
 	case captcha && reqData.Uri == webPath+"/captcha":
@@ -91,7 +91,29 @@ func (s *Server) handleCaptchaChallenge(w http.ResponseWriter, r *http.Request, 
 	}
 }
 
-func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRequest) {
+// uriPath is the URI the visitor requested without its query string.
+func uriPath(uri string) string {
+	path, _, _ := strings.Cut(uri, "?")
+	return path
+}
+
+// healthKeyParam is the query parameter that carries config.MainConfig.HealthKey.
+const healthKeyParam = "key"
+
+// healthAuthorized reports whether the request carries the health key, as in
+// /torii/health_check?key=<key>. The connector forwards the query string of the visitor.
+func (s *Server) healthAuthorized(r *http.Request) bool {
+	if s.cfg.GlobalSecret == "" {
+		return false
+	}
+	given := r.URL.Query().Get(healthKeyParam)
+	return hmac.Equal([]byte(given), []byte(s.cfg.HealthKey()))
+}
+
+// handleHealthCheck says that the node runs and which node it is. Anyone may ask: the endpoint
+// is reachable through every site. The counters tell more about the node than a visitor should
+// learn, so they are added only for a request that carries the health key.
+func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 
 	var builder strings.Builder
 	builder.WriteString("ok\n")
@@ -109,18 +131,22 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, reqData request.UserRe
 	builder.WriteString("\n")
 	builder.WriteString("sliver=")
 	builder.WriteString(s.cfg.NodeName)
-	// What became of the request reports of the connector; all zero means none arrive.
-	reports := s.reports.Load().Stats()
-	fmt.Fprintf(&builder, "\nreports_received=%d\nreports_accepted=%d\nreports_malformed=%d\nreports_unknown_site=%d\nreports_dropped=%d\nreports_discarded=%d",
-		reports.Received, reports.Accepted, reports.Malformed, reports.Unknown, reports.Dropped, reports.Discarded)
-	// Requests the rate counters did not count because they were full; see ratelimit.Counter.
-	var untracked uint64
-	if s.rt != nil {
-		untracked = s.rt.Untracked()
+	if s.healthAuthorized(r) {
+		// What became of the request reports of the connector; all zero means none arrive.
+		reports := s.reports.Load().Stats()
+		fmt.Fprintf(&builder, "\nreports_received=%d\nreports_accepted=%d\nreports_malformed=%d\nreports_unknown_site=%d\nreports_dropped=%d\nreports_discarded=%d",
+			reports.Received, reports.Accepted, reports.Malformed, reports.Unknown, reports.Dropped, reports.Discarded)
+		// Requests the rate counters did not count because they were full; see ratelimit.Counter.
+		var untracked uint64
+		if s.rt != nil {
+			untracked = s.rt.Untracked()
+		}
+		fmt.Fprintf(&builder, "\ncounter_untracked=%d", untracked)
 	}
-	fmt.Fprintf(&builder, "\ncounter_untracked=%d", untracked)
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	// The answer depends on the key, and no cache should keep either.
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(builder.String()))
 	if err != nil {

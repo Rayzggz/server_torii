@@ -136,3 +136,15 @@ func (c *MainConfig) CookieKey() string {
 	mac.Write([]byte("torii cookie key"))
 	return hex.EncodeToString(mac.Sum(nil))
 }
+
+// HealthKey is the key that makes the health check show its counters: 32 hexadecimal digits,
+// short enough to put in the address bar of a browser. It is derived from the global secret, so
+// every node of a cluster has the same one, and it gives away nothing about the secret or the
+// cookie key.
+//
+//	printf '%s' 'torii health key' | openssl dgst -sha256 -hmac "$global_secret" | awk '{print substr($NF,1,32)}'
+func (c *MainConfig) HealthKey() string {
+	mac := hmac.New(sha256.New, []byte(c.GlobalSecret))
+	mac.Write([]byte("torii health key"))
+	return hex.EncodeToString(mac.Sum(nil)[:16])
+}

@@ -313,6 +313,15 @@ cluster_decision() {
     done
 }
 hmac() { printf '%s' "$1" | openssl dgst -sha512 -hmac "$2" | awk '{print $NF}'; }
+# health_uri: the health check with the key that makes it show its counters, which is derived
+# from the global secret of the fixture.
+health_uri() {
+    local secret
+    secret=$(sed -n 's/^global_secret: "\(.*\)"$/\1/p' "$E2E/fixtures/torii.yml")
+    [[ -n "$secret" ]] || fail 'no global_secret in fixtures/torii.yml'
+    printf '/torii/health_check?key=%s' \
+        "$(printf '%s' 'torii health key' | openssl dgst -sha256 -hmac "$secret" | awk '{print substr($NF,1,32)}')"
+}
 uuid() { cat /proc/sys/kernel/random/uuid; }
 # log_line FILE PART...: one line of the log holds every part.
 log_line() {
@@ -329,9 +338,10 @@ log_line() {
 }
 # wait_counter NAME VALUE: the health check of node 1 reports at least VALUE for the counter.
 wait_counter() {
-    local name=$1 want=$2 got deadline=$((SECONDS+10))
+    local name=$1 want=$2 got uri deadline=$((SECONDS+10))
+    uri=$(health_uri)
     while :; do
-        request 1 /torii/health_check
+        request 1 "$uri"
         got=$(sed -n "s/^$name=//p" <<< "$HTTP_BODY")
         (( ${got:-0} >= want )) && break
         (( SECONDS < deadline )) || fail "$name=$got, expected at least $want"
