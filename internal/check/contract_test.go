@@ -23,6 +23,9 @@ import (
 
 const contractKey = "0123456789abcdef"
 
+// contractClient is the address of the client in these tests. An IPv4 address is its own key.
+const contractClient = "203.0.113.7"
+
 func contractMAC(message string) string {
 	mac := hmac.New(sha512.New, []byte(contractKey))
 	mac.Write([]byte(message))
@@ -30,21 +33,21 @@ func contractMAC(message string) string {
 }
 
 // contractCookie builds a cookie the way the format is documented, without the token package:
-// "v2.<unix seconds>.<signature>". The signature is an HMAC-SHA256 over the version, the label,
-// the timestamp, the host and the user agent, each after its length as four big-endian bytes,
-// in base64url without padding.
-func contractCookie(ts int64, host, ua, label string) string {
+// "v3.<unix seconds>.<signature>". The signature is an HMAC-SHA256 over the version, the label,
+// the timestamp, the host, the user agent and the client key, each after its length as four
+// big-endian bytes, in base64url without padding.
+func contractCookie(ts int64, host, ua, client, label string) string {
 	stamp := strconv.FormatInt(ts, 10)
 	mac := hmac.New(sha256.New, []byte(contractKey))
-	for _, field := range []string{"v2", label, stamp, host, ua} {
+	for _, field := range []string{"v3", label, stamp, host, ua, client} {
 		mac.Write(binary.BigEndian.AppendUint32(nil, uint32(len(field))))
 		mac.Write([]byte(field))
 	}
-	return "v2." + stamp + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return "v3." + stamp + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 }
 
 func contractFixture(mode config.ChallengeMode) (request.UserRequest, config.RuleSet) {
-	return request.UserRequest{Host: "example.com", UserAgent: "UA-X"},
+	return request.UserRequest{RemoteIP: contractClient, Host: "example.com", UserAgent: "UA-X"},
 		config.RuleSet{
 			Challenge: &config.ChallengeRule{Mode: mode, CookieKey: contractKey, ExternalSecret: contractKey, ClearanceTTL: 600 * time.Second, SessionTTL: 120 * time.Second},
 			// The site ID is part of every token, so a token of one site is useless on another.
@@ -58,8 +61,8 @@ func TestCookieFormatContract(t *testing.T) {
 		t.Fatalf("GetClearanceUserAgent = %q", got)
 	}
 	// Reference vector computed outside Go, see the token package.
-	const want = "v2.1700000000.tNuJKQAaAnW32fCWPU_mmCZbI1r3cULhwMRC610v4Ew"
-	if got := contractCookie(1700000000, "example.com", "UA-X", "CAPTCHA-CLEARANCE@shop"); got != want {
+	const want = "v3.1700000000.ljb5BjD6oShEbrhmYnhfEHbT5EEjRkQqOy8ZugjTKsA"
+	if got := contractCookie(1700000000, "example.com", "UA-X", contractClient, "CAPTCHA-CLEARANCE@shop"); got != want {
 		t.Fatalf("reference cookie mismatch: %s", got)
 	}
 
@@ -97,11 +100,11 @@ func TestCookieFormatContract(t *testing.T) {
 			if err != nil || ts < now || ts > now+5 {
 				t.Fatalf("issued cookie %q has no current timestamp", issued)
 			}
-			if want := contractCookie(ts, req.Host, req.UserAgent, tc.label); issued != want {
+			if want := contractCookie(ts, req.Host, req.UserAgent, contractClient, tc.label); issued != want {
 				t.Fatalf("issued cookie = %q, want %q", issued, want)
 			}
 
-			valid := contractCookie(now-1, req.Host, req.UserAgent, tc.label)
+			valid := contractCookie(now-1, req.Host, req.UserAgent, contractClient, tc.label)
 			if !tc.verify(req, rs, valid) {
 				t.Fatal("independently built cookie rejected")
 			}
@@ -110,22 +113,24 @@ func TestCookieFormatContract(t *testing.T) {
 				"no separator":     strings.ReplaceAll(valid, ".", ""),
 				"extra field":      valid + ".x",
 				"old format":       fmt.Sprintf("%d:%s", now-1, contractMAC(fmt.Sprintf("%d%s%s%s", now-1, req.Host, req.UserAgent, tc.label))),
-				"other version":    "v1" + strings.TrimPrefix(valid, "v2"),
+				"other version":    "v2" + strings.TrimPrefix(valid, "v3"),
 				"tampered mac":     valid[:len(valid)-2] + "00",
-				"other host":       contractCookie(now-1, "other.example", req.UserAgent, tc.label),
-				"other user agent": contractCookie(now-1, req.Host, "UA-Y", tc.label),
-				"other label":      contractCookie(now-1, req.Host, req.UserAgent, "OTHER"),
+				"other host":       contractCookie(now-1, "other.example", req.UserAgent, contractClient, tc.label),
+				"other user agent": contractCookie(now-1, req.Host, "UA-Y", contractClient, tc.label),
+				"other client":     contractCookie(now-1, req.Host, req.UserAgent, "203.0.113.8", tc.label),
+				"no client":        contractCookie(now-1, req.Host, req.UserAgent, "", tc.label),
+				"other label":      contractCookie(now-1, req.Host, req.UserAgent, contractClient, "OTHER"),
 			} {
 				if tc.verify(req, rs, bad) {
 					t.Errorf("%s cookie accepted", name)
 				}
 			}
 
-			old := contractCookie(now-100000, req.Host, req.UserAgent, tc.label)
-			if !tc.verify(req, rs, contractCookie(now-tc.maxAge+2, req.Host, req.UserAgent, tc.label)) {
+			old := contractCookie(now-100000, req.Host, req.UserAgent, contractClient, tc.label)
+			if !tc.verify(req, rs, contractCookie(now-tc.maxAge+2, req.Host, req.UserAgent, contractClient, tc.label)) {
 				t.Error("cookie rejected before its expiry")
 			}
-			if tc.verify(req, rs, contractCookie(now-tc.maxAge-2, req.Host, req.UserAgent, tc.label)) {
+			if tc.verify(req, rs, contractCookie(now-tc.maxAge-2, req.Host, req.UserAgent, contractClient, tc.label)) {
 				t.Error("expired cookie accepted")
 			}
 			if tc.verify(req, rs, old) {
@@ -139,10 +144,10 @@ func TestCookieFormatContract(t *testing.T) {
 // of the colon to verify the redirect. It keeps the form "<unix seconds>:<hex HMAC-SHA512>".
 func TestExternalSessionContract(t *testing.T) {
 	req, rs := contractFixture(config.ChallengeExternal)
-	session := func(ts int64, host, ua, label string) string {
+	session := func(ts int64, host, ua, client, label string) string {
 		// Every signed field follows its length as four big-endian bytes.
 		var message []byte
-		for _, field := range []string{label, strconv.FormatInt(ts, 10), host, ua} {
+		for _, field := range []string{label, strconv.FormatInt(ts, 10), host, ua, client} {
 			message = binary.BigEndian.AppendUint32(message, uint32(len(field)))
 			message = append(message, field...)
 		}
@@ -162,13 +167,13 @@ func TestExternalSessionContract(t *testing.T) {
 	if !ok || err != nil || ts < now || ts > now+5 {
 		t.Fatalf("issued session %q has no current timestamp", issued)
 	}
-	if want := session(ts, req.Host, req.UserAgent, label); issued != want {
+	if want := session(ts, req.Host, req.UserAgent, contractClient, label); issued != want {
 		t.Fatalf("issued session = %q, want %q", issued, want)
 	}
 
-	valid := session(now-1, req.Host, req.UserAgent, label)
+	valid := session(now-1, req.Host, req.UserAgent, contractClient, label)
 	// The age of the session is bounded by the link that accompanies it, not by the session.
-	if !verify(rs, valid) || !verify(rs, session(now-100000, req.Host, req.UserAgent, label)) {
+	if !verify(rs, valid) || !verify(rs, session(now-100000, req.Host, req.UserAgent, contractClient, label)) {
 		t.Fatal("independently built session rejected")
 	}
 	for name, bad := range map[string]string{
@@ -178,10 +183,11 @@ func TestExternalSessionContract(t *testing.T) {
 		"bad timestamp":     "x" + valid,
 		"padded timestamp":  "0" + valid,
 		"tampered mac":      valid[:len(valid)-2] + "00",
-		"other host":        session(now-1, "other.example", req.UserAgent, label),
-		"other user agent":  session(now-1, req.Host, "UA-Y", label),
-		"clearance label":   session(now-1, req.Host, req.UserAgent, "EXTERNAL-CLEARANCE@shop"),
-		"token of the site": contractCookie(now-1, req.Host, req.UserAgent, label),
+		"other host":        session(now-1, "other.example", req.UserAgent, contractClient, label),
+		"other user agent":  session(now-1, req.Host, "UA-Y", contractClient, label),
+		"other client":      session(now-1, req.Host, req.UserAgent, "203.0.113.8", label),
+		"clearance label":   session(now-1, req.Host, req.UserAgent, contractClient, "EXTERNAL-CLEARANCE@shop"),
+		"token of the site": contractCookie(now-1, req.Host, req.UserAgent, contractClient, label),
 	} {
 		if verify(rs, bad) {
 			t.Errorf("%s session accepted", name)

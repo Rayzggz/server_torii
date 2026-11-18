@@ -34,12 +34,14 @@ func CalculateRedirectHMAC(domain, timestampStr, originalUri, secretKey string) 
 // It does not use the token format of the other cookies, because the provider reads the
 // timestamp in front of the colon to verify the signature of the redirect.
 //
-// The signature is over the label, the timestamp, the host and the user agent, each preceded by
-// its length as four big-endian bytes, so that no two different sets of fields sign alike.
+// The signature is over the label, the timestamp, the host, the user agent and the client key,
+// each preceded by its length as four big-endian bytes, so that no two different sets of fields
+// sign alike. The provider never looks into the signature, so what it covers is not part of the
+// protocol: the client key keeps a client at another address from finishing the challenge.
 func externalSession(reqData request.UserRequest, ruleSet config.RuleSet, ts int64) string {
 	mac := hmac.New(sha512.New, []byte(ruleSet.Challenge.CookieKey))
 	stamp := strconv.FormatInt(ts, 10)
-	for _, field := range []string{"EXTERNAL-SESSION@" + ruleSet.ID, stamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent)} {
+	for _, field := range []string{"EXTERNAL-SESSION@" + ruleSet.ID, stamp, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey()} {
 		mac.Write(binary.BigEndian.AppendUint32(nil, uint32(len(field))))
 		mac.Write([]byte(field))
 	}

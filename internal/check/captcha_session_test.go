@@ -77,7 +77,7 @@ func testCaptchaSessionRequestData() request.UserRequest {
 }
 
 func genSessionIDAt(reqData request.UserRequest, ruleSet config.RuleSet, timestamp int64) string {
-	return challengeSigner(ruleSet, "SESSION").Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(timestamp, 0))
+	return challengeSigner(ruleSet, "SESSION").Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), time.Unix(timestamp, 0))
 }
 
 // A challenge says why a clearance the client did send was refused; a client without one, the
@@ -99,7 +99,7 @@ func TestChallengeNotesWhyAClearanceWasRefused(t *testing.T) {
 		{"valid", reqData, valid, action.VerdictAllow, ""},
 		{"none", reqData, "", action.VerdictChallenge, ""},
 		{"malformed", reqData, "nonsense", action.VerdictChallenge, "clearance malformed"},
-		{"of another host", elsewhere, valid, action.VerdictChallenge, "clearance not signed for this site, host and browser"},
+		{"of another host", elsewhere, valid, action.VerdictChallenge, "clearance not signed for this site, host, browser and address"},
 	} {
 		tt.req.ToriiClearance = tt.clearance
 		decision := action.NewDecision()

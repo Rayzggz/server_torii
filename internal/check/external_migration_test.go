@@ -49,10 +49,10 @@ func testExternalRequest() request.UserRequest {
 // signExternalClearance builds a clearance with an arbitrary timestamp, so expiry can be tested.
 func signExternalClearance(reqData request.UserRequest, secret string, ts int64) string {
 	signer := token.Signer{Key: secret, Label: "EXTERNAL-CLEARANCE@"}
-	return signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Unix(ts, 0))
+	return signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), time.Unix(ts, 0))
 }
 
-// splitToken returns "v2.", the timestamp and the signature of a token.
+// splitToken returns "v3.", the timestamp and the signature of a token.
 func splitToken(t *testing.T, value string) (prefix, ts, sig string) {
 	t.Helper()
 	parts := strings.Split(value, ".")
@@ -99,6 +99,10 @@ func TestExternalMigrationClearance(t *testing.T) {
 		{"other user agent family", func(r *request.UserRequest) {
 			r.ToriiClearance = valid
 			r.UserAgent = "curl/8.0"
+		}, false},
+		{"other address", func(r *request.UserRequest) {
+			r.ToriiClearance = valid
+			r.RemoteIP = "203.0.113.11"
 		}, false},
 		{"within timeout", func(r *request.UserRequest) {
 			r.ToriiClearance = signExternalClearance(*r, ruleSet.Challenge.CookieKey, now-timeout+5)
@@ -155,6 +159,10 @@ func TestExternalMigrationSessionID(t *testing.T) {
 		{"other host", func(r *request.UserRequest) {
 			r.ToriiSessionID = valid
 			r.Host = "other.example.com"
+		}, false, ""},
+		{"other address", func(r *request.UserRequest) {
+			r.ToriiSessionID = valid
+			r.RemoteIP = "203.0.113.11"
 		}, false, ""},
 		{"other key", func(r *request.UserRequest) { r.ToriiSessionID = valid }, false, "another-secret-0123456789"},
 		{"clearance is not a session", func(r *request.UserRequest) {

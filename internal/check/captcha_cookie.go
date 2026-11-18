@@ -7,16 +7,18 @@ import (
 	"time"
 )
 
-// verifyToken checks a cookie value against the request's host and user agent.
+// verifyToken checks a cookie value against the request's host, user agent and client key: a
+// cookie is good only at the address it was issued to, so passing a challenge once does not
+// clear every client the cookie is copied to.
 func verifyToken(reqData request.UserRequest, signer token.Signer, value string, maxAge time.Duration) bool {
 	if value == "" {
 		return false
 	}
-	return signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), int64(maxAge/time.Second), time.Now())
+	return signer.Verify(value, reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), int64(maxAge/time.Second), time.Now())
 }
 
 func signToken(reqData request.UserRequest, signer token.Signer) []byte {
-	return []byte(signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), time.Now()))
+	return []byte(signer.Sign(reqData.Host, GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), time.Now()))
 }
 
 // challengeSigner signs one kind of token, "CLEARANCE" or "SESSION", of the site's challenge.
@@ -47,7 +49,7 @@ func clearanceProblem(reqData request.UserRequest, ruleSet config.RuleSet) strin
 		return ""
 	}
 	err := challengeSigner(ruleSet, "CLEARANCE").Check(reqData.ToriiClearance, reqData.Host,
-		GetClearanceUserAgent(reqData.UserAgent), int64(ruleSet.Challenge.ClearanceTTL/time.Second), time.Now())
+		GetClearanceUserAgent(reqData.UserAgent), reqData.ClientKey(), int64(ruleSet.Challenge.ClearanceTTL/time.Second), time.Now())
 	if err == nil {
 		return ""
 	}

@@ -70,27 +70,39 @@ test_captcha() {
     submit_altcha "$solved" "$jar"
     assert_eq "$HTTP_BODY" "$(jq -r .captcha_success "$E2E/fixtures/responses.json")"
     assert_contains "$(header Set-Cookie)" '__torii_clearance='
-    [[ "$(awk '$6=="__torii_clearance" {print $7}' "$jar")" == v2.*.* ]] || fail 'Clearance is not a v2 token'
-    [[ "$session" == v2.*.* ]] || fail 'CAPTCHA session is not a v2 token'
+    [[ "$(awk '$6=="__torii_clearance" {print $7}' "$jar")" == v3.*.* ]] || fail 'Clearance is not a v3 token'
+    [[ "$session" == v3.*.* ]] || fail 'CAPTCHA session is not a v3 token'
     expect pass 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
     # Nodes that hold the same key share cookies: the clearance earned on node 1 clears node 2.
     expect pass 2 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
-    expect pass 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
+    # A clearance is good only at the address that earned it: a listed client that was handed
+    # the cookie is still challenged.
+    expect challenge 1 198.51.100.60 0000000001000000 /neutral default_site -b "$jar"
     expect pass 1 203.0.113.130 0000000000100000 /challenge default_site -b "$jar"
     expect challenge 1 203.0.113.130 0000001000000000 /neutral exact.e2e.test -b "$jar"
     sleep 6
     expect challenge 1 203.0.113.130 0000001000000000 /neutral default_site -b "$jar"
+    # The listed client passes with a clearance of its own.
+    captcha_session "$other" default_site 198.51.100.60
+    public 1 /torii/captcha/challenge 198.51.100.60 default_site -b "$other"
+    assert_eq "$HTTP_CODE" 200
+    solve_altcha "$HTTP_BODY"
+    submit_altcha "$SOLUTION" "$other" default_site 198.51.100.60
+    expect pass 1 198.51.100.60 0000000001000000 /neutral default_site -b "$other"
+    # The session is bound to the address too: another client cannot fetch its challenge.
     captcha_session "$other" failures.test 203.0.113.133
     public 1 /torii/captcha/challenge 203.0.113.130 failures.test -b "$other"
+    assert_eq "$HTTP_CODE" 403 'session of another address'
+    public 1 /torii/captcha/challenge 203.0.113.133 failures.test -b "$other"
     assert_eq "$HTTP_CODE" 200
     challenge=$HTTP_BODY
     # Challenge expires independently; a fresh session cannot rescue the old proof.
     sleep 3
-    public 1 /torii/captcha/challenge 203.0.113.130 failures.test -b "$other"
+    public 1 /torii/captcha/challenge 203.0.113.133 failures.test -b "$other"
     assert_eq "$HTTP_CODE" 403 'expired session'
     solve_altcha "$challenge"
     captcha_session "$other" failures.test 203.0.113.134
-    submit_altcha "$SOLUTION" "$other" failures.test 203.0.113.131
+    submit_altcha "$SOLUTION" "$other" failures.test 203.0.113.134
     assert_eq "$HTTP_BODY" bad 'expired challenge'
     for ((i=0; i<3; i++)); do
         public 1 /torii/captcha 203.0.113.132 failures.test -d ''
