@@ -29,6 +29,7 @@ http_flood:
   enabled: false
   speed_limit: ["5/10s"]
   same_uri_limit: ["3/10s"]
+  same_uri_key: path
   failure_limit: ["3/30s"]
   failure_block_duration: 300s
 verify_bot:

@@ -26,10 +26,33 @@ func TestCanonicalizeURI(t *testing.T) {
 		{"/threads/title.123/", "/threads/title.:id"},
 		{"/api/v2/items", "/api/v2/items"},
 		{"", "/"},
+		{"?x=1", "/"},
 	}
 	for _, tt := range tests {
 		if got := CanonicalizeURI(tt.input); got != tt.want {
 			t.Errorf("CanonicalizeURI(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+// CleanPath drops the query and respellings of a path, and keeps its IDs.
+func TestCleanPath(t *testing.T) {
+	for _, tt := range []struct {
+		input string
+		want  string
+	}{
+		{"/search", "/search"},
+		{"/search?x=1", "/search"},
+		{"/search#top", "/search"},
+		{"//search/./", "/search"},
+		{"/a/../search/", "/search"},
+		{"/post/123?page=2", "/post/123"},
+		{"/", "/"},
+		{"", "/"},
+		{"?x=1", "/"},
+	} {
+		if got := CleanPath(tt.input); got != tt.want {
+			t.Errorf("CleanPath(%q) = %q, want %q", tt.input, got, tt.want)
 		}
 	}
 }

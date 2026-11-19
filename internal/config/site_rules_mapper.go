@@ -89,6 +89,7 @@ type httpFloodRuleWrapper struct {
 	Enabled              bool          `yaml:"enabled"`
 	SpeedLimit           []string      `yaml:"speed_limit" validate:"min=1,dive"`
 	SameURILimit         []string      `yaml:"same_uri_limit" validate:"min=1,dive"`
+	SameURIKey           SameURIKey    `yaml:"same_uri_key" validate:"required,oneof=full path canonical"`
 	FailureLimit         []string      `yaml:"failure_limit" validate:"min=1,dive"`
 	FailureBlockDuration time.Duration `yaml:"failure_block_duration" validate:"required,min=1s"`
 }
@@ -211,6 +212,7 @@ func mapHTTPFloodRule(wrapper *httpFloodRuleWrapper, dest *HTTPFloodRule) error 
 		return err
 	}
 	dest.Enabled = wrapper.Enabled
+	dest.SameURIKey = wrapper.SameURIKey
 	dest.FailureBlockDuration = wrapper.FailureBlockDuration
 	for _, list := range []struct {
 		key  string

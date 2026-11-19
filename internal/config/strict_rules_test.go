@@ -11,6 +11,7 @@ const strictHTTPFlood = `http_flood:
   enabled: false
   speed_limit: ["5/10s"]
   same_uri_limit: ["3/10s"]
+  same_uri_key: path
   failure_limit: ["3/30s"]
   failure_block_duration: 300s
 `
@@ -32,6 +33,8 @@ func TestLoadRules_Strict(t *testing.T) {
 		"incomplete, disabled":      {"http_flood: {enabled: false}", "http_flood.speed_limit: list needs at least 1 entry"},
 		"empty limit list":          {strings.Replace(strictHTTPFlood, `["5/10s"]`, "[]", 1), "http_flood.speed_limit: list needs at least 1 entry"},
 		"bad rate":                  {strings.Replace(strictHTTPFlood, "5/10s", "fast", 1), "fast"},
+		"flood without URI key":     {strings.Replace(strictHTTPFlood, "  same_uri_key: path\n", "", 1), "http_flood.same_uri_key: field is required"},
+		"bad flood URI key":         {strings.Replace(strictHTTPFlood, "key: path", "key: query", 1), "http_flood.same_uri_key: value must be one of: full path canonical"},
 		"bad block duration":        {strings.Replace(strictHTTPFlood, "300", "0", 1), "http_flood.failure_block_duration: field is required"},
 		"incomplete challenge":      {"challenge: {enabled: false}", "challenge.clearance_ttl: field is required"},
 		"second document":           {"lists: []\n---\nlists: []", "more than one YAML document"},

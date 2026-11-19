@@ -81,6 +81,11 @@ http_flood:
     - "150/10s"
   same_uri_limit: # requests of one client for one URI
     - "50/10s"
+  # What counts as one URI for same_uri_limit:
+  #   full: the URI as sent, query string included; /search?x=1 and /search?x=2 are counted apart
+  #   path: the path without the query string
+  #   canonical: the path with IDs and tokens masked; /post/1 and /post/2 are counted together
+  same_uri_key: path
   failure_limit: # a client that runs into the two limits above more often than this is blocked
     - "300/5m"
   failure_block_duration: 20m

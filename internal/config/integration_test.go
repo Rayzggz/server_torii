@@ -50,6 +50,7 @@ http_flood:
   same_uri_limit:
     - "5/30s"
     - "8/45s"
+  same_uri_key: canonical
   failure_limit:
     - "4/5m"
   failure_block_duration: 600s
@@ -164,6 +165,7 @@ http_flood:
     - "11/4m"
   same_uri_limit:
     - "9/1m"
+  same_uri_key: full
   failure_limit:
     - "4/15m"
   failure_block_duration: 600s

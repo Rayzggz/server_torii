@@ -15,16 +15,15 @@ var (
 	reNumSuffix = regexp.MustCompile(`^(.*[-_.])\d+$`)
 )
 
-// CanonicalizeURI normalizes a URI by removing query/fragments,
-// cleaning the path, and masking IDs and tokens.
-func CanonicalizeURI(uri string) string {
-	if uri == "" {
-		return "/"
-	}
-
+// CleanPath returns the path of a URI: the query and the fragment are removed and the path is
+// cleaned, so /a//b/./?x=1 and /a/b are the same path.
+func CleanPath(uri string) string {
 	// 1. Remove Query and Fragment
 	if idx := strings.IndexAny(uri, "?#"); idx != -1 {
 		uri = uri[:idx]
+	}
+	if uri == "" {
+		return "/"
 	}
 
 	// 2. Clean Path (handles //, .., .)
@@ -34,9 +33,14 @@ func CanonicalizeURI(uri string) string {
 	if !strings.HasPrefix(cleaned, "/") {
 		cleaned = "/" + cleaned
 	}
+	return cleaned
+}
 
-	// 4. Parameter Replacement (:id, :token)
-	segments := strings.Split(cleaned, "/")
+// CanonicalizeURI normalizes a URI by removing query/fragments,
+// cleaning the path, and masking IDs and tokens.
+func CanonicalizeURI(uri string) string {
+	// Parameter Replacement (:id, :token)
+	segments := strings.Split(CleanPath(uri), "/")
 	for i, seg := range segments {
 		if seg == "" {
 			continue

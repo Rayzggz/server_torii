@@ -155,6 +155,14 @@ The link between Torii and the external provider did not change.
 The limits of a list are checked in the order written, and two entries with the same window
 are rejected.
 
+`same_uri_key` is new and required. It decides what `same_uri_limit` takes to be one URI:
+
+| Value | Counted together |
+| --- | --- |
+| `full` | requests for the same URI, query string included; this is what 1.x did, and a client gets past the limit by changing the query string with every request |
+| `path` | requests for the same path, whatever their query string |
+| `canonical` | requests for the same path once IDs and tokens are masked, as the traffic analyzer groups them: `/post/1` and `/post/2` |
+
 ### `verify_bot`
 
 ```yaml

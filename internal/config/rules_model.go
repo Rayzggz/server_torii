@@ -74,13 +74,40 @@ func AllBots() map[string]bool {
 	return all
 }
 
+// SameURIKey is what the same-URI limit takes two requests to be for the same URI by.
+type SameURIKey string
+
+const (
+	// SameURIKeyFull is the URI as the client sent it, query string included. A client gets
+	// past the limit by adding a query string that changes with every request.
+	SameURIKeyFull SameURIKey = "full"
+	// SameURIKeyPath is the cleaned path, without the query string.
+	SameURIKeyPath SameURIKey = "path"
+	// SameURIKeyCanonical is the path with its IDs and tokens masked, as the traffic analyzer
+	// groups URIs: /post/1 and /post/2 count together.
+	SameURIKeyCanonical SameURIKey = "canonical"
+)
+
+// Of returns the part of the URI the mode counts requests by.
+func (k SameURIKey) Of(uri string) string {
+	switch k {
+	case SameURIKeyPath:
+		return action.CleanPath(uri)
+	case SameURIKeyCanonical:
+		return action.CanonicalizeURI(uri)
+	}
+	return uri
+}
+
 // HTTPFloodRule limits how fast one client may send requests. Each list is checked in the
 // order it is configured in.
 type HTTPFloodRule struct {
 	Enabled bool
-	// SpeedLimit bounds the requests of a client, SameURILimit its requests for one URI.
+	// SpeedLimit bounds the requests of a client, SameURILimit its requests for one URI;
+	// SameURIKey decides which URIs are one.
 	SpeedLimit   ratelimit.Rates
 	SameURILimit ratelimit.Rates
+	SameURIKey   SameURIKey
 	// FailureLimit bounds how often a client may run into the two limits above; beyond it the
 	// client is blocked for FailureBlockDuration.
 	FailureLimit         ratelimit.Rates
