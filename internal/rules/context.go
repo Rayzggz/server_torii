@@ -6,6 +6,7 @@ import (
 	"path"
 	"server_torii/internal/integrity"
 	"server_torii/internal/request"
+	"strconv"
 	"strings"
 )
 
@@ -131,6 +132,16 @@ func (c *Context) browserEvidence() bool {
 		c.hasEvidence = c.req.HasBrowserEvidence(c.evidence)
 	}
 	return c.hasEvidence
+}
+
+// connectionRequests returns the number of the request among those of its connection, 1 for
+// the first, as the connector reported it. It is 0 when the connector did not.
+func (c *Context) connectionRequests() int64 {
+	n, err := strconv.ParseInt(c.header("Torii-Connection-Requests"), 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // clientHello returns the TLS ClientHello the connector reported for the request.

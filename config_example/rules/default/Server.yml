@@ -156,6 +156,8 @@ custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after
   #   http.request.cookies["name"], torii.browser_evidence,
   #   http.request.version ("HTTP/2.0"), http.request.scheme ("https"), http.request.header_order: the names of
   #   the request headers in the order the client sent them, separated by commas ("Host,User-Agent,Accept"),
+  #   http.connection.requests: the number of the request among those of its connection, 1 for the first
+  #   (a number: eq ne lt le gt ge), 0 when the connector does not report it,
   #   tls.version: the highest TLS version the client offered ("0304" is TLS 1.3), tls.ciphers, tls.extensions,
   #   tls.groups, tls.alpn: what the client offered in its TLS handshake, in its order, separated by commas, in
   #   hexadecimal as on the wire ("1301,1302,c02b"; ALPN by name: "h2,http/1.1"). All of these come from the
@@ -163,7 +165,7 @@ custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after
   #   torii.browser_integrity.<rule>: whether the request breaks that rule of browser_integrity above,
   #   whatever that section has switched on, e.g. torii.browser_integrity.no_fetch_metadata, .tls
   #   http.request.method is the method of the client request, also when it has a body the check never sees
-  # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (len() only)
+  # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (numbers only: len() and http.connection.requests)
   #   in $name tests a field against a list above: an IP field against an ip list, a string field against a url list
   # Logic: not !, and &&, xor ^^, or || (in this precedence order), parentheses
   # Functions: lower(), upper(), url_decode(), len(), starts_with(f, "x"), ends_with(f, "x")

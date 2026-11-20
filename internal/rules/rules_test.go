@@ -32,6 +32,7 @@ func testRequestWithoutCountry() *request.UserRequest {
 	headers.Add("Cookie", "session=abc; theme=dark")
 	headers.Set("Torii-Scheme", "https")
 	headers.Set("Torii-Proto", "HTTP/2.0")
+	headers.Set("Torii-Connection-Requests", "3")
 	headers.Set("Torii-Header-Order", "Host,User-Agent,Accept")
 	headers.Set("Torii-TLS", "0303|0a0a,1301,c02b|0000,0017,002b|0a0a,0304,0303|001d,0017|00|0403,0804|h2,http/1.1")
 	return &request.UserRequest{
@@ -85,6 +86,8 @@ func TestEval(t *testing.T) {
 		{`http.request.version eq "HTTP/2.0"`, true},
 		{`http.request.scheme eq "https"`, true},
 		{`starts_with(http.request.header_order, "Host,User-Agent")`, true},
+		{`http.connection.requests eq 3`, true},
+		{`http.connection.requests gt 3`, false},
 		{`tls.version eq "0304"`, true},
 		{`tls.ciphers contains "c02b"`, true},
 		{`tls.ciphers contains "c02c"`, false},
@@ -142,6 +145,7 @@ func TestEvalMissingData(t *testing.T) {
 		{`http.request.version eq ""`, true},
 		{`http.request.scheme eq ""`, true},
 		{`http.request.header_order eq ""`, true},
+		{`http.connection.requests eq 0`, true},
 		{`tls.version eq ""`, true},
 		{`tls.alpn eq ""`, true},
 	}

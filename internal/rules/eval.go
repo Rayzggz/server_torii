@@ -77,6 +77,7 @@ var fields = map[string]fieldNode{
 	"http.request.version":      stringField(func(ctx *Context) string { return integrity.ReportedProtocol(ctx.req.Headers) }),
 	"http.request.scheme":       stringField(func(ctx *Context) string { return integrity.ReportedScheme(ctx.req.Headers) }),
 	"http.request.header_order": stringField(func(ctx *Context) string { return integrity.ReportedHeaderOrder(ctx.req.Headers) }),
+	"http.connection.requests":  {k: kindInt, get: func(ctx *Context) value { return value{n: ctx.connectionRequests()} }},
 	"tls.version":               stringField(func(ctx *Context) string { return ctx.clientHello().Version }),
 	"tls.ciphers":               stringField(func(ctx *Context) string { return ctx.clientHello().Ciphers }),
 	"tls.extensions":            stringField(func(ctx *Context) string { return ctx.clientHello().Extensions }),
