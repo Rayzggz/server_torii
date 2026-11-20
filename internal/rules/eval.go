@@ -3,6 +3,7 @@ package rules
 import (
 	"net/netip"
 	"net/url"
+	"server_torii/internal/integrity"
 	"strings"
 )
 
@@ -73,6 +74,19 @@ var fields = map[string]fieldNode{
 	"http.cookie":                     stringField(func(ctx *Context) string { return strings.Join(ctx.req.Headers.Values("Cookie"), "; ") }),
 	"http.x_forwarded_for":            stringField(func(ctx *Context) string { return ctx.header("X-Forwarded-For") }),
 	"torii.browser_evidence":          {k: kindBool, get: func(ctx *Context) value { return value{b: ctx.browserEvidence()} }},
+}
+
+// integrityFieldPrefix starts the fields that say whether the request breaks a rule of package
+// integrity: torii.browser_integrity.no_fetch_metadata and so on, one for every rule. They do
+// not depend on the browser_integrity section of the site, which applies the same rules.
+const integrityFieldPrefix = "torii.browser_integrity."
+
+func init() {
+	for _, rule := range integrity.Rules {
+		fields[integrityFieldPrefix+rule] = fieldNode{k: kindBool, get: func(ctx *Context) value {
+			return value{b: ctx.breaksIntegrity(rule)}
+		}}
+	}
 }
 
 // mapFields are indexed with a string key, e.g. http.request.headers["accept-language"].

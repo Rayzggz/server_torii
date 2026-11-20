@@ -3,6 +3,7 @@ package rules
 import (
 	"net/http"
 	"net/netip"
+	"server_torii/internal/integrity"
 	"server_torii/internal/request"
 	"strings"
 	"testing"
@@ -208,5 +209,46 @@ func TestWildcardEscapes(t *testing.T) {
 		if got := re.MatchString(tc.input); got != tc.want {
 			t.Errorf("wildcard %q on %q = %v, want %v", tc.pattern, tc.input, got, tc.want)
 		}
+	}
+}
+
+// Every rule of the browser integrity check is a field, whatever the site's own check applies.
+func TestBrowserIntegrityFields(t *testing.T) {
+	headers := http.Header{}
+	headers.Set("Accept", "*/*")
+	headers.Set("Accept-Language", "en")
+	headers.Set("Torii-Scheme", "https")
+	req := &request.UserRequest{
+		RemoteIP:  "8.8.8.8",
+		Uri:       "/",
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
+		Headers:   headers,
+	}
+	for expr, want := range map[string]bool{
+		`torii.browser_integrity.no_fetch_metadata`:                                      true,
+		`torii.browser_integrity.no_client_hints`:                                        true,
+		`torii.browser_integrity.no_user_agent`:                                          false,
+		`torii.browser_integrity.missing_headers`:                                        false,
+		`torii.browser_integrity.tls`:                                                    false,
+		`not torii.browser_integrity.no_fetch_metadata`:                                  false,
+		`torii.browser_integrity.no_fetch_metadata and ip.src in {8.8.8.0/24}`:           true,
+		`torii.browser_integrity.tls or torii.browser_integrity.fetch_metadata_mismatch`: false,
+	} {
+		prog, err := Compile(expr, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", expr, err)
+		}
+		if got := prog.Eval(NewContext(req, nil)); got != want {
+			t.Errorf("%s = %v, want %v", expr, got, want)
+		}
+	}
+	// One field for every rule, and none for a rule that does not exist.
+	for _, rule := range integrity.Rules {
+		if _, err := Compile("torii.browser_integrity."+rule, nil); err != nil {
+			t.Errorf("%s: %v", rule, err)
+		}
+	}
+	if _, err := Compile("torii.browser_integrity.no_such_rule", nil); err == nil {
+		t.Error("a rule that does not exist is accepted as a field")
 	}
 }

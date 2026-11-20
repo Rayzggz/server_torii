@@ -4,6 +4,7 @@ import (
 	"net/netip"
 	"net/url"
 	"path"
+	"server_torii/internal/integrity"
 	"server_torii/internal/request"
 	"strings"
 )
@@ -30,6 +31,8 @@ type Context struct {
 
 	evidenceDone bool
 	hasEvidence  bool
+
+	integrity *integrity.Request
 }
 
 // NewContext builds an evaluation context; evidence may be nil.
@@ -108,6 +111,15 @@ func (c *Context) cookie(name string) string {
 
 func (c *Context) countryCode() string {
 	return c.req.Country
+}
+
+// breaksIntegrity reports whether the request breaks a rule of package integrity.
+func (c *Context) breaksIntegrity(rule string) bool {
+	if c.integrity == nil {
+		c.integrity = integrity.New(c.req.UserAgent, c.req.Headers)
+	}
+	_, broken := c.integrity.Breaks(rule)
+	return broken
 }
 
 func (c *Context) browserEvidence() bool {
