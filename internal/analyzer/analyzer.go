@@ -36,6 +36,9 @@ type LogEntry struct {
 	Fetch        string // Sec-Fetch-Dest/Mode/Site
 	HasLanguage  bool   // the client sent Accept-Language
 	ContentType  string // of the response
+	// Incomplete says that the response was not sent to its end, which Status does not tell: a
+	// client that goes away while the body is sent leaves the status of the response it got.
+	Incomplete bool
 
 	RequestTime  time.Duration
 	UpstreamTime time.Duration

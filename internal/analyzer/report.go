@@ -38,6 +38,7 @@ import (
 //	conn_reqs  number of requests made over the connection so far
 //	fetch      Sec-Fetch-Dest, -Mode and -Site joined by "/"
 //	lang       whether the client sent Accept-Language
+//	incomplete whether the response was not sent to its end: the client went away first
 //	ctype      Content-Type of the response
 //	rt         time taken to serve the request, in milliseconds
 //	urt        time the upstream took, in milliseconds
@@ -67,6 +68,7 @@ type report struct {
 	ConnRequests        int64  `json:"conn_reqs"`
 	Fetch               string `json:"fetch"`
 	Lang                bool   `json:"lang"`
+	Incomplete          bool   `json:"incomplete"`
 	ContentType         string `json:"ctype"`
 	RequestTime         int64  `json:"rt"`
 	UpstreamTime        int64  `json:"urt"`
@@ -115,6 +117,7 @@ func parseReport(data []byte) (LogEntry, error) {
 		ConnRequests:        r.ConnRequests,
 		Fetch:               r.Fetch,
 		HasLanguage:         r.Lang,
+		Incomplete:          r.Incomplete,
 		ContentType:         r.ContentType,
 		RequestTime:         time.Duration(r.RequestTime) * time.Millisecond,
 		UpstreamTime:        time.Duration(r.UpstreamTime) * time.Millisecond,

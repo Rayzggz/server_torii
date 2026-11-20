@@ -17,7 +17,7 @@ func TestParseReport(t *testing.T) {
 	entry, err := parseReport([]byte(`{"v":1,"ts":1700000000123,"site":"shop","ip":"203.0.113.5","host":"shop.example",` +
 		`"method":"GET","uri":"/a b?x=\"1\"","status":404,"decision":"pass","reason":"","ua":"Mozilla/5.0 (X11)",` +
 		`"referer":"https://shop.example/","proto":"HTTP/2.0","conn_reqs":7,"fetch":"document/navigate/same-origin",` +
-		`"lang":true,"ctype":"text/html","rt":12,"urt":9,"uct":1,"uht":8,"ustatus":404,"cache":"MISS","bytes":512,"req_len":321}`))
+		`"lang":true,"incomplete":true,"ctype":"text/html","rt":12,"urt":9,"uct":1,"uht":8,"ustatus":404,"cache":"MISS","bytes":512,"req_len":321}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func TestParseReport(t *testing.T) {
 		Site: "shop", IP: "203.0.113.5", URI: `/a b?x="1"`, Status: 404, Timestamp: 1700000000123,
 		Host: "shop.example", Method: "GET", Decision: "pass",
 		UserAgent: "Mozilla/5.0 (X11)", Referer: "https://shop.example/", Proto: "HTTP/2.0", ConnRequests: 7,
-		Fetch: "document/navigate/same-origin", HasLanguage: true, ContentType: "text/html",
+		Fetch: "document/navigate/same-origin", HasLanguage: true, Incomplete: true, ContentType: "text/html",
 		RequestTime: 12 * time.Millisecond, UpstreamTime: 9 * time.Millisecond, UpstreamStatus: 404,
 		UpstreamConnectTime: time.Millisecond, UpstreamHeaderTime: 8 * time.Millisecond,
 		Cache: "MISS", Bytes: 512, RequestLength: 321,
