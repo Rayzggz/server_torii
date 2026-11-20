@@ -41,6 +41,8 @@ import (
 //	ctype      Content-Type of the response
 //	rt         time taken to serve the request, in milliseconds
 //	urt        time the upstream took, in milliseconds
+//	uct        time it took to connect to the upstream, in milliseconds
+//	uht        time until the upstream had sent its response header, in milliseconds
 //	ustatus    status the upstream answered with
 //	cache      upstream cache status, such as "HIT"
 //	bytes      size of the response body sent
@@ -49,29 +51,31 @@ const reportVersion = 1
 
 // report is the wire form of a request report.
 type report struct {
-	Version        int    `json:"v"`
-	Timestamp      int64  `json:"ts"`
-	Site           string `json:"site"`
-	IP             string `json:"ip"`
-	Host           string `json:"host"`
-	Method         string `json:"method"`
-	URI            string `json:"uri"`
-	Status         int    `json:"status"`
-	Decision       string `json:"decision"`
-	Reason         string `json:"reason"`
-	UserAgent      string `json:"ua"`
-	Referer        string `json:"referer"`
-	Proto          string `json:"proto"`
-	ConnRequests   int64  `json:"conn_reqs"`
-	Fetch          string `json:"fetch"`
-	Lang           bool   `json:"lang"`
-	ContentType    string `json:"ctype"`
-	RequestTime    int64  `json:"rt"`
-	UpstreamTime   int64  `json:"urt"`
-	UpstreamStatus int    `json:"ustatus"`
-	Cache          string `json:"cache"`
-	Bytes          int64  `json:"bytes"`
-	RequestLength  int64  `json:"req_len"`
+	Version             int    `json:"v"`
+	Timestamp           int64  `json:"ts"`
+	Site                string `json:"site"`
+	IP                  string `json:"ip"`
+	Host                string `json:"host"`
+	Method              string `json:"method"`
+	URI                 string `json:"uri"`
+	Status              int    `json:"status"`
+	Decision            string `json:"decision"`
+	Reason              string `json:"reason"`
+	UserAgent           string `json:"ua"`
+	Referer             string `json:"referer"`
+	Proto               string `json:"proto"`
+	ConnRequests        int64  `json:"conn_reqs"`
+	Fetch               string `json:"fetch"`
+	Lang                bool   `json:"lang"`
+	ContentType         string `json:"ctype"`
+	RequestTime         int64  `json:"rt"`
+	UpstreamTime        int64  `json:"urt"`
+	UpstreamConnectTime int64  `json:"uct"`
+	UpstreamHeaderTime  int64  `json:"uht"`
+	UpstreamStatus      int    `json:"ustatus"`
+	Cache               string `json:"cache"`
+	Bytes               int64  `json:"bytes"`
+	RequestLength       int64  `json:"req_len"`
 }
 
 // parseReport decodes one datagram. Anything before the JSON object is ignored, so a sender may
@@ -96,28 +100,30 @@ func parseReport(data []byte) (LogEntry, error) {
 		return LogEntry{}, fmt.Errorf("invalid site")
 	}
 	return LogEntry{
-		Site:           r.Site,
-		IP:             r.IP,
-		URI:            r.URI,
-		Status:         r.Status,
-		Timestamp:      r.Timestamp,
-		Host:           r.Host,
-		Method:         r.Method,
-		Decision:       r.Decision,
-		Reason:         r.Reason,
-		UserAgent:      r.UserAgent,
-		Referer:        r.Referer,
-		Proto:          r.Proto,
-		ConnRequests:   r.ConnRequests,
-		Fetch:          r.Fetch,
-		HasLanguage:    r.Lang,
-		ContentType:    r.ContentType,
-		RequestTime:    time.Duration(r.RequestTime) * time.Millisecond,
-		UpstreamTime:   time.Duration(r.UpstreamTime) * time.Millisecond,
-		UpstreamStatus: r.UpstreamStatus,
-		Cache:          r.Cache,
-		Bytes:          r.Bytes,
-		RequestLength:  r.RequestLength,
+		Site:                r.Site,
+		IP:                  r.IP,
+		URI:                 r.URI,
+		Status:              r.Status,
+		Timestamp:           r.Timestamp,
+		Host:                r.Host,
+		Method:              r.Method,
+		Decision:            r.Decision,
+		Reason:              r.Reason,
+		UserAgent:           r.UserAgent,
+		Referer:             r.Referer,
+		Proto:               r.Proto,
+		ConnRequests:        r.ConnRequests,
+		Fetch:               r.Fetch,
+		HasLanguage:         r.Lang,
+		ContentType:         r.ContentType,
+		RequestTime:         time.Duration(r.RequestTime) * time.Millisecond,
+		UpstreamTime:        time.Duration(r.UpstreamTime) * time.Millisecond,
+		UpstreamConnectTime: time.Duration(r.UpstreamConnectTime) * time.Millisecond,
+		UpstreamHeaderTime:  time.Duration(r.UpstreamHeaderTime) * time.Millisecond,
+		UpstreamStatus:      r.UpstreamStatus,
+		Cache:               r.Cache,
+		Bytes:               r.Bytes,
+		RequestLength:       r.RequestLength,
 	}, nil
 }
 

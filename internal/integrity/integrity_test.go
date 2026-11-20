@@ -284,3 +284,27 @@ func TestParseBrowserClaim(t *testing.T) {
 		}
 	}
 }
+
+func TestReportedClientHello(t *testing.T) {
+	cases := []struct {
+		name, header string
+		want         ClientHello
+	}{
+		{"TLS 1.3", "0303|0a0a,1301|0000,002b|0a0a,0303,0304|001d|00|0403|h2,http/1.1",
+			ClientHello{Version: "0304", Ciphers: "0a0a,1301", Extensions: "0000,002b", Groups: "001d", ALPN: "h2,http/1.1"}},
+		{"no supported_versions", "0303|c02b|0000||0017|00|0403|",
+			ClientHello{Version: "0303", Ciphers: "c02b", Extensions: "0000", Groups: "0017"}},
+		{"only a reserved version", "0303|c02b|002b|0a0a||||", ClientHello{Version: "0303", Ciphers: "c02b", Extensions: "002b"}},
+		{"not reported", "", ClientHello{}},
+		{"another format", "0303|c02b|0000", ClientHello{}},
+	}
+	for _, tc := range cases {
+		h := http.Header{}
+		if tc.header != "" {
+			h.Set(headerTLS, tc.header)
+		}
+		if got := ReportedClientHello(h); got != tc.want {
+			t.Errorf("%s: ReportedClientHello = %+v, want %+v", tc.name, got, tc.want)
+		}
+	}
+}

@@ -33,6 +33,9 @@ type Context struct {
 	hasEvidence  bool
 
 	integrity *integrity.Request
+
+	helloDone bool
+	hello     integrity.ClientHello
 }
 
 // NewContext builds an evaluation context; evidence may be nil.
@@ -128,4 +131,13 @@ func (c *Context) browserEvidence() bool {
 		c.hasEvidence = c.req.HasBrowserEvidence(c.evidence)
 	}
 	return c.hasEvidence
+}
+
+// clientHello returns the TLS ClientHello the connector reported for the request.
+func (c *Context) clientHello() integrity.ClientHello {
+	if !c.helloDone {
+		c.helloDone = true
+		c.hello = integrity.ReportedClientHello(c.req.Headers)
+	}
+	return c.hello
 }

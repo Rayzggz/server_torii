@@ -73,7 +73,16 @@ var fields = map[string]fieldNode{
 	"http.referer":                    stringField(func(ctx *Context) string { return ctx.header("Referer") }),
 	"http.cookie":                     stringField(func(ctx *Context) string { return strings.Join(ctx.req.Headers.Values("Cookie"), "; ") }),
 	"http.x_forwarded_for":            stringField(func(ctx *Context) string { return ctx.header("X-Forwarded-For") }),
-	"torii.browser_evidence":          {k: kindBool, get: func(ctx *Context) value { return value{b: ctx.browserEvidence()} }},
+	// What the connector says about the connection of the client; empty when it does not.
+	"http.request.version":      stringField(func(ctx *Context) string { return integrity.ReportedProtocol(ctx.req.Headers) }),
+	"http.request.scheme":       stringField(func(ctx *Context) string { return integrity.ReportedScheme(ctx.req.Headers) }),
+	"http.request.header_order": stringField(func(ctx *Context) string { return integrity.ReportedHeaderOrder(ctx.req.Headers) }),
+	"tls.version":               stringField(func(ctx *Context) string { return ctx.clientHello().Version }),
+	"tls.ciphers":               stringField(func(ctx *Context) string { return ctx.clientHello().Ciphers }),
+	"tls.extensions":            stringField(func(ctx *Context) string { return ctx.clientHello().Extensions }),
+	"tls.groups":                stringField(func(ctx *Context) string { return ctx.clientHello().Groups }),
+	"tls.alpn":                  stringField(func(ctx *Context) string { return ctx.clientHello().ALPN }),
+	"torii.browser_evidence":    {k: kindBool, get: func(ctx *Context) value { return value{b: ctx.browserEvidence()} }},
 }
 
 // integrityFieldPrefix starts the fields that say whether the request breaks a rule of package

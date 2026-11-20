@@ -289,12 +289,62 @@ func findHeaderOrder(claim browserClaim, h http.Header) string {
 // The fields of Torii-TLS this check reads, see the README of the connector.
 const (
 	tlsFields            = 8
+	tlsLegacyVersion     = 0
 	tlsCiphers           = 1
 	tlsExtensions        = 2
 	tlsSupportedVersions = 3
 	tlsGroups            = 4
 	tlsALPN              = 7
+
+	// reservedValue is how the connector writes the values of RFC 8701.
+	reservedValue = "0a0a"
 )
+
+// ReportedScheme, ReportedProtocol and ReportedHeaderOrder return what the connector said about
+// how the client reached it, as it said it: "https", "HTTP/2.0", "Host,User-Agent,Accept". Each
+// is empty when the connector did not say.
+func ReportedScheme(h http.Header) string      { return h.Get(headerScheme) }
+func ReportedProtocol(h http.Header) string    { return h.Get(headerProto) }
+func ReportedHeaderOrder(h http.Header) string { return h.Get(headerHeaderOrder) }
+
+// ClientHello is what a TLS client offered, as the connector wrote it: lists separated by
+// commas in the order of the client, values in hexadecimal, ALPN protocols by name.
+type ClientHello struct {
+	// Version is the highest version the client offered, such as "0304" for TLS 1.3.
+	Version    string
+	Ciphers    string
+	Extensions string
+	Groups     string
+	ALPN       string
+}
+
+// ReportedClientHello returns the ClientHello the connector reported. Every field is empty
+// when it reported none, or something that is not a ClientHello as this package knows it.
+func ReportedClientHello(h http.Header) ClientHello {
+	fields := strings.Split(h.Get(headerTLS), "|")
+	if len(fields) != tlsFields {
+		return ClientHello{}
+	}
+	// A client that knows TLS 1.3 names its versions in an extension and says 1.2 in the
+	// field of old. The reserved value among them is no version.
+	version := fields[tlsLegacyVersion]
+	offered := ""
+	for _, v := range strings.Split(fields[tlsSupportedVersions], ",") {
+		if v != reservedValue && v > offered {
+			offered = v
+		}
+	}
+	if offered != "" {
+		version = offered
+	}
+	return ClientHello{
+		Version:    version,
+		Ciphers:    fields[tlsCiphers],
+		Extensions: fields[tlsExtensions],
+		Groups:     fields[tlsGroups],
+		ALPN:       fields[tlsALPN],
+	}
+}
 
 // clientHello returns the fields of the ClientHello the connector reported, each a list. It
 // returns nil when there is none to judge: no TLS, a connector that does not report it, or

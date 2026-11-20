@@ -37,12 +37,16 @@ type LogEntry struct {
 	HasLanguage  bool   // the client sent Accept-Language
 	ContentType  string // of the response
 
-	RequestTime    time.Duration
-	UpstreamTime   time.Duration
-	UpstreamStatus int
-	Cache          string
-	Bytes          int64
-	RequestLength  int64
+	RequestTime  time.Duration
+	UpstreamTime time.Duration
+	// UpstreamConnectTime is how long connecting to the upstream took, and UpstreamHeaderTime
+	// how long it took the upstream to send its response header, counted from the same moment.
+	UpstreamConnectTime time.Duration
+	UpstreamHeaderTime  time.Duration
+	UpstreamStatus      int
+	Cache               string
+	Bytes               int64
+	RequestLength       int64
 }
 
 // answeredByTorii reports whether the response came from Torii (a block, challenge, rate limit

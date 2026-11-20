@@ -30,6 +30,10 @@ func testRequestWithoutCountry() *request.UserRequest {
 	headers.Set("Accept-Language", "zh-CN,zh;q=0.9")
 	headers.Set("X-Forwarded-For", "203.0.113.9, 10.0.0.1")
 	headers.Add("Cookie", "session=abc; theme=dark")
+	headers.Set("Torii-Scheme", "https")
+	headers.Set("Torii-Proto", "HTTP/2.0")
+	headers.Set("Torii-Header-Order", "Host,User-Agent,Accept")
+	headers.Set("Torii-TLS", "0303|0a0a,1301,c02b|0000,0017,002b|0a0a,0304,0303|001d,0017|00|0403,0804|h2,http/1.1")
 	return &request.UserRequest{
 		RemoteIP:  "8.8.8.8",
 		Uri:       "/wp-admin/Setup.PHP?step=2&lang=en%20US",
@@ -78,6 +82,15 @@ func TestEval(t *testing.T) {
 		{`ip.src in {2001:db8::/32 8.8.8.8}`, true},
 		{`ip.src.country eq "US"`, true},
 		{`ip.geoip.country in {"CN" "RU"}`, false},
+		{`http.request.version eq "HTTP/2.0"`, true},
+		{`http.request.scheme eq "https"`, true},
+		{`starts_with(http.request.header_order, "Host,User-Agent")`, true},
+		{`tls.version eq "0304"`, true},
+		{`tls.ciphers contains "c02b"`, true},
+		{`tls.ciphers contains "c02c"`, false},
+		{`tls.extensions eq "0000,0017,002b"`, true},
+		{`tls.groups eq "001d,0017"`, true},
+		{`tls.alpn contains "h2"`, true},
 		{`torii.browser_evidence`, true},
 		{`not torii.browser_evidence`, false},
 		{`lower(http.request.uri.path) eq "/wp-admin/setup.php"`, true},
@@ -126,6 +139,11 @@ func TestEvalMissingData(t *testing.T) {
 		{`http.request.cookies["a"] eq ""`, true},
 		{`torii.browser_evidence`, false},
 		{`http.request.uri.path.extension eq ""`, true},
+		{`http.request.version eq ""`, true},
+		{`http.request.scheme eq ""`, true},
+		{`http.request.header_order eq ""`, true},
+		{`tls.version eq ""`, true},
+		{`tls.alpn eq ""`, true},
 	}
 	for _, tc := range cases {
 		prog, err := Compile(tc.expr, nil)
