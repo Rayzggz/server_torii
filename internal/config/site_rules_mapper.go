@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"server_torii/internal/action"
 	"server_torii/internal/feature"
+	"server_torii/internal/integrity"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/rules"
 	"slices"
@@ -17,13 +18,14 @@ const DefaultAltchaCost = 5000
 
 // ruleSetWrapper is a site's Server.yml as it is written.
 type ruleSetWrapper struct {
-	Lists           *[]listWrapper               `yaml:"lists"`
-	CountryRule     *countryRuleWrapper          `yaml:"country_rule"`
-	Challenge       *challengeRuleWrapper        `yaml:"challenge"`
-	HTTPFlood       *httpFloodRuleWrapper        `yaml:"http_flood"`
-	VerifyBot       *verifyBotRuleWrapper        `yaml:"verify_bot"`
-	TrafficAnalyzer *AdaptiveTrafficAnalyzerRule `yaml:"traffic_analyzer"`
-	CustomRules     *customRulesWrapper          `yaml:"custom_rules"`
+	Lists            *[]listWrapper               `yaml:"lists"`
+	CountryRule      *countryRuleWrapper          `yaml:"country_rule"`
+	Challenge        *challengeRuleWrapper        `yaml:"challenge"`
+	HTTPFlood        *httpFloodRuleWrapper        `yaml:"http_flood"`
+	VerifyBot        *verifyBotRuleWrapper        `yaml:"verify_bot"`
+	BrowserIntegrity *browserIntegrityRuleWrapper `yaml:"browser_integrity"`
+	TrafficAnalyzer  *AdaptiveTrafficAnalyzerRule `yaml:"traffic_analyzer"`
+	CustomRules      *customRulesWrapper          `yaml:"custom_rules"`
 }
 
 // missingSections returns the names of the sections the file leaves out, in the order of the
@@ -39,6 +41,7 @@ func (w *ruleSetWrapper) missingSections() []string {
 		{"challenge", w.Challenge != nil},
 		{"http_flood", w.HTTPFlood != nil},
 		{"verify_bot", w.VerifyBot != nil},
+		{"browser_integrity", w.BrowserIntegrity != nil},
 		{"traffic_analyzer", w.TrafficAnalyzer != nil},
 		{"custom_rules", w.CustomRules != nil},
 	} {
@@ -67,6 +70,33 @@ func mapVerifyBotRule(wrapper *verifyBotRuleWrapper, dest *VerifyBotRule) error 
 			return fmt.Errorf("verify_bot.bots: %s is listed twice", bot)
 		}
 		dest.Bots[bot] = true
+	}
+	return nil
+}
+
+type browserIntegrityRuleWrapper struct {
+	Enabled bool          `yaml:"enabled"`
+	Action  action.Action `yaml:"action" validate:"required,oneof=observe challenge block"`
+	Rules   []string      `yaml:"rules"`
+}
+
+// mapBrowserIntegrityRule accepts the rules the check has; an empty list finds nothing.
+func mapBrowserIntegrityRule(wrapper *browserIntegrityRuleWrapper, dest *BrowserIntegrityRule) error {
+	if err := validateStruct(wrapper, "browser_integrity"); err != nil {
+		return err
+	}
+	dest.Enabled = wrapper.Enabled
+	dest.Action = wrapper.Action
+	dest.Rules = make(map[string]bool, len(wrapper.Rules))
+	for _, name := range wrapper.Rules {
+		rule := strings.ToLower(strings.TrimSpace(name))
+		if !slices.Contains(integrity.Rules, rule) {
+			return fmt.Errorf("browser_integrity.rules: unknown rule %q: expected one of %s", name, strings.Join(integrity.Rules, ", "))
+		}
+		if dest.Rules[rule] {
+			return fmt.Errorf("browser_integrity.rules: %s is listed twice", rule)
+		}
+		dest.Rules[rule] = true
 	}
 	return nil
 }

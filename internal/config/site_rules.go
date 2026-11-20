@@ -15,6 +15,7 @@ type RuleSet struct {
 	Lists                       *ListSet
 	Challenge                   *ChallengeRule
 	VerifyBotRule               *VerifyBotRule
+	BrowserIntegrity            *BrowserIntegrityRule
 	HTTPFloodRule               *HTTPFloodRule
 	AdaptiveTrafficAnalyzerRule *AdaptiveTrafficAnalyzerRule
 	CountryRule                 *CountryRule
@@ -28,6 +29,7 @@ func NewRuleSet() *RuleSet {
 		Lists:                       NewListSet(),
 		Challenge:                   &ChallengeRule{},
 		VerifyBotRule:               &VerifyBotRule{},
+		BrowserIntegrity:            &BrowserIntegrityRule{Action: action.ActionObserve},
 		HTTPFloodRule:               &HTTPFloodRule{},
 		AdaptiveTrafficAnalyzerRule: &AdaptiveTrafficAnalyzerRule{},
 		CountryRule:                 &CountryRule{DefaultAction: action.ActionContinue, UnknownAction: action.ActionContinue, Countries: make(map[string]action.Action)},
@@ -45,6 +47,8 @@ func (rs *RuleSet) FeatureEnabled(c feature.Check) bool {
 		return rs.CountryRule != nil && rs.CountryRule.Enabled
 	case feature.VerifyBot:
 		return rs.VerifyBotRule != nil && rs.VerifyBotRule.Enabled
+	case feature.BrowserIntegrity:
+		return rs.BrowserIntegrity != nil && rs.BrowserIntegrity.Enabled
 	case feature.HTTPFlood:
 		return rs.HTTPFloodRule != nil && rs.HTTPFloodRule.Enabled
 	case feature.Challenge:

@@ -59,6 +59,7 @@ func mapServerRules(wrapper *ruleSetWrapper, rs *RuleSet, dir string) error {
 		mapCountryRule(wrapper.CountryRule, rs.CountryRule),
 		mapHTTPFloodRule(wrapper.HTTPFlood, rs.HTTPFloodRule),
 		mapVerifyBotRule(wrapper.VerifyBot, rs.VerifyBotRule),
+		mapBrowserIntegrityRule(wrapper.BrowserIntegrity, rs.BrowserIntegrity),
 	}
 	if listsErr == nil {
 		rs.Lists = lists

@@ -35,6 +35,10 @@ http_flood:
 verify_bot:
   enabled: false
   bots: [google, bing, baidu, yandex, sogou, apple]
+browser_integrity:
+  enabled: false
+  action: block
+  rules: [no_user_agent, missing_headers, no_fetch_metadata, fetch_metadata_mismatch, no_client_hints, client_hints_mismatch, header_order, tls, tls_extensions, tls_post_quantum]
 traffic_analyzer:
   enabled: false
   analysis_interval: 2s

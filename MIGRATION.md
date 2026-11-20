@@ -104,7 +104,7 @@ limits, temporary blocks and traffic analysis treat the whole network as one cli
 | `HTTPFlood` | `http_flood` |
 | `VerifyBot` | `verify_bot` |
 | `AdaptiveTrafficAnalyzer` | `traffic_analyzer`, redesigned: take the section from the example |
-| — | `country_rule`, `custom_rules` (new, required) |
+| — | `country_rule`, `browser_integrity`, `custom_rules` (new, required) |
 
 ### `lists`
 

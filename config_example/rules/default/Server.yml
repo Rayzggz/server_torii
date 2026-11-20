@@ -94,6 +94,29 @@ http_flood:
 verify_bot:
   enabled: true
   bots: [google, bing, baidu, yandex, sogou, apple]
+# Judges every request by itself: a client whose User-Agent names a current Chrome, Edge,
+# Firefox or Safari, and whose request cannot have come from that browser, gets the action.
+# It finds clients that only copied a User-Agent, not ones that imitate a browser completely.
+# Set action to observe first and read which rules your real visitors run into in the events
+# log; a custom rule with `skip: [BrowserIntegrity]` exempts paths that applications fetch.
+browser_integrity:
+  enabled: false
+  action: challenge # observe | challenge | block; a client that clears the challenge is let through
+  rules:
+    - no_user_agent # no User-Agent at all
+    - missing_headers # a browser without Accept or Accept-Language
+    - no_fetch_metadata # a browser that sends no Sec-Fetch-* over HTTPS
+    - fetch_metadata_mismatch # Sec-Fetch-* that contradict themselves or the request
+    - no_client_hints # Chrome, Edge and the like without Sec-CH-UA over HTTPS
+    - client_hints_mismatch # Sec-CH-UA* of another browser, version or system than the User-Agent
+    # The rest judge the connection, which only the nginx connector reports. Use them only
+    # where clients connect to that nginx directly: behind a CDN or a load balancer they would
+    # judge the CDN. The tls rules also find visitors whose antivirus or company proxy inspects
+    # HTTPS, because that software makes the TLS handshake in place of the browser.
+    # - header_order # the headers of a page view are not in the order the browser sends them
+    # - tls # the handshake lacks what every browser offers: TLS 1.3, HTTP/2, Chromium's reserved values
+    # - tls_extensions # the handshake lacks extensions only Chrome, Edge and the like send
+    # - tls_post_quantum # a recent Chrome or Firefox that offers no post-quantum key exchange
 traffic_analyzer:
   enabled: true
   analysis_interval: 10s
@@ -130,7 +153,9 @@ custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after
   # Fields: ip.src, ip.src.country (alias ip.geoip.country), http.host, http.request.uri, http.request.uri.path,
   #   http.request.uri.query, http.request.uri.path.extension, http.request.uri.args["k"], http.request.method,
   #   http.user_agent, http.referer, http.cookie, http.x_forwarded_for, http.request.headers["name"],
-  #   http.request.cookies["name"], torii.browser_evidence
+  #   http.request.cookies["name"], torii.browser_evidence,
+  #   torii.browser_integrity.<rule>: whether the request breaks that rule of browser_integrity above,
+  #   whatever that section has switched on, e.g. torii.browser_integrity.no_fetch_metadata, .tls
   #   http.request.method is the method of the client request, also when it has a body the check never sees
   # Operators: eq ==, ne !=, contains, wildcard, strict wildcard, matches ~, in {...}, lt le gt ge (len() only)
   #   in $name tests a field against a list above: an IP field against an ip list, a string field against a url list
@@ -139,7 +164,7 @@ custom_rules: # Cloudflare-style expression rules, evaluated top to bottom after
   # Actions: allow (pass now, skip every later check), skip (skip the checks in `skip`, keep evaluating rules),
   #   continue (stop evaluating rules), log (log and keep evaluating), block,
   #   challenge (stop evaluating rules; the client is challenged unless a later check blocks or rate-limits it)
-  # Skip targets: CustomRules (the remaining rules), CountryRule, VerifyBot, ActionRule,
+  # Skip targets: CustomRules (the remaining rules), CountryRule, VerifyBot, BrowserIntegrity, ActionRule,
   #   HTTPFlood, Challenge (only the challenge of every client: one a rule asked for is never skipped)
   rules:
     - id: block-wp-scan

@@ -7,7 +7,7 @@ import (
 
 func TestPipelineOrder(t *testing.T) {
 	// The order decides which rule wins when several match; changing it changes behavior.
-	want := "Lists CustomRules CountryRule VerifyBot ActionRule HTTPFlood Challenge"
+	want := "Lists CustomRules CountryRule VerifyBot BrowserIntegrity ActionRule HTTPFlood Challenge"
 	var names []string
 	for _, c := range Pipeline() {
 		names = append(names, c.String())
@@ -57,7 +57,7 @@ func TestParseSkipTargets(t *testing.T) {
 	if err == nil {
 		t.Fatal("Lists runs before CustomRules and must not be a skip target")
 	}
-	const want = `invalid skip target "Lists": expected one of CustomRules, CountryRule, VerifyBot, ActionRule, HTTPFlood, Challenge`
+	const want = `invalid skip target "Lists": expected one of CustomRules, CountryRule, VerifyBot, BrowserIntegrity, ActionRule, HTTPFlood, Challenge`
 	if err.Error() != want {
 		t.Fatalf("error = %s", err)
 	}

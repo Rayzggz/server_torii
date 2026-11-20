@@ -15,6 +15,7 @@ const (
 	CustomRules
 	CountryRule
 	VerifyBot
+	BrowserIntegrity
 	ActionRule
 	HTTPFlood
 	Challenge
@@ -34,10 +35,11 @@ type definition struct {
 
 var definitions = [Count]definition{
 	// Lists has no switch of its own: each list has one.
-	Lists:       {"Lists", false, false},
-	CustomRules: {"CustomRules", true, true},
-	CountryRule: {"CountryRule", true, true},
-	VerifyBot:   {"VerifyBot", true, true},
+	Lists:            {"Lists", false, false},
+	CustomRules:      {"CustomRules", true, true},
+	CountryRule:      {"CountryRule", true, true},
+	VerifyBot:        {"VerifyBot", true, true},
+	BrowserIntegrity: {"BrowserIntegrity", true, true},
 	// ActionRule has no switch: it is driven by the rules other components install at runtime.
 	ActionRule: {"ActionRule", false, true},
 	HTTPFlood:  {"HTTPFlood", true, true},

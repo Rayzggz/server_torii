@@ -14,6 +14,7 @@ English | [简体中文](README-zh_cn.md)
 * HTTP FLOOD Mitigation
 * CAPTCHA Challenge
 * Crawlers Verification
+* Browser Integrity Check (requests that cannot have come from the browser their User-Agent names)
 * Custom Error Page 
 * External Mitigation (using services such as Cloudflare for mitigation)
 * IP Address Block List  

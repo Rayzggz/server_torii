@@ -16,13 +16,14 @@ type CheckFunc func(request.UserRequest, *config.RuleSet, *action.Decision, *sta
 
 // checkFuncs implements each step of feature.Pipeline.
 var checkFuncs = [feature.Count]CheckFunc{
-	feature.Lists:       check.Lists,
-	feature.CustomRules: check.CustomRules,
-	feature.CountryRule: check.CountryRule,
-	feature.VerifyBot:   check.VerifyBot,
-	feature.ActionRule:  check.ActionRule,
-	feature.HTTPFlood:   check.HTTPFlood,
-	feature.Challenge:   check.Challenge,
+	feature.Lists:            check.Lists,
+	feature.CustomRules:      check.CustomRules,
+	feature.CountryRule:      check.CountryRule,
+	feature.VerifyBot:        check.VerifyBot,
+	feature.BrowserIntegrity: check.BrowserIntegrity,
+	feature.ActionRule:       check.ActionRule,
+	feature.HTTPFlood:        check.HTTPFlood,
+	feature.Challenge:        check.Challenge,
 }
 
 // runChecks runs the checks that are switched on for the request and that no custom rule

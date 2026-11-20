@@ -81,7 +81,7 @@ IPv6 客户端现在按网段计数,默认 `/64`,可用 `ipv6_prefix` 调整:限
 | `HTTPFlood` | `http_flood` |
 | `VerifyBot` | `verify_bot` |
 | `AdaptiveTrafficAnalyzer` | `traffic_analyzer`,已重新设计,请直接从示例里取这一段 |
-| — | `country_rule`、`custom_rules`(新增,必填) |
+| — | `country_rule`、`browser_integrity`、`custom_rules`(新增,必填) |
 
 ### `lists`
 

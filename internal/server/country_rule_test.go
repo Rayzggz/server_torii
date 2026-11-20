@@ -118,10 +118,11 @@ func TestCountryRulesWithGeoLiteDatabase(t *testing.T) {
 
 func featureControlRuleSet() *config.RuleSet {
 	return &config.RuleSet{
-		Lists:         config.NewListSet(),
-		VerifyBotRule: &config.VerifyBotRule{},
-		HTTPFloodRule: &config.HTTPFloodRule{},
-		Challenge:     &config.ChallengeRule{},
-		CountryRule:   &config.CountryRule{Enabled: true},
+		Lists:            config.NewListSet(),
+		VerifyBotRule:    &config.VerifyBotRule{},
+		BrowserIntegrity: &config.BrowserIntegrityRule{},
+		HTTPFloodRule:    &config.HTTPFloodRule{},
+		Challenge:        &config.ChallengeRule{},
+		CountryRule:      &config.CountryRule{Enabled: true},
 	}
 }

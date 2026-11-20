@@ -74,6 +74,21 @@ func AllBots() map[string]bool {
 	return all
 }
 
+// BrowserIntegrityRule applies rules of package integrity to every request: a client whose
+// request cannot have come from the browser its User-Agent names gets Action.
+type BrowserIntegrityRule struct {
+	Enabled bool
+	// Action is observe, challenge or block.
+	Action action.Action
+	// Rules has the rules of package integrity that are switched on.
+	Rules map[string]bool
+}
+
+// Applies reports whether the rule is switched on.
+func (r *BrowserIntegrityRule) Applies(rule string) bool {
+	return r != nil && r.Rules[rule]
+}
+
 // SameURIKey is what the same-URI limit takes two requests to be for the same URI by.
 type SameURIKey string
 

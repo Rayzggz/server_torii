@@ -48,6 +48,7 @@ var disabledSections = []struct{ name, text string }{
 	{"challenge", "challenge: {enabled: false, mode: hcaptcha, hcaptcha_secret: test-hcaptcha-secret, clearance_ttl: 60s, session_ttl: 120s, failure_limit: [\"3/1m\"], failure_block_duration: 60s}\n"},
 	{"http_flood", "http_flood: {enabled: false, speed_limit: [\"5/10s\"], same_uri_limit: [\"3/10s\"], same_uri_key: full, failure_limit: [\"3/30s\"], failure_block_duration: 300s}\n"},
 	{"verify_bot", "verify_bot: {enabled: false}\n"},
+	{"browser_integrity", "browser_integrity: {enabled: false, action: challenge, rules: []}\n"},
 	{"traffic_analyzer", "traffic_analyzer: {enabled: false}\n"},
 	{"custom_rules", "custom_rules: {enabled: false}\n"},
 }

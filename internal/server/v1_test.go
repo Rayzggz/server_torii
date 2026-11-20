@@ -11,6 +11,7 @@ import (
 	"server_torii/internal/action"
 	"server_torii/internal/config"
 	"server_torii/internal/feature"
+	"server_torii/internal/integrity"
 	"server_torii/internal/ratelimit"
 	"server_torii/internal/state"
 	"strings"
@@ -61,6 +62,36 @@ func TestV1CheckPass(t *testing.T) {
 	})
 	if rec.Code != http.StatusNoContent || rec.Header().Get(headerDecision) != "pass" || rec.Body.Len() != 0 {
 		t.Fatalf("got %d decision %q body %q", rec.Code, rec.Header().Get(headerDecision), rec.Body.String())
+	}
+}
+
+// What the connector says about the connection reaches the BrowserIntegrity check, and the
+// rule that found the request is named to the connector.
+func TestV1CheckBrowserIntegrity(t *testing.T) {
+	const chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
+	headers := func(scheme string) map[string]string {
+		return map[string]string{
+			headerSite: "shop", headerClientIP: "203.0.113.5", headerURI: "/ok", headerFeatures: "+browser_integrity",
+			"User-Agent": chrome, "Accept": "*/*", "Accept-Language": "en", "Torii-Scheme": scheme,
+		}
+	}
+	s := newV1Server(t)
+	shop := s.configs.Get().Site("shop")
+	shop.BrowserIntegrity = &config.BrowserIntegrityRule{Action: action.ActionBlock, Rules: map[string]bool{integrity.NoFetchMetadata: true}}
+
+	rec := v1Get(s, v1CheckPath, headers("https"))
+	if rec.Code != http.StatusForbidden || rec.Header().Get(headerReason) != "BrowserIntegrity:no_fetch_metadata" {
+		t.Fatalf("over HTTPS: got %d, reason %q", rec.Code, rec.Header().Get(headerReason))
+	}
+	// Over plain HTTP a browser sends no Sec-Fetch-* either.
+	if rec := v1Get(s, v1CheckPath, headers("http")); rec.Header().Get(headerDecision) != "pass" {
+		t.Fatalf("over HTTP: decision %q, reason %q", rec.Header().Get(headerDecision), rec.Header().Get(headerReason))
+	}
+	// Switched off for the site and not asked for by the connector: the check does not run.
+	off := headers("https")
+	delete(off, headerFeatures)
+	if rec := v1Get(s, v1CheckPath, off); rec.Header().Get(headerDecision) != "pass" {
+		t.Fatalf("switched off: decision %q", rec.Header().Get(headerDecision))
 	}
 }
 
